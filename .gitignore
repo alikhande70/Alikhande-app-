@@ -1,0 +1,30 @@
+node_modules/
+dist/
+build/
+*.tsbuildinfo
+.env
+.env.*
+!.env.example
+*.log
+.DS_Store
+
+# Expo
+.expo/
+apps/mobile/android/
+apps/mobile/ios/
+*.jks
+*.p8
+*.p12
+*.key
+*.mobileprovision
+
+# Desk runtime state — never commit a ledger, it contains trading history
+data/
+*.db
+*.db-wal
+*.db-shm
+!**/fixtures/**/*.db
+
+# Test output
+coverage/
+.vitest/
