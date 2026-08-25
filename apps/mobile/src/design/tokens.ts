@@ -22,7 +22,33 @@ export type Scheme = 'dark' | 'light';
  * Dark is the default because that is when and where this is used — a phone at
  * a desk at 02:00, or in a dark room during the New York session.
  */
-export const palette = {
+export interface Palette {
+  readonly canvas: string;
+  readonly surface: string;
+  readonly surfaceRaised: string;
+  readonly surfaceSunken: string;
+  readonly border: string;
+  readonly borderStrong: string;
+  readonly text: string;
+  readonly textSecondary: string;
+  readonly textTertiary: string;
+  readonly textInverse: string;
+  readonly accent: string;
+  readonly accentMuted: string;
+  readonly long: string;
+  readonly longMuted: string;
+  readonly short: string;
+  readonly shortMuted: string;
+  readonly warning: string;
+  readonly warningMuted: string;
+  readonly critical: string;
+  readonly criticalMuted: string;
+  readonly unknown: string;
+  readonly unknownMuted: string;
+  readonly ok: string;
+}
+
+export const palette: Readonly<Record<Scheme, Palette>> = {
   dark: {
     /** Not pure black: OLED smearing on scroll makes true black feel cheap. */
     canvas: '#0B0D10',
@@ -84,9 +110,7 @@ export const palette = {
     unknownMuted: '#EEE2FB',
     ok: '#0E8A4A',
   },
-} as const;
-
-export type Palette = (typeof palette)['dark'];
+};
 
 /**
  * Spacing on a 4pt grid. Trading screens are dense by necessity, so the scale
