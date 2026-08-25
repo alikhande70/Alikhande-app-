@@ -290,6 +290,22 @@ export class DeskState {
     };
   }
 
+  /**
+   * The trading-day boundary this desk has already rolled to, from durable
+   * state rather than memory.
+   *
+   * This must not live in a field initialised at start-up: a desk restarted
+   * mid-day would then believe no day had been rolled, roll one immediately,
+   * and reset the day's loss counter — silently clearing the daily loss limit
+   * after a bad morning. Restarting a process must never widen a risk limit.
+   */
+  persistedDayStart(): number {
+    const row = this.db.prepare('SELECT current_day_start FROM risk_state WHERE id = 1').get() as
+      | { current_day_start: number }
+      | undefined;
+    return row?.current_day_start ?? 0;
+  }
+
   lockout(): { until: number; reason: string } | undefined {
     const row = this.db
       .prepare('SELECT lockout_until, lockout_reason FROM risk_state WHERE id = 1')

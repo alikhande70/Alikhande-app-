@@ -9,6 +9,8 @@ import type { BrokerQuote } from '../broker/port.js';
 import { Ledger } from '../ledger/ledger.js';
 import { Projector } from '../ledger/projections.js';
 import { TestClock } from '../sim/clock.js';
+import { Guard } from './guard.js';
+import { Reconciler } from './reconciler.js';
 import { UnknownResolver } from './resolver.js';
 import { DeskState, specToJson } from './state.js';
 import { ExecutionSupervisor } from './supervisor.js';
@@ -41,13 +43,19 @@ export interface Harness {
   readonly broker: PaperBroker;
   readonly supervisor: ExecutionSupervisor;
   readonly resolver: UnknownResolver;
+  readonly reconciler: Reconciler;
+  readonly guard: Guard;
   readonly log: Logger;
   readonly escalations: Array<{ intentId: string; attempts: number; detail: string }>;
   readonly anomalies: Array<{ intentId: string; anomaly: D.Anomaly }>;
+  readonly alerts: Array<{ kind: string; severity: string; title: string; body: string }>;
+  readonly divergenceEvents: Array<{ kind: string; id: string; isNew: boolean }>;
   quote(canonical: string, bid: string, ask: string): void;
   syncAccount(): Promise<void>;
   /** Await a promise while driving the test clock. See `TestClock.settle`. */
   run<T>(p: Promise<T>): Promise<T>;
+  /** Stop consuming broker events, modelling the desk being down. */
+  detachBrokerEvents(): void;
   close(): void;
 }
 
@@ -106,6 +114,29 @@ export function createHarness(opts: HarnessOptions = {}): Harness {
     onResolved: () => undefined,
   });
 
+  const alerts: Array<{ kind: string; severity: string; title: string; body: string }> = [];
+  const divergenceEvents: Array<{ kind: string; id: string; isNew: boolean }> = [];
+
+  const reconciler = new Reconciler({
+    ledger,
+    projector,
+    state,
+    broker,
+    clock,
+    log,
+    onDivergence: (d, id, isNew) => divergenceEvents.push({ kind: d.kind, id, isNew }),
+  });
+
+  const guard = new Guard({
+    ledger,
+    projector,
+    state,
+    broker,
+    clock,
+    log,
+    onAlert: (a) => alerts.push(a),
+  });
+
   const supervisor = new ExecutionSupervisor({
     ledger,
     projector,
@@ -118,7 +149,7 @@ export function createHarness(opts: HarnessOptions = {}): Harness {
   });
 
   // Broker events feed the ledger, exactly as the production wiring does.
-  broker.on((e) => {
+  const detach = broker.on((e) => {
     switch (e.type) {
       case 'quote':
         state.setExecutionQuote(e.quote);
@@ -198,9 +229,13 @@ export function createHarness(opts: HarnessOptions = {}): Harness {
     broker,
     supervisor,
     resolver,
+    reconciler,
+    guard,
     log,
     escalations,
     anomalies,
+    alerts,
+    divergenceEvents,
     quote(canonical, bid, ask) {
       broker.setQuote({
         canonical,
@@ -218,6 +253,9 @@ export function createHarness(opts: HarnessOptions = {}): Harness {
     run<T>(p: Promise<T>) {
       return clock.settle(p);
     },
+    detachBrokerEvents() {
+      detach();
+    },
     async syncAccount() {
       const acct = await clock.settle(broker.getAccount());
       ledger.append({
@@ -234,6 +272,8 @@ export function createHarness(opts: HarnessOptions = {}): Harness {
     },
     close() {
       resolver.stopAll();
+      reconciler.stop();
+      guard.stop();
       ledger.close();
     },
   };
