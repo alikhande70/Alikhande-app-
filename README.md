@@ -40,12 +40,14 @@ proves it continuously.
 | [`docs/PRODUCT.md`](docs/PRODUCT.md) | What this is, why it exists, what it deliberately is not |
 | [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) | How it fits together, and the failure model it is built around |
 | [`docs/VERIFICATION.md`](docs/VERIFICATION.md) | **Honest** status of every component, and every defect found so far |
-| [`docs/adr/`](docs/adr/) | 13 decision records, including the options that were rejected |
+| [`docs/adr/`](docs/adr/) | 14 decision records, including the options that were rejected |
 | [`docs/RUNBOOK.md`](docs/RUNBOOK.md) | Deploying, pairing, and what to do at 2am |
 | [`docs/THREAT-MODEL.md`](docs/THREAT-MODEL.md) | Security assumptions, including where they are weaker than they sound |
 
 **Read `VERIFICATION.md` before trusting anything here with money.** In
-particular: no broker adapter has ever sent an order to a real venue.
+particular: the OANDA adapter is written and heavily tested, but no order has
+yet reached a real venue — running the live suite against a free practice
+account is the next step, and it is one command.
 
 ---
 
@@ -80,12 +82,14 @@ See [`docs/RUNBOOK.md`](docs/RUNBOOK.md) for real deployment.
 ```sh
 pnpm verify                              # everything
 pnpm --filter @keel/desk test:chaos      # randomized adversarial sessions
-pnpm --filter @keel/desk test:live       # real network, Crypto.com public API
+pnpm --filter @keel/desk test:live       # real network: Crypto.com, and OANDA
+                                         # practice if a token is set
 ```
 
-**457 tests** across the workspace: 212 core, 130 desk, 76 mobile, 19 contracts,
-a 14-scenario chaos suite, and 6 live network tests. `pnpm verify` runs 451 of
-them — the 6 live tests are held back because they need the network.
+**549 tests** across the workspace: 212 core, 216 desk, 76 mobile, 19 contracts,
+a 14-scenario chaos suite, and 12 live network tests. `pnpm verify` runs 537 of
+them — the live tests are held back because they need the network, and the
+OANDA half of them needs a practice-account token.
 
 The chaos suite is seeded: a failure prints a seed that reproduces the run
 exactly. A chaos suite that cannot be replayed is theatre.
@@ -94,14 +98,16 @@ exactly. A chaos suite that cannot be replayed is theatre.
 
 ## What found the bugs
 
-Seventeen defects were found after the first working version. The source of each
+Twenty defects were found after the first working version. The source of each
 is recorded in [`docs/VERIFICATION.md`](docs/VERIFICATION.md), and the pattern is
 worth stating up front:
 
 **Example-based tests found almost nothing.** Property tests, randomized chaos,
 and reading the code adversarially found everything severe — including an entire
 anomaly pipeline that computed correctly and discarded its results, an endpoint
-that flattened the whole book when asked to close one position, and a guard that
-cleared the daily loss limit if you restarted the desk after a bad morning.
+that flattened the whole book when asked to close one position, a guard that
+cleared the daily loss limit if you restarted the desk after a bad morning, and
+a broker lookup that would have reported every in-flight order as never placed
+the moment an API token was rotated.
 
 Every one of them typechecked, read correctly, and did the wrong thing.

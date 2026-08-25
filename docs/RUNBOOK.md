@@ -58,7 +58,11 @@ KEEL_HOST=127.0.0.1 pnpm desk    # reachable over your VPN only
 | `KEEL_PORT` | `8787` | |
 | `KEEL_DATA_DIR` | `./data` | Holds `keel.db`. Back this up. |
 | `KEEL_SYNCHRONOUS` | `FULL` | fsync per commit. **Do not lower this in production.** |
-| `KEEL_BROKER` | `paper` | `oanda`/`metaapi` refuse to start — adapters are not built |
+| `KEEL_BROKER` | `paper` | `oanda` is implemented; `metaapi` still refuses to start |
+| `KEEL_OANDA_TOKEN` | — | Required for `KEEL_BROKER=oanda` |
+| `KEEL_OANDA_ACCOUNT_ID` | — | Required for `KEEL_BROKER=oanda`, e.g. `101-004-1234567-001` |
+| `KEEL_OANDA_ENVIRONMENT` | `practice` | `live` additionally requires `KEEL_OANDA_ALLOW_LIVE=true` |
+| `KEEL_OANDA_ALLOW_LIVE` | `false` | The deliberate second step before trading real money |
 | `KEEL_REFERENCE_PROVIDER` | `none` | `cryptocom` enables the second price plane |
 | `KEEL_INSTRUMENTS` | `XAUUSD,EURUSD` | Comma separated |
 | `KEEL_EXPO_PUSH_TOKEN` | — | Without it, alerts are logged but never pushed |
@@ -100,6 +104,42 @@ rebuilds projections, and resumes chasing any unresolved intent **before**
 accepting anything new.
 
 ---
+
+
+### Connecting OANDA
+
+An OANDA practice account is free and takes a few minutes. From *Manage API
+Access* in account management, generate a personal access token; the account id
+is on the same screen, in the form `101-004-1234567-001`.
+
+```sh
+export KEEL_BROKER=oanda
+export KEEL_OANDA_TOKEN=...
+export KEEL_OANDA_ACCOUNT_ID=101-004-1234567-001
+pnpm desk
+```
+
+Before pointing the desk at it, run the live suite once — it exercises the same
+paths the desk will use and tells you immediately if anything about the account
+is not what this adapter expects:
+
+```sh
+KEEL_OANDA_TOKEN=... KEEL_OANDA_ACCOUNT_ID=... \
+  pnpm --filter @keel/desk test:live
+```
+
+Add `KEEL_OANDA_LIVE_EXECUTION=true` to also open and close a one-unit EUR/USD
+position. Do that while the FX market is open, or the venue will decline the
+order and the test will say so rather than fail.
+
+Note that OANDA trades in **units**, not lots: a position is `50000` units of
+EUR_USD, not `0.5`. Sizing, limits and the order ticket all work in those units.
+See ADR-0014 for why.
+
+**Going live is two steps, not one.** `KEEL_OANDA_ENVIRONMENT=live` on its own
+is refused; it must be accompanied by `KEEL_OANDA_ALLOW_LIVE=true`. Read
+`docs/VERIFICATION.md` first — as of this writing the adapter has not been run
+against a real venue at all.
 
 ## 2. Pairing your phone
 

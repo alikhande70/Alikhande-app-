@@ -32,6 +32,18 @@ export const DeskConfig = z.object({
   synchronous: z.enum(['FULL', 'NORMAL', 'OFF']).default('FULL'),
 
   broker: z.enum(['paper', 'oanda', 'metaapi']).default('paper'),
+
+  /** OANDA v20 personal access token. Required when broker is `oanda`. */
+  oandaToken: z.string().optional(),
+  /** OANDA account id, e.g. `101-004-1234567-001`. Required when broker is `oanda`. */
+  oandaAccountId: z.string().optional(),
+  /**
+   * Which OANDA environment to trade. Practice by default, and `live` needs a
+   * second, separate acknowledgement below — see `assertBrokerCredentials`.
+   */
+  oandaEnvironment: z.enum(['practice', 'live']).default('practice'),
+  /** The deliberate second step required before the desk will trade real money. */
+  oandaAllowLive: z.boolean().default(false),
   /** Reference market-data provider. `none` disables the second plane. */
   referenceProvider: z.enum(['cryptocom', 'none']).default('none'),
 
@@ -69,6 +81,10 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): DeskConfig {
     dataDir: env.KEEL_DATA_DIR,
     synchronous: env.KEEL_SYNCHRONOUS,
     broker: env.KEEL_BROKER,
+    oandaToken: env.KEEL_OANDA_TOKEN,
+    oandaAccountId: env.KEEL_OANDA_ACCOUNT_ID,
+    oandaEnvironment: env.KEEL_OANDA_ENVIRONMENT,
+    oandaAllowLive: env.KEEL_OANDA_ALLOW_LIVE === 'true',
     referenceProvider: env.KEEL_REFERENCE_PROVIDER,
     accountCurrency: env.KEEL_ACCOUNT_CURRENCY,
     instruments: env.KEEL_INSTRUMENTS?.split(',')
@@ -95,6 +111,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): DeskConfig {
     );
   }
   assertSafeExposure(parsed.data);
+  assertBrokerCredentials(parsed.data);
   return parsed.data;
 }
 
@@ -119,6 +136,42 @@ export function assertSafeExposure(cfg: DeskConfig): void {
       `host is ${cfg.host} with KEEL_ALLOW_NON_LOOPBACK=true, but no TLS certificate is ` +
         'configured. Set KEEL_TLS_CERT and KEEL_TLS_KEY. A trading desk will not serve plaintext ' +
         'on a network interface.',
+    );
+  }
+}
+
+/**
+ * Refuse to start a broker that cannot possibly work, and refuse to trade real
+ * money on a single environment variable.
+ *
+ * The credential check is ordinary hygiene: a missing token should fail at boot
+ * rather than at the first order. The live-trading check is the same two-step
+ * shape as `assertSafeExposure` — one setting selects the environment, a second
+ * acknowledges what that means — because the two failure modes are alike. A
+ * desk exposed to the internet and a desk trading real money are both states
+ * you should never reach by editing one line and forgetting.
+ */
+export function assertBrokerCredentials(cfg: DeskConfig): void {
+  if (cfg.broker !== 'oanda') return;
+
+  const missing: string[] = [];
+  if (cfg.oandaToken === undefined || cfg.oandaToken === '') missing.push('KEEL_OANDA_TOKEN');
+  if (cfg.oandaAccountId === undefined || cfg.oandaAccountId === '') {
+    missing.push('KEEL_OANDA_ACCOUNT_ID');
+  }
+  if (missing.length > 0) {
+    throw new ConfigError(
+      `KEEL_BROKER=oanda needs ${missing.join(' and ')}. Generate a personal access token in ` +
+        "OANDA's account management page and copy the account id from the same screen.",
+    );
+  }
+
+  if (cfg.oandaEnvironment === 'live' && !cfg.oandaAllowLive) {
+    throw new ConfigError(
+      'KEEL_OANDA_ENVIRONMENT=live would trade real money. This adapter has been validated ' +
+        'against the practice environment only — see docs/VERIFICATION.md for exactly what that ' +
+        'covers and what it does not. If you have read that and still mean it, set ' +
+        'KEEL_OANDA_ALLOW_LIVE=true.',
     );
   }
 }

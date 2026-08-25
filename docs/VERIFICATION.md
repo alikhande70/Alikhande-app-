@@ -62,7 +62,7 @@ responding.
 | Alerts engine | Implemented, unit paths exercised via guard tests | Dedupe, severity floor, undelivered-critical surfacing. Not separately unit tested — see *Known gaps*. |
 | Config validation | Unit tested via startup | Refuses to bind non-loopback without an explicit opt-in and TLS. |
 
-**Total: 130 tests, plus the 14-scenario chaos suite and 6 live network tests.**
+**Total: 216 tests, plus the 14-scenario chaos suite and 12 live network tests.**
 `pnpm --filter @keel/desk test` runs the first two (144); the live tests are
 separate, because they need the network: `pnpm --filter @keel/desk test:live`.
 
@@ -86,20 +86,75 @@ separate, because they need the network: `pnpm --filter @keel/desk test:live`.
 | Adapter | Status | Why |
 | --- | --- | --- |
 | `PaperBroker` | Chaos tested | The default, and the substrate for every other test. |
-| OANDA v20 | **Not implemented** | Planned against the `BrokerPort` interface. Not present in this build. |
-| MetaApi / MT5 | **Not implemented** | Planned against the `BrokerPort` interface. Not present in this build. |
+| OANDA v20 | **Integration tested, not yet live verified** | 86 tests against a scripted v20, covering every outcome branch. No request has ever reached `api-fxpractice.oanda.com`. |
+| MetaApi / MT5 | **Not implemented** | `main.ts` refuses to start with `KEEL_BROKER=metaapi` rather than pretending. |
 
-**This is the largest gap in the system and it is stated plainly.** The desk
-runs today only against the paper venue. The `BrokerPort` interface and its
-capability descriptor were designed for real adapters, and `main.ts` refuses to
-start with `KEEL_BROKER=oanda` or `metaapi` rather than pretending. Two attempts
-to build these adapters in parallel were cut short by a session limit before
-producing code.
+### What the OANDA adapter has actually been tested against
 
-When they are written, note that **no adapter can be live-verified in this
-environment**: OANDA practice returns 401 without a token, and MetaApi requires
-a paid subscription. Live verification is the operator's first task, against a
-demo account, before any real money.
+A stub that replays v20 response *shapes* — not the venue. That distinction is
+the whole point of this document, so it is worth being precise about what the 86
+tests do and do not establish.
+
+**Established, because the logic is pure and the inputs are exact:**
+
+| Behaviour | Evidence |
+| --- | --- |
+| A timeout, socket error, 429 or any 5xx becomes `ambiguous`, never `rejected` | Asserted for each status individually |
+| A 2xx whose body cannot be parsed becomes `ambiguous` | The order may have filled; the response cannot say |
+| A partial fill is read as a fill, not as the cancellation beside it | An IOC order returns both; reading the cancel first would report a live position as rejected |
+| A non-404 lookup failure is never evidence of absence | Asserted for 400/401/403/405/422 — see the defects below |
+| The client id goes on both the order and the trade | Read back off the wire in the test |
+| Nanosecond RFC3339 timestamps parse to the venue's own millisecond | And an unparseable one throws rather than substituting the local clock |
+| Volume, price and units survive as exact decimals | Every v20 number is a string, parsed with `dec()` |
+| A dropped stream replays what it missed via `sinceid` | And does not replay the anchor transaction |
+| The stream reports "connected" only once it has genuinely reopened | Regression test, see defects below |
+
+**Not established — only the live suite can establish it:**
+
+- That OANDA's `ClientID` accepts our `k-` prefixed base32 ids unchanged. The
+  character set is undocumented. If the hyphen is rejected, every order fails at
+  submission — loudly, and before anything executes, but it fails.
+- That a filled market order's id is reliably addressable at `/trades/@id`. The
+  two-place lookup is built on this. It is documented behaviour, but documented
+  is not observed.
+- That the stub's response shapes match what the venue actually sends. They were
+  written from OANDA's published documentation — the same source that would be
+  wrong in the same way.
+- Anything about latency, rate limiting, or behaviour under a real disconnection.
+
+### Running the live suite
+
+`services/desk/src/broker/oanda/oanda.live.test.ts` exists to close that gap. It
+needs an OANDA practice account, which is free:
+
+```sh
+KEEL_OANDA_TOKEN=... KEEL_OANDA_ACCOUNT_ID=101-004-XXXXXXX-001 \\
+  pnpm --filter @keel/desk test:live
+```
+
+That runs the read paths — connect, account, instruments, pricing, and a lookup
+for an id that was never sent, which must return positive evidence of absence.
+Adding `KEEL_OANDA_LIVE_EXECUTION=true` also opens and closes a **one-unit**
+EUR/USD position with an attached stop, then asserts the client id is
+addressable afterwards. One unit is about a dollar of notional: enough to prove
+the round trip, not enough to be a position.
+
+The suite refuses to run against the live environment at all.
+
+**Nothing here may be upgraded to "live verified" until that suite has been run
+and passed.** It was written in an environment with no OANDA credentials, so the
+author could not run it.
+
+### Defects found while building this adapter
+
+All three were found by reading the code adversarially after it had passed its
+first tests — not by the tests themselves.
+
+| Defect | Consequence had it shipped |
+| --- | --- |
+| `findByClientOrderId` treated any definite HTTP status as evidence of absence | A rotated token returns 401 on every lookup. The resolver would have concluded every in-flight order was never placed — and because this adapter declares retry safe, the engine would have been free to re-send all of them. |
+| A lookup that found the order but failed to map it fell through and reported absence | The venue plainly has the order. Failing to parse it is our defect, and it would have been reported as the order not existing. |
+| The stream announced "reconnected" after the backoff sleep, before reopening | The desk would report itself connected while it was not, and catch-up ran before the subscription existed — leaving a window in which a fill could be missed entirely. |
 
 ---
 
@@ -144,16 +199,30 @@ of testing were actually earning their keep.
 | Red team | Lockout was applied *after* flattening, leaving a window to open a new position | Severe |
 | Red team | Flatten ignored resting orders, which could re-open exposure moments later | Severe |
 | Red team | A phone with a skewed clock was locked out of everything, including reads | Moderate |
+| Self-review | OANDA `findByClientOrderId` read any definite HTTP status as evidence of absence, so a rotated token would report every in-flight order as never placed | Severe |
+| Self-review | An OANDA order that was found but could not be mapped fell through and was reported absent | Severe |
+| Self-review | The OANDA stream announced "reconnected" before it had reopened, and caught up before subscribing | Moderate |
+| Self-review | `test:live` and `test:chaos` used an unquoted `src/**/*` glob, which the shell expands to a single directory level — so the OANDA live suite existed but the documented command never ran it | Moderate |
 
 The pattern worth noting: **example-based tests found almost nothing.** Property
 tests, randomized chaos, and reading the code adversarially found everything
 severe. Four of the five audit findings were code that typechecked, read
 correctly, and did the wrong thing.
 
+The OANDA findings repeated the pattern exactly. All three arrived after the
+adapter had passed its first forty tests, and all three came from re-reading it
+looking for trouble rather than from anything the suite was already asserting.
+Two of them turned on the same question — *what is this response actually
+evidence of?* — which is the question this entire system is organised around,
+and which was still easy to get wrong twice in one function.
+
 ## Known gaps, stated without hedging
 
-1. **No real broker.** The single largest gap. Nothing in this system has ever
-   sent an order to a real venue, demo or otherwise.
+1. **Still no order has reached a real venue.** The OANDA adapter is written
+   and thoroughly tested against a scripted v20, but a stub written from the
+   same documentation as the adapter cannot disprove a misreading of that
+   documentation. This remains the single largest gap, and it closes the moment
+   `pnpm --filter @keel/desk test:live` is run with a practice token.
 2. **The mobile UI has never been rendered.** Every screen is unproven as a
    visual and interactive artefact. The logic beneath them is tested; the
    pixels are not.
@@ -176,9 +245,10 @@ correctly, and did the wrong thing.
 
 In order:
 
-1. A broker adapter implemented and **live-verified against a demo account**,
-   including a deliberate mid-submit disconnection to confirm the `UNKNOWN` path
-   works against that venue's real API.
+1. The OANDA live suite run against a real practice account and passed —
+   including the execution round trip — then a deliberate mid-submit
+   disconnection to confirm the `UNKNOWN` path works against the real API, and
+   not merely against a stub that shares my assumptions.
 2. The mobile app built with EAS and run on the operator's own device, with the
    order ticket exercised end to end against the demo account.
 3. A real push delivered to that device, and the delivery receipt confirmed.

@@ -1,8 +1,11 @@
 import * as D from '@keel/core';
 import { defaultRiskPolicy } from '@keel/core';
+import type { Logger } from 'pino';
 import pino from 'pino';
 import { AlertEngine, NullPushSender } from './alerts/engine.js';
 import { ExpoPushSender } from './alerts/push.js';
+import { OandaBroker } from './broker/oanda/adapter.js';
+import { OandaClient } from './broker/oanda/client.js';
 import { PaperBroker, REALISTIC_FAULTS } from './broker/paper.js';
 import type { BrokerPort } from './broker/port.js';
 import { describeCapabilities } from './broker/port.js';
@@ -83,7 +86,7 @@ export async function startDesk(config: DeskConfig = loadConfig()): Promise<Desk
   const state = new DeskState(ledger, projector, clock, policy);
 
   // --- Broker ---------------------------------------------------------------
-  const broker = buildBroker(config, clock);
+  const broker = buildBroker(config, clock, log);
   log.info(
     { broker: broker.name, notes: describeCapabilities(broker.capabilities) },
     'broker adapter selected',
@@ -493,8 +496,23 @@ export async function startDesk(config: DeskConfig = loadConfig()): Promise<Desk
   };
 }
 
-function buildBroker(config: DeskConfig, clock: typeof systemClock): BrokerPort {
+function buildBroker(config: DeskConfig, clock: typeof systemClock, log: Logger): BrokerPort {
   switch (config.broker) {
+    case 'oanda': {
+      // loadConfig has already refused to get here without both credentials,
+      // so the assertions below are a type narrowing rather than a check.
+      const client = new OandaClient({
+        token: config.oandaToken as string,
+        accountId: config.oandaAccountId as string,
+        environment: config.oandaEnvironment,
+      });
+      return new OandaBroker({
+        client,
+        clock,
+        log,
+        instruments: config.instruments,
+      });
+    }
     case 'paper':
       return new PaperBroker(
         {
