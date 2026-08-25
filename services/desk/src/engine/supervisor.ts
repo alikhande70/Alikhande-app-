@@ -18,6 +18,7 @@ import type { Projector } from '../ledger/projections.js';
 import type { Clock } from '../sim/clock.js';
 import type { DeskState } from './state.js';
 import { KeyedMutex } from './lock.js';
+import { recordOrderEvent } from './record.js';
 
 /**
  * The execution supervisor.
@@ -129,6 +130,34 @@ export class ExecutionSupervisor {
   constructor(private readonly deps: SupervisorDeps) {}
 
   /**
+   * The one route an order event takes into the ledger.
+   *
+   * Applies it, records it together with any anomalies atomically, and
+   * escalates. Nothing in this service should append an `order.event` directly.
+   */
+  private record(intentId: string, event: D.OrderEvent): void {
+    recordOrderEvent(
+      {
+        ledger: this.deps.ledger,
+        projector: this.deps.projector,
+        log: this.deps.log,
+        ...(this.deps.onAnomaly !== undefined ? { onAnomaly: this.deps.onAnomaly } : {}),
+      },
+      intentId,
+      event,
+    );
+  }
+
+  /**
+   * Apply an event that arrived from the venue's own stream — a fill, an order
+   * update. Public because the broker wiring needs it, and because routing it
+   * anywhere else would recreate the defect this exists to prevent.
+   */
+  applyVenueEvent(intentId: string, event: D.OrderEvent): void {
+    this.record(intentId, event);
+  }
+
+  /**
    * Evaluate risk and sizing without sending anything.
    * Shares every line of logic with `submit`, so a preview can never disagree
    * with what enforcement will do.
@@ -231,13 +260,11 @@ export class ExecutionSupervisor {
         authorisedAt: clock.now(),
       });
     }
-    pre.push({
-      kind: 'order.event',
-      intentId: cmd.intentId,
-      event: toWireOrderEvent({ type: 'submit.started', at: clock.now() }),
-    });
     ledger.appendAll(pre);
     projector.catchUp();
+    // Separate from the batch above so it goes through the one route that also
+    // records and escalates anomalies.
+    this.record(cmd.intentId, { type: 'submit.started', at: clock.now() });
 
     // --- 6. Transmit -------------------------------------------------------
     const brokerReq: BrokerOrderRequest = {
@@ -287,17 +314,12 @@ export class ExecutionSupervisor {
 
     switch (result.outcome) {
       case 'acked': {
-        ledger.append({
-          kind: 'order.event',
-          intentId,
-          event: toWireOrderEvent({
-            type: 'submit.acked',
-            at: result.at,
-            venueOrderId: result.venueOrderId,
-            ...(result.venueStatus !== undefined ? { venueStatus: result.venueStatus } : {}),
-          }),
+        this.record(intentId, {
+          type: 'submit.acked',
+          at: result.at,
+          venueOrderId: result.venueOrderId,
+          ...(result.venueStatus !== undefined ? { venueStatus: result.venueStatus } : {}),
         });
-        projector.catchUp();
 
         // The acknowledgement is itself a venue observation. When it reports
         // fills, that information must not be dropped on the floor: some venues
@@ -312,17 +334,12 @@ export class ExecutionSupervisor {
         if (D.Decimal.gt(result.filledQty, D.Decimal.ZERO)) {
           const local = projector.loadOrderRecord(intentId);
           if (local !== undefined && D.Decimal.gt(result.filledQty, local.filledQty)) {
-            ledger.append({
-              kind: 'order.event',
-              intentId,
-              event: toWireOrderEvent({
-                type: 'venue.observed',
-                at: result.at,
-                venueState: result.state,
-                filledQty: result.filledQty,
-              }),
+            this.record(intentId, {
+              type: 'venue.observed',
+              at: result.at,
+              venueState: result.state,
+              filledQty: result.filledQty,
             });
-            projector.catchUp();
             log.warn(
               {
                 intentId,
@@ -344,16 +361,11 @@ export class ExecutionSupervisor {
       }
 
       case 'rejected': {
-        ledger.append({
-          kind: 'order.event',
-          intentId,
-          event: toWireOrderEvent({
-            type: 'submit.rejected',
-            at: result.at,
-            reason: `${result.code ?? 'REJECTED'}: ${result.reason}`,
-          }),
+        this.record(intentId, {
+          type: 'submit.rejected',
+          at: result.at,
+          reason: `${result.code ?? 'REJECTED'}: ${result.reason}`,
         });
-        projector.catchUp();
         return {
           intentId,
           accepted: false,
@@ -373,16 +385,11 @@ export class ExecutionSupervisor {
       }
 
       case 'ambiguous': {
-        ledger.append({
-          kind: 'order.event',
-          intentId,
-          event: toWireOrderEvent({
-            type: 'submit.ambiguous',
-            at: result.at,
-            reason: result.reason,
-          }),
+        this.record(intentId, {
+          type: 'submit.ambiguous',
+          at: result.at,
+          reason: result.reason,
         });
-        projector.catchUp();
         const canResolve = supportsSafeRetry(broker.capabilities);
         log.warn({ intentId, reason: result.reason, canResolve }, 'submit outcome unknown');
         if (canResolve) this.deps.onUnknown(intentId, clientOrderId);

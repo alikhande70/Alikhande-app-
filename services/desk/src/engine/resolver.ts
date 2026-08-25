@@ -2,7 +2,7 @@ import type { OrderState } from '@keel/core';
 import type { Database as Db } from 'better-sqlite3';
 import type { Logger } from 'pino';
 import type { BrokerPort } from '../broker/port.js';
-import { toWireOrderEvent } from '../ledger/events.js';
+import { recordOrderEvent } from './record.js';
 import type { Ledger } from '../ledger/ledger.js';
 import type { Projector } from '../ledger/projections.js';
 import { clientOrderIdFor } from './supervisor.js';
@@ -55,12 +55,27 @@ export interface ResolverDeps {
   readonly log: Logger;
   readonly onEscalate: (intentId: string, attempts: number, detail: string) => void;
   readonly onResolved: (intentId: string, how: 'found' | 'absent') => void;
+  readonly onAnomaly?: (intentId: string, anomaly: import('@keel/core').Anomaly) => void;
 }
 
 export class UnknownResolver {
   private readonly jobs = new Map<string, Job>();
 
   constructor(private readonly deps: ResolverDeps) {}
+
+  /** The one route an order event takes into the ledger. See record.ts. */
+  private record(intentId: string, event: import('@keel/core').OrderEvent): void {
+    recordOrderEvent(
+      {
+        ledger: this.deps.ledger,
+        projector: this.deps.projector,
+        log: this.deps.log,
+        ...(this.deps.onAnomaly !== undefined ? { onAnomaly: this.deps.onAnomaly } : {}),
+      },
+      intentId,
+      event,
+    );
+  }
 
   get activeJobs(): number {
     return this.jobs.size;
@@ -141,19 +156,14 @@ export class UnknownResolver {
 
     if (lookup.found === true) {
       const o = lookup.order;
-      ledger.append({
-        kind: 'order.event',
-        intentId: job.intentId,
-        event: toWireOrderEvent({
-          type: 'resolution.found',
-          at: clock.now(),
-          venueOrderId: o.venueOrderId,
-          venueState: o.state as OrderState,
-          filledQty: o.filledQty,
-          ...(o.avgFillPrice !== undefined ? { avgPrice: o.avgFillPrice } : {}),
-        }),
+      this.record(job.intentId, {
+        type: 'resolution.found',
+        at: clock.now(),
+        venueOrderId: o.venueOrderId,
+        venueState: o.state as OrderState,
+        filledQty: o.filledQty,
+        ...(o.avgFillPrice !== undefined ? { avgPrice: o.avgFillPrice } : {}),
       });
-      projector.catchUp();
       log.info(
         { intentId: job.intentId, venueOrderId: o.venueOrderId, state: o.state },
         'unknown outcome resolved: the venue had it',
@@ -173,18 +183,13 @@ export class UnknownResolver {
         job.lastNegativeAt = now;
       }
       if (job.negatives >= ABSENCE_CONFIRMATIONS) {
-        ledger.append({
-          kind: 'order.event',
-          intentId: job.intentId,
-          event: toWireOrderEvent({
-            type: 'resolution.absent',
-            at: now,
-            evidence:
-              `${job.negatives} consecutive negative lookups for ${job.clientOrderId}, ` +
-              `at least ${ABSENCE_SPACING_MS}ms apart, on a healthy connection`,
-          }),
+        this.record(job.intentId, {
+          type: 'resolution.absent',
+          at: now,
+          evidence:
+            `${job.negatives} consecutive negative lookups for ${job.clientOrderId}, ` +
+            `at least ${ABSENCE_SPACING_MS}ms apart, on a healthy connection`,
         });
-        projector.catchUp();
         log.info({ intentId: job.intentId }, 'unknown outcome resolved: the venue never had it');
         this.deps.onResolved(job.intentId, 'absent');
         this.stop(job.intentId);

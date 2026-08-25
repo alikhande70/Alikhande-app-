@@ -46,6 +46,11 @@ export interface ServerDeps {
   readonly hub: RealtimeHub;
   readonly auth: Authenticator;
   readonly health: () => Record<string, unknown>;
+  /** Wired in main.ts, because cancelling needs the supervisor's event route. */
+  readonly cancelOrder: (
+    intentId: string,
+    reply: FastifyReply,
+  ) => Promise<Record<string, unknown>>;
   readonly copilotAsk?: (question: string, conversationId?: string) => Promise<unknown>;
 }
 
@@ -259,19 +264,16 @@ export async function buildServer(deps: ServerDeps): Promise<FastifyInstance> {
     };
   });
 
-  app.post('/orders/:intentId/cancel', async (req) => {
+  app.post('/orders/:intentId/cancel', async (req, reply) => {
     const { intentId } = z.object({ intentId: z.string() }).parse(req.params);
-    const record = deps.projector.loadOrderRecord(intentId);
-    if (record === undefined) {
-      return { ok: false, problem: { code: 'NOT_FOUND', detail: 'no such intent' } };
-    }
-    return { ok: true, state: record.state, note: 'cancel requested; watch the socket for the outcome' };
+    return deps.cancelOrder(intentId, reply);
   });
 
   app.post('/positions/:positionId/close', async (req) => {
     const { positionId } = z.object({ positionId: z.string() }).parse(req.params);
-    const report = await deps.guard.flatten('manual', `close ${positionId} requested by operator`);
-    return report;
+    // closeOne, not flatten. Routing this to flatten would close the whole book
+    // when the operator asked for one row — see Guard.closeOne.
+    return deps.guard.closeOne(positionId, 'requested by operator');
   });
 
   app.post('/panic', async (req) => {

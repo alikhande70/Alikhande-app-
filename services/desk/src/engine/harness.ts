@@ -148,7 +148,7 @@ export function createHarness(opts: HarnessOptions = {}): Harness {
     onAnomaly: (intentId, anomaly) => anomalies.push({ intentId, anomaly }),
   });
 
-  // Broker events feed the ledger, exactly as the production wiring does.
+  // Registered after the supervisor exists, because fills route through it.
   const detach = broker.on((e) => {
     switch (e.type) {
       case 'quote':
@@ -157,18 +157,16 @@ export function createHarness(opts: HarnessOptions = {}): Harness {
       case 'fill': {
         const intentId = intentFromClientOrderId(ledger, e.clientOrderId);
         if (intentId === undefined) break;
-        ledger.append({
-          kind: 'order.event',
-          intentId,
-          event: {
-            type: 'fill',
-            at: e.at,
-            fillId: e.fillId,
-            qty: D.Decimal.toString(e.qty),
-            price: D.Decimal.toString(e.price),
-          },
+        // Through the supervisor, which is the single route an order event
+        // takes into the ledger — the same route production uses, so anomalies
+        // are recorded and escalated here too.
+        supervisor.applyVenueEvent(intentId, {
+          type: 'fill',
+          at: e.at,
+          fillId: e.fillId,
+          qty: e.qty,
+          price: e.price,
         });
-        projector.catchUp();
         break;
       }
       case 'position':

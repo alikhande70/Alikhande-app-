@@ -48,8 +48,23 @@ export interface OpenPositionRisk {
   readonly canonical: string;
   readonly side: Side;
   readonly volume: Dec;
-  /** Risk to the stop in account currency. Undefined means *no stop* — unbounded. */
+  /**
+   * Risk to the stop in account currency. Undefined means the risk could not be
+   * put on the aggregate scale — see `riskUnknownReason` for which kind of
+   * "could not". Both block, but for different reasons and with different
+   * remedies, so they must not read the same.
+   */
   readonly riskAccount?: Dec;
+  /**
+   * Why `riskAccount` is absent.
+   *
+   * `no-stop` means the position genuinely has unbounded downside and needs a
+   * stop attached. `cannot-value` means it has a stop but the desk could not
+   * convert the loss into account currency — a data problem, not a risk one.
+   * Telling an operator to "attach a stop" to a position that already has one
+   * teaches them the warnings are wrong.
+   */
+  readonly riskUnknownReason?: 'no-stop' | 'cannot-value';
 }
 
 export interface AccountSnapshot {
@@ -272,7 +287,9 @@ export function evaluate(req: RiskRequest, ctx: RiskContext): RiskDecision {
     // Aggregate open risk. A position with no stop has *unbounded* downside;
     // there is no number to add. Substituting margin, or zero, would produce a
     // total that reads as safe and is not — so the rule refuses instead.
-    const stopless = ctx.openPositions.filter((p) => p.riskAccount === undefined);
+    const unvalued = ctx.openPositions.filter((p) => p.riskAccount === undefined);
+    const stopless = unvalued.filter((p) => p.riskUnknownReason !== 'cannot-value');
+    const unpriceable = unvalued.filter((p) => p.riskUnknownReason === 'cannot-value');
     if (stopless.length > 0) {
       checks.push(
         check(
@@ -282,6 +299,19 @@ export function evaluate(req: RiskRequest, ctx: RiskContext): RiskDecision {
           pct(policy.maxOpenRiskPct),
           `${stopless.map((p) => p.canonical).join(', ')} has no stop, so total open risk is ` +
             'unbounded and cannot be compared to a cap. Protect it before adding exposure.',
+        ),
+      );
+    } else if (unpriceable.length > 0) {
+      checks.push(
+        check(
+          'aggregate-open-risk',
+          'block',
+          `${unpriceable.length} position(s) whose risk cannot be valued`,
+          pct(policy.maxOpenRiskPct),
+          `${unpriceable.map((p) => p.canonical).join(', ')} has a stop, but the desk cannot ` +
+            'convert its risk into account currency — an FX rate is missing or stale. This is a ' +
+            'data problem, not an unprotected position: do not go attaching stops that are ' +
+            'already there.',
         ),
       );
     } else {

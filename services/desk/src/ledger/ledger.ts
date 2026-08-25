@@ -156,14 +156,31 @@ export class Ledger {
     return { seq, ts, kind: event.kind, stream, event, hash, prevHash };
   }
 
-  /** Append several events atomically. Either all land or none do. */
+  /**
+   * Append several events atomically. Either all land or none do.
+   *
+   * The in-memory chain head is restored on failure. `append` advances
+   * `lastSeq` and `lastHash` as it goes, so a transaction that rolls back after
+   * two of three events would otherwise leave the database at row N while this
+   * object believes it is at N+2 — and every subsequent append would write a
+   * `prev_hash` that does not match, silently breaking the chain until the next
+   * `verifyChain`. Found in audit, not by a test.
+   */
   appendAll(events: readonly LedgerEvent[], at?: number): readonly LedgerRow[] {
+    const savedSeq = this.lastSeq;
+    const savedHash = this.lastHash;
     const tx = this.db.transaction((evs: readonly LedgerEvent[]) => {
       const rows: LedgerRow[] = [];
       for (const e of evs) rows.push(this.append(e, at));
       return rows;
     });
-    return tx(events);
+    try {
+      return tx(events);
+    } catch (err) {
+      this.lastSeq = savedSeq;
+      this.lastHash = savedHash;
+      throw err;
+    }
   }
 
   /** True when this event kind must be on disk before the next action. */

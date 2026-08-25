@@ -210,8 +210,21 @@ export class DeskState {
     const account = this.getAccount();
     return this.openPositions().map((p) => {
       const spec = this.getInstrument(p.canonical);
-      if (p.stopPrice === undefined || spec === undefined || account === undefined) {
-        return { canonical: p.canonical, side: p.side, volume: p.volume };
+      if (p.stopPrice === undefined) {
+        return {
+          canonical: p.canonical,
+          side: p.side,
+          volume: p.volume,
+          riskUnknownReason: 'no-stop' as const,
+        };
+      }
+      if (spec === undefined || account === undefined) {
+        return {
+          canonical: p.canonical,
+          side: p.side,
+          volume: p.volume,
+          riskUnknownReason: 'cannot-value' as const,
+        };
       }
       const distance = D.Decimal.abs(D.Decimal.sub(p.entryPrice, p.stopPrice));
       const quoteLoss = D.priceMoveValueQuote(spec, p.volume, distance);
@@ -223,7 +236,15 @@ export class DeskState {
         now: this.clock.now(),
         maxAgeMs: 60_000,
       });
-      if (!conv.ok) return { canonical: p.canonical, side: p.side, volume: p.volume };
+      if (!conv.ok) {
+        // It has a stop; we just cannot price it right now.
+        return {
+          canonical: p.canonical,
+          side: p.side,
+          volume: p.volume,
+          riskUnknownReason: 'cannot-value' as const,
+        };
+      }
       return {
         canonical: p.canonical,
         side: p.side,

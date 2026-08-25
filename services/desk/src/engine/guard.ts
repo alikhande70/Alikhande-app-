@@ -246,6 +246,111 @@ export class Guard {
   }
 
   /**
+   * Close ONE position, and confirm it against the venue.
+   *
+   * Deliberately separate from `flatten`. An earlier version of the HTTP
+   * surface routed "close this position" to `flatten`, so closing a single
+   * position would have closed the entire book — the operator taps one row and
+   * loses everything. Found in audit. The two operations have different blast
+   * radii and must not share an implementation.
+   */
+  async closeOne(positionId: string, reason: string): Promise<FlattenReport> {
+    const { ledger, projector, broker, clock, log } = this.deps;
+    const requestedAt = clock.now();
+
+    if (!broker.isConnected()) {
+      return {
+        requestedAt,
+        trigger: 'manual',
+        positionsTargeted: 1,
+        positionsClosed: 0,
+        attempts: 0,
+        status: 'failed',
+        detail: 'broker not connected; nothing was sent',
+      };
+    }
+
+    ledger.append({
+      kind: 'guard.flattenRequested',
+      reason: `close single position: ${reason}`,
+      positions: [positionId],
+      at: requestedAt,
+    });
+    projector.catchUp();
+
+    const maxAttempts = this.deps.maxFlattenAttempts ?? 4;
+    let lastDetail = '';
+    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+      let stillOpen: boolean;
+      try {
+        stillOpen = (await broker.getPositions()).some((p) => p.positionId === positionId);
+      } catch (err) {
+        lastDetail = err instanceof Error ? err.message : String(err);
+        await clock.sleep(backoffMs(attempt));
+        continue;
+      }
+      if (!stillOpen) {
+        return {
+          requestedAt,
+          trigger: 'manual',
+          positionsTargeted: 1,
+          positionsClosed: 1,
+          attempts: attempt,
+          status: 'complete',
+          detail: 'venue no longer reports this position',
+        };
+      }
+
+      try {
+        const result = await broker.closePosition(positionId, undefined, `close-${positionId}`);
+        if (result.outcome === 'ambiguous') {
+          // Not counted as done, and not counted as failed. The next pass
+          // re-reads from the venue, which settles it.
+          log.warn({ positionId }, 'close outcome unknown; re-checking');
+        } else if (result.outcome === 'rejected') {
+          lastDetail = result.reason;
+        }
+      } catch (err) {
+        lastDetail = err instanceof Error ? err.message : String(err);
+      }
+      await clock.sleep(backoffMs(attempt));
+    }
+
+    let remains = true;
+    try {
+      remains = (await broker.getPositions()).some((p) => p.positionId === positionId);
+    } catch {
+      remains = true;
+    }
+    if (!remains) {
+      return {
+        requestedAt,
+        trigger: 'manual',
+        positionsTargeted: 1,
+        positionsClosed: 1,
+        attempts: maxAttempts,
+        status: 'complete',
+        detail: 'venue no longer reports this position',
+      };
+    }
+    this.deps.onAlert({
+      kind: 'execution',
+      severity: 'critical',
+      title: 'Position could not be closed',
+      body: `${positionId} is still open after ${maxAttempts} attempts. ${lastDetail}. Check the broker terminal now.`,
+    });
+    return {
+      requestedAt,
+      trigger: 'manual',
+      positionsTargeted: 1,
+      positionsClosed: 0,
+      attempts: maxAttempts,
+      status: 'partial',
+      detail: `still open: ${lastDetail || 'no reason given by the venue'}`,
+    };
+  }
+
+  /**
    * Close everything, and keep trying until the venue says flat.
    *
    * One attempt is not a flatten. The moment this runs is the moment the

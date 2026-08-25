@@ -10,7 +10,7 @@ import type {
 } from '@keel/core';
 import type { Logger } from 'pino';
 import type { BrokerPort } from '../broker/port.js';
-import { toWireOrderEvent } from '../ledger/events.js';
+import { recordOrderEvent } from './record.js';
 import type { Ledger } from '../ledger/ledger.js';
 import type { Projector } from '../ledger/projections.js';
 import type { Clock } from '../sim/clock.js';
@@ -37,6 +37,7 @@ export interface ReconcilerDeps {
   readonly clock: Clock;
   readonly log: Logger;
   readonly onDivergence: (d: Divergence, id: string, isNew: boolean) => void;
+  readonly onAnomaly?: (intentId: string, anomaly: import('@keel/core').Anomaly) => void;
   /** Grace period before an in-flight order counts as missing at the venue. */
   readonly settlementGraceMs?: number;
   readonly intervalMs?: number;
@@ -230,16 +231,16 @@ export class Reconciler {
         (o) => o.venueOrderId === d.venueOrderId || o.clientOrderId === d.intentId,
       );
       if (match === undefined) continue;
-      ledger.append({
-        kind: 'order.event',
-        intentId: d.intentId,
-        event: toWireOrderEvent({
-          type: 'venue.observed',
-          at,
-          venueState: match.state,
-          filledQty: match.filledQty,
-        }),
-      });
+      recordOrderEvent(
+        {
+          ledger,
+          projector,
+          log,
+          ...(this.deps.onAnomaly !== undefined ? { onAnomaly: this.deps.onAnomaly } : {}),
+        },
+        d.intentId,
+        { type: 'venue.observed', at, venueState: match.state, filledQty: match.filledQty },
+      );
     }
     projector.catchUp();
 

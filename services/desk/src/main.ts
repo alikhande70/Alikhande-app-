@@ -106,6 +106,23 @@ export async function startDesk(config: DeskConfig = loadConfig()): Promise<Desk
     onAlert: (a) => hub.publish('alerts', [a]),
   });
 
+  /**
+   * One place anomalies become alerts, shared by the supervisor, the resolver
+   * and the reconciler — so a contradiction surfaces identically whichever
+   * component noticed it.
+   */
+  function raiseAnomaly(intentId: string, anomaly: D.Anomaly): void {
+    if (anomaly.severity !== 'critical') return;
+    alerts.raise({
+      kind: 'anomaly',
+      severity: 'critical',
+      title: `Broker contradiction on ${intentId.slice(0, 8)}`,
+      body: anomaly.detail,
+      route: `/orders/${intentId}`,
+      dedupeKey: `anomaly:${intentId}:${anomaly.kind}`,
+    });
+  }
+
   const resolver = new UnknownResolver({
     ledger,
     projector,
@@ -124,6 +141,7 @@ export async function startDesk(config: DeskConfig = loadConfig()): Promise<Desk
         dedupeKey: `unresolved:${intentId}`,
       });
     },
+    onAnomaly: (intentId, anomaly) => raiseAnomaly(intentId, anomaly),
     onResolved: (intentId, how) => {
       alerts.clear(`unresolved:${intentId}`);
       log.info({ intentId, how }, 'unknown outcome resolved');
@@ -139,17 +157,7 @@ export async function startDesk(config: DeskConfig = loadConfig()): Promise<Desk
     clock,
     log,
     onUnknown: (intentId, clientOrderId) => resolver.start(intentId, clientOrderId),
-    onAnomaly: (intentId, anomaly) => {
-      if (anomaly.severity !== 'critical') return;
-      alerts.raise({
-        kind: 'anomaly',
-        severity: 'critical',
-        title: `Broker contradiction on ${intentId}`,
-        body: anomaly.detail,
-        route: `/orders/${intentId}`,
-        dedupeKey: `anomaly:${intentId}:${anomaly.kind}`,
-      });
-    },
+    onAnomaly: (intentId, anomaly) => raiseAnomaly(intentId, anomaly),
   });
 
   const guard = new Guard({
@@ -171,6 +179,7 @@ export async function startDesk(config: DeskConfig = loadConfig()): Promise<Desk
     clock,
     log,
     intervalMs: config.reconcileIntervalMs,
+    onAnomaly: (intentId, anomaly) => raiseAnomaly(intentId, anomaly),
     onDivergence: (d, id, isNew) => {
       if (!isNew) return;
       hub.publish('divergences', reconciler.openDivergences);
@@ -236,14 +245,63 @@ export async function startDesk(config: DeskConfig = loadConfig()): Promise<Desk
         void guard.evaluate();
         hub.publish('account', buildSnapshot(serverDeps).account);
         break;
-      case 'fill':
-      case 'order':
+      case 'fill': {
+        // Routed through the supervisor, which is the single place an order
+        // event enters the ledger — and therefore the only place that records
+        // and escalates the anomalies the state machine computes.
+        const intentId = intentForClientOrderId(ledger, e.clientOrderId);
+        if (intentId !== undefined) {
+          supervisor.applyVenueEvent(intentId, {
+            type: 'fill',
+            at: e.at,
+            fillId: e.fillId,
+            qty: e.qty,
+            price: e.price,
+          });
+        } else {
+          log.warn({ clientOrderId: e.clientOrderId }, 'fill for an order this desk did not place');
+        }
+        hub.publish('positions', buildSnapshot(serverDeps).positions);
+        hub.publish('orders', buildSnapshot(serverDeps).orders);
+        break;
+      }
       case 'position':
-      case 'positionClosed':
-        // These are folded in by the reconciler and the supervisor; publishing
-        // the projection rather than the raw event keeps one shape on the wire.
+        ledger.append({
+          kind: 'position.observed',
+          positionId: e.position.positionId,
+          canonical: e.position.canonical,
+          symbol: e.position.symbol,
+          side: e.position.side,
+          volume: D.Decimal.toString(e.position.volume),
+          entryPrice: D.Decimal.toString(e.position.entryPrice),
+          openedAt: e.position.openedAt,
+          foreign: e.position.clientOrderId === undefined,
+          asOf: e.at,
+          ...(e.position.stopPrice !== undefined
+            ? { stopPrice: D.Decimal.toString(e.position.stopPrice) }
+            : {}),
+          ...(e.position.takeProfitPrice !== undefined
+            ? { takeProfitPrice: D.Decimal.toString(e.position.takeProfitPrice) }
+            : {}),
+        });
         projector.catchUp();
         hub.publish('positions', buildSnapshot(serverDeps).positions);
+        break;
+      case 'positionClosed':
+        ledger.append({
+          kind: 'position.closed',
+          positionId: e.positionId,
+          exitPrice: D.Decimal.toString(e.exitPrice),
+          netPnl: D.Decimal.toString(e.netPnl),
+          costs: D.Decimal.toString(e.costs),
+          closedAt: e.at,
+        });
+        projector.catchUp();
+        hub.publish('positions', buildSnapshot(serverDeps).positions);
+        break;
+      case 'order':
+        projector.catchUp();
+        hub.publish('orders', buildSnapshot(serverDeps).orders);
         break;
       default:
         break;
@@ -271,6 +329,73 @@ export async function startDesk(config: DeskConfig = loadConfig()): Promise<Desk
   const reference =
     config.referenceProvider === 'cryptocom' ? new CryptoComProvider({ clock }) : undefined;
 
+  /**
+   * Cancel an order, for real.
+   *
+   * An earlier version of this endpoint read the order's state and returned a
+   * note saying a cancel had been requested, without sending anything. That is
+   * worse than an unimplemented endpoint: the operator is told their cancel is
+   * in flight while the order is still working. Found in audit.
+   *
+   * Like every other command path, an ambiguous outcome is reported as unknown
+   * rather than as failure — a cancel that timed out may well have landed.
+   */
+  async function cancelOrder(intentId: string, reply: { status: (c: number) => unknown }) {
+    projector.catchUp();
+    const record = projector.loadOrderRecord(intentId);
+    if (record === undefined) {
+      reply.status(404);
+      return { code: 'NOT_FOUND', title: 'No such intent', detail: intentId };
+    }
+    if (record.venueOrderId === undefined) {
+      reply.status(409);
+      return {
+        code: 'NOT_AT_VENUE',
+        title: 'Nothing to cancel yet',
+        detail:
+          `This order is ${record.state} and has no venue id, so there is nothing for the broker ` +
+          'to cancel. If its outcome is unknown, resolution is already chasing it.',
+      };
+    }
+
+    supervisor.applyVenueEvent(intentId, { type: 'cancel.requested', at: clock.now() });
+
+    const result = await broker.cancelOrder(record.venueOrderId, clientOrderIdFor(intentId));
+    switch (result.outcome) {
+      case 'acked':
+        supervisor.applyVenueEvent(intentId, { type: 'cancel.acked', at: result.at });
+        return { ok: true, state: 'CANCELLED', detail: 'the broker acknowledged the cancel' };
+      case 'rejected':
+        supervisor.applyVenueEvent(intentId, {
+          type: 'cancel.rejected',
+          at: result.at,
+          reason: result.reason,
+        });
+        reply.status(409);
+        return {
+          code: result.code ?? 'CANCEL_REJECTED',
+          title: 'The broker refused the cancel',
+          detail: `${result.reason}. The order is still live.`,
+          outcomeUnknown: false,
+        };
+      case 'ambiguous':
+        supervisor.applyVenueEvent(intentId, {
+          type: 'submit.ambiguous',
+          at: result.at,
+          reason: `cancel: ${result.reason}`,
+        });
+        reply.status(202);
+        return {
+          code: 'OUTCOME_UNKNOWN',
+          title: 'Cancel outcome unknown',
+          detail:
+            `${result.reason}. The cancel may or may not have reached the broker. Reconciliation ` +
+            'will settle it — do not resend.',
+          outcomeUnknown: true,
+        };
+    }
+  }
+
   const serverDeps = {
     config,
     clock,
@@ -285,6 +410,7 @@ export async function startDesk(config: DeskConfig = loadConfig()): Promise<Desk
     hub,
     auth,
     health,
+    cancelOrder,
   };
 
   // --- Topics ---------------------------------------------------------------
@@ -388,6 +514,19 @@ function buildBroker(config: DeskConfig, clock: typeof systemClock): BrokerPort 
           'See docs/VERIFICATION.md for the status of each adapter.',
       );
   }
+}
+
+/** Find the intent that produced a venue-side client order id. */
+function intentForClientOrderId(ledger: Ledger, clientOrderId: string | undefined): string | undefined {
+  if (clientOrderId === undefined) return undefined;
+  const row = ledger.db
+    .prepare(
+      `SELECT stream FROM ledger
+       WHERE kind = 'intent.created' AND json_extract(payload, '$.intent.clientOrderId') = ?
+       LIMIT 1`,
+    )
+    .get(clientOrderId) as { stream: string } | undefined;
+  return row?.stream;
 }
 
 function orderRow(ledger: Ledger, intentId: string): Record<string, unknown> {
