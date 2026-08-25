@@ -150,10 +150,30 @@ export async function buildServer(deps: ServerDeps): Promise<FastifyInstance> {
   // --- Enrolment and health -------------------------------------------------
 
   app.post('/enrol', async (req) => {
-    const body = z.object({ code: z.string(), publicKey: z.string() }).parse(req.body);
-    const device = deps.auth.enrol(body.code, body.publicKey);
-    deps.log.info({ deviceId: device.deviceId, label: device.label }, 'device enrolled');
-    return { deviceId: device.deviceId, label: device.label, enrolledAt: device.enrolledAt };
+    const body = z
+      .object({
+        code: z.string(),
+        publicKey: z.string(),
+        /**
+         * The device's own claim that the key lives in a security processor.
+         * Recorded, never trusted — the desk cannot verify it, but the operator
+         * should be able to see which of their devices claims what.
+         */
+        hardwareBacked: z.boolean().default(false),
+      })
+      .parse(req.body);
+    const device = deps.auth.enrol(body.code, body.publicKey, body.hardwareBacked);
+    deps.log.info(
+      { deviceId: device.deviceId, label: device.label, keyKind: device.keyKind },
+      'device enrolled',
+    );
+    return {
+      deviceId: device.deviceId,
+      label: device.label,
+      keyKind: device.keyKind,
+      claimsHardwareBacked: device.claimsHardwareBacked,
+      enrolledAt: device.enrolledAt,
+    };
   });
 
   app.get('/health', async () => deps.health());

@@ -8,11 +8,22 @@ import type { Clock } from '../sim/clock.js';
  * surface that exists only to serve users who forget passwords, and there is
  * exactly one user here who will not.
  *
- * Instead: the device holds a non-extractable Ed25519 private key in its secure
- * enclave and signs every request. There is no bearer secret to phish, log, or
- * leak in a backup. Commands that can move money additionally consume a
- * server-issued single-use nonce, so a captured request cannot be replayed even
- * by someone who owns the transport.
+ * Instead: the device holds a private key and signs every request. There is no
+ * bearer secret to phish, log, or leak in a backup. Commands that can move money
+ * additionally consume a server-issued single-use nonce, so a captured request
+ * cannot be replayed even by someone who owns the transport.
+ *
+ * **Two key types are accepted, and the difference matters.**
+ *
+ * - **ECDSA P-256** is what Apple's Secure Enclave and Android StrongBox
+ *   actually support. A key generated there is genuinely non-extractable: the
+ *   private key never exists outside the security processor, so a compromised
+ *   app process cannot steal it. This is the preferred type.
+ * - **Ed25519** is accepted for desk-side tooling and for devices without an
+ *   enclave. The key then lives in the Keychain/Keystore — encrypted at rest,
+ *   but readable by the app process. That is a weaker guarantee and is recorded
+ *   as such on the enrolment, so `listDevices` can tell the operator which of
+ *   their devices holds a hardware-backed key and which does not.
  */
 
 export class AuthError extends Error {
@@ -26,10 +37,23 @@ export class AuthError extends Error {
   }
 }
 
+export type KeyKind =
+  /** ECDSA P-256. Can be generated non-extractably in a Secure Enclave. */
+  | 'p256'
+  /** Ed25519. Software key held in the Keychain/Keystore. */
+  | 'ed25519';
+
 export interface EnrolledDevice {
   readonly deviceId: string;
   /** SPKI DER, base64. */
   readonly publicKey: string;
+  readonly keyKind: KeyKind;
+  /**
+   * Whether the device attested that this key lives in a security processor.
+   * Recorded rather than trusted: it is a claim by the device, useful for the
+   * operator to see, not something the desk can verify by itself.
+   */
+  readonly claimsHardwareBacked: boolean;
   readonly label: string;
   readonly enrolledAt: number;
 }
@@ -103,7 +127,7 @@ export class Authenticator {
     return code;
   }
 
-  enrol(code: string, publicKeyBase64: string): EnrolledDevice {
+  enrol(code: string, publicKeyBase64: string, claimsHardwareBacked = false): EnrolledDevice {
     const entry = this.enrolmentCodes.get(code.toUpperCase());
     if (entry === undefined) throw new AuthError('unknown enrolment code', 'BAD_CODE', 403);
     // Consumed whether or not the rest succeeds, so a code cannot be brute-forced
@@ -114,14 +138,32 @@ export class Authenticator {
     }
 
     let deviceId: string;
+    let keyKind: KeyKind;
     try {
       const key = createPublicKey({
         key: Buffer.from(publicKeyBase64, 'base64'),
         format: 'der',
         type: 'spki',
       });
-      if (key.asymmetricKeyType !== 'ed25519') {
-        throw new AuthError('device key must be Ed25519', 'BAD_KEY', 400);
+      if (key.asymmetricKeyType === 'ed25519') {
+        keyKind = 'ed25519';
+      } else if (key.asymmetricKeyType === 'ec') {
+        const curve = (key.asymmetricKeyDetails?.namedCurve ?? '').toLowerCase();
+        if (curve !== 'prime256v1' && curve !== 'p-256' && curve !== 'secp256r1') {
+          throw new AuthError(
+            `elliptic-curve keys must be P-256 (got ${curve || 'unknown'}); that is the curve ` +
+              'a Secure Enclave can hold non-extractably',
+            'BAD_KEY',
+            400,
+          );
+        }
+        keyKind = 'p256';
+      } else {
+        throw new AuthError(
+          `device key must be ECDSA P-256 or Ed25519, got ${String(key.asymmetricKeyType)}`,
+          'BAD_KEY',
+          400,
+        );
       }
       deviceId = createHash('sha256').update(publicKeyBase64).digest('hex').slice(0, 16);
     } catch (err) {
@@ -132,11 +174,18 @@ export class Authenticator {
     const device: EnrolledDevice = {
       deviceId,
       publicKey: publicKeyBase64,
+      keyKind,
+      claimsHardwareBacked,
       label: entry.label,
       enrolledAt: this.clock.now(),
     };
     this.devices.set(deviceId, device);
     return device;
+  }
+
+  /** Devices whose key is only software-protected. Surfaced to the operator. */
+  softwareOnlyDevices(): readonly EnrolledDevice[] {
+    return [...this.devices.values()].filter((d) => !d.claimsHardwareBacked);
   }
 
   /** Restore enrolments at boot. */
@@ -228,7 +277,15 @@ export class Authenticator {
         format: 'der',
         type: 'spki',
       });
-      ok = verify(null, message, key, Buffer.from(r.signature, 'base64'));
+      const sig = Buffer.from(r.signature, 'base64');
+      ok =
+        device.keyKind === 'ed25519'
+          ? // Ed25519 hashes internally; passing a digest algorithm is an error.
+            verify(null, message, key, sig)
+          : // P-256 signs a SHA-256 digest. `ieee-p1363` is the raw r||s form
+            // that WebCrypto and the platform enclave APIs produce; DER would
+            // silently fail to verify against them.
+            verify('sha256', message, { key, dsaEncoding: 'ieee-p1363' }, sig);
     } catch {
       ok = false;
     }

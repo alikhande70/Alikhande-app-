@@ -72,14 +72,85 @@ describe('enrolment', () => {
     expect(() => auth.enrol(code, makeDevice().publicKey)).toThrow(/expired/);
   });
 
-  it('refuses a key that is not Ed25519', () => {
+  it('refuses a key type neither an enclave nor the desk supports', () => {
     const clock = new TestClock(T0);
     const auth = new Authenticator(clock);
     const { publicKey } = generateKeyPairSync('rsa', { modulusLength: 2048 });
     const code = auth.createEnrolmentCode('iPhone');
     expect(() =>
       auth.enrol(code, publicKey.export({ format: 'der', type: 'spki' }).toString('base64')),
-    ).toThrow(/Ed25519/);
+    ).toThrow(/P-256 or Ed25519/);
+  });
+
+  it('refuses an EC key on a curve no enclave can hold', () => {
+    const clock = new TestClock(T0);
+    const auth = new Authenticator(clock);
+    const { publicKey } = generateKeyPairSync('ec', { namedCurve: 'secp384r1' });
+    const code = auth.createEnrolmentCode('iPhone');
+    expect(() =>
+      auth.enrol(code, publicKey.export({ format: 'der', type: 'spki' }).toString('base64')),
+    ).toThrow(/must be P-256/);
+  });
+
+  it('accepts an ECDSA P-256 key, which is what a Secure Enclave can hold', () => {
+    const clock = new TestClock(T0);
+    const auth = new Authenticator(clock);
+    const { publicKey } = generateKeyPairSync('ec', { namedCurve: 'prime256v1' });
+    const code = auth.createEnrolmentCode('iPhone');
+    const device = auth.enrol(
+      code,
+      publicKey.export({ format: 'der', type: 'spki' }).toString('base64'),
+      true,
+    );
+    expect(device.keyKind).toBe('p256');
+    expect(device.claimsHardwareBacked).toBe(true);
+    expect(auth.softwareOnlyDevices()).toHaveLength(0);
+  });
+
+  it('records a software-only key as such, so the operator can see the difference', () => {
+    const clock = new TestClock(T0);
+    const auth = new Authenticator(clock);
+    const code = auth.createEnrolmentCode('laptop CLI');
+    const device = auth.enrol(code, makeDevice().publicKey);
+    expect(device.keyKind).toBe('ed25519');
+    expect(device.claimsHardwareBacked).toBe(false);
+    expect(auth.softwareOnlyDevices().map((d) => d.deviceId)).toContain(device.deviceId);
+  });
+});
+
+describe('P-256 signing, the enclave path', () => {
+  function p256Device() {
+    const { publicKey, privateKey } = generateKeyPairSync('ec', { namedCurve: 'prime256v1' });
+    return {
+      publicKey: publicKey.export({ format: 'der', type: 'spki' }).toString('base64'),
+      // Raw r||s, as WebCrypto and the platform enclave APIs produce. DER would
+      // silently fail to verify, which is exactly the integration bug this pins.
+      signWith: (msg: string) =>
+        sign('sha256', Buffer.from(msg, 'utf8'), {
+          key: privateKey,
+          dsaEncoding: 'ieee-p1363',
+        }).toString('base64'),
+    };
+  }
+
+  it('verifies a P-256 signature in raw r||s form', () => {
+    const clock = new TestClock(T0);
+    const auth = new Authenticator(clock);
+    const device = p256Device();
+    const enrolled = auth.enrol(auth.createEnrolmentCode('iPhone'), device.publicKey, true);
+    const req = signedRequest(device, enrolled.deviceId, { method: 'GET', path: '/state' });
+    expect(auth.verifyRequest(req, false).keyKind).toBe('p256');
+  });
+
+  it('rejects a P-256 signature over the wrong message', () => {
+    const clock = new TestClock(T0);
+    const auth = new Authenticator(clock);
+    const device = p256Device();
+    const enrolled = auth.enrol(auth.createEnrolmentCode('iPhone'), device.publicKey, true);
+    const req = signedRequest(device, enrolled.deviceId, { body: '{"a":1}' });
+    expect(() => auth.verifyRequest({ ...req, bodyHash: hashBody('{"a":2}') }, false)).toThrow(
+      /signature does not verify/,
+    );
   });
 });
 
