@@ -41,7 +41,13 @@ export interface SocketEvents {
   /** A full replacement for a topic. Always safe to apply over anything. */
   onSnapshot: (topic: string, seq: number, payload: unknown, at: number) => void;
   /** An incremental update, already proven contiguous. */
-  onDelta: (topic: string, seq: number, upsert: unknown, remove: readonly string[], at: number) => void;
+  onDelta: (
+    topic: string,
+    seq: number,
+    upsert: unknown,
+    remove: readonly string[],
+    at: number,
+  ) => void;
   onState: (state: ConnectionState, detail?: string) => void;
   /**
    * A gap was detected locally. Distinct from a server-sent resync, because it
@@ -149,7 +155,8 @@ export class DeskSocket {
 
   private open(): void {
     this.setState('connecting');
-    const factory = this.opts.factory ?? ((url: string) => new WebSocket(url) as unknown as WebSocketLike);
+    const factory =
+      this.opts.factory ?? ((url: string) => new WebSocket(url) as unknown as WebSocketLike);
     let ws: WebSocketLike;
     try {
       ws = factory(this.opts.url);

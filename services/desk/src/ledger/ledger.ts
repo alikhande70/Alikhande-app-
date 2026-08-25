@@ -1,10 +1,10 @@
 import { createHash } from 'node:crypto';
 import { mkdirSync } from 'node:fs';
 import { dirname } from 'node:path';
-import Database from 'better-sqlite3';
 import type { Database as Db, Statement } from 'better-sqlite3';
-import { DURABLE_KINDS, streamOf } from './events.js';
+import Database from 'better-sqlite3';
 import type { LedgerEvent, LedgerEventKind } from './events.js';
+import { DURABLE_KINDS, streamOf } from './events.js';
 import { applyMigrations } from './schema.js';
 
 /**
@@ -242,7 +242,9 @@ export class Ledger {
    * and "the history is".
    */
   verifyChain(): { ok: true; rows: number } | { ok: false; failedAt: number; reason: string } {
-    const stmt = this.db.prepare('SELECT seq, ts, kind, stream, payload, prev_hash, hash FROM ledger ORDER BY seq');
+    const stmt = this.db.prepare(
+      'SELECT seq, ts, kind, stream, payload, prev_hash, hash FROM ledger ORDER BY seq',
+    );
     let prev = GENESIS_HASH;
     let expectedSeq = 1;
     let count = 0;
@@ -293,7 +295,9 @@ export class Ledger {
 
   setMeta(key: string, value: string): void {
     this.db
-      .prepare('INSERT INTO meta (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value')
+      .prepare(
+        'INSERT INTO meta (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value',
+      )
       .run(key, value);
   }
 

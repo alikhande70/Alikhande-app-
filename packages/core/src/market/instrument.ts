@@ -108,7 +108,12 @@ export function isOnTick(spec: InstrumentSpec, price: Dec): boolean {
 
 export type VolumeCheck =
   | { readonly ok: true; readonly volume: Dec }
-  | { readonly ok: false; readonly code: SpecErrorCode; readonly detail: string; readonly clamped?: Dec };
+  | {
+      readonly ok: false;
+      readonly code: SpecErrorCode;
+      readonly detail: string;
+      readonly clamped?: Dec;
+    };
 
 /**
  * Validate and normalise an order volume against the venue's constraints.
@@ -154,9 +159,7 @@ export function normalizeVolume(spec: InstrumentSpec, requested: Dec): VolumeChe
  */
 export function volumeAtVenuePrecision(spec: InstrumentSpec, volume: Dec): Dec {
   const stepScale = D.normalize(spec.volumeStep).s;
-  return volume.s > stepScale
-    ? D.rescale(volume, stepScale, 'down')
-    : D.rescale(volume, stepScale);
+  return volume.s > stepScale ? D.rescale(volume, stepScale, 'down') : D.rescale(volume, stepScale);
 }
 
 /** Notional exposure in the quote currency. */
@@ -202,6 +205,10 @@ export function insideFreezeLevel(spec: InstrumentSpec, market: Dec, price: Dec)
  */
 export const SPEC_MAX_AGE_MS = 24 * 60 * 60 * 1000;
 
-export function isSpecStale(spec: InstrumentSpec, now: number, maxAgeMs = SPEC_MAX_AGE_MS): boolean {
+export function isSpecStale(
+  spec: InstrumentSpec,
+  now: number,
+  maxAgeMs = SPEC_MAX_AGE_MS,
+): boolean {
   return now - spec.asOf > maxAgeMs;
 }

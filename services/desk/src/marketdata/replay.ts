@@ -28,7 +28,9 @@ export interface Recording {
   /** Wall-clock time the recording started, for reproducing session context. */
   readonly startedAt: number;
   readonly ticks: readonly RecordedTick[];
-  readonly bars?: Readonly<Record<string, readonly { t: number; o: string; h: string; l: string; c: string; v: string }[]>>;
+  readonly bars?: Readonly<
+    Record<string, readonly { t: number; o: string; h: string; l: string; c: string; v: string }[]>
+  >;
 }
 
 export interface ReplayOptions {
@@ -157,7 +159,9 @@ export class Recorder {
 
   constructor(
     private readonly name: string,
-    private readonly clock: Clock,
+    // Read once to anchor the recording's origin, never retained: a Recorder
+    // that held a clock field nobody reads would be public surface for nothing.
+    clock: Clock,
     private readonly maxTicks = 200_000,
   ) {
     this.startedAt = clock.now();

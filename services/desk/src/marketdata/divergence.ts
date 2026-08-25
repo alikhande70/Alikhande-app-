@@ -1,8 +1,7 @@
-import * as D from '@keel/core';
 import type { Dec } from '@keel/core';
-import type { Freshness, Tick } from './port.js';
+import * as D from '@keel/core';
+import type { Freshness, StalenessBudget, Tick } from './port.js';
 import { ageMs, describeAge, freshness, mid } from './port.js';
-import type { StalenessBudget } from './port.js';
 
 /**
  * Cross-plane divergence monitoring (ADR-0013).

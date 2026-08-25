@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import * as D from '../money/decimal.js';
-import { initialDrawdownState, maxLossBeforeBreach, updateDrawdown } from './drawdown.js';
 import type { DrawdownConfig, DrawdownState } from './drawdown.js';
+import { initialDrawdownState, maxLossBeforeBreach, updateDrawdown } from './drawdown.js';
 
 const d = D.dec;
 const DAY = 86_400_000;
@@ -210,9 +210,7 @@ describe('warnings and headroom', () => {
 
 describe('no model configured', () => {
   it('is inert rather than accidentally restrictive', () => {
-    const { readings } = feed(config({ model: { kind: 'none' } }), [
-      { balance: '1.00', at: T0 },
-    ]);
+    const { readings } = feed(config({ model: { kind: 'none' } }), [{ balance: '1.00', at: T0 }]);
     expect(readings[0]?.status).toBe('not-applicable');
     expect(readings[0]?.justBreached).toBe(false);
   });

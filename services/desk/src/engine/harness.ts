@@ -1,10 +1,10 @@
+import type { InstrumentSpec, RiskPolicy } from '@keel/core';
 import * as D from '@keel/core';
 import { defaultRiskPolicy } from '@keel/core';
-import type { InstrumentSpec, RiskPolicy } from '@keel/core';
-import pino from 'pino';
 import type { Logger } from 'pino';
-import { PaperBroker, NO_FAULTS } from '../broker/paper.js';
+import pino from 'pino';
 import type { PaperConfig, PaperFaults } from '../broker/paper.js';
+import { NO_FAULTS, PaperBroker } from '../broker/paper.js';
 import type { BrokerQuote } from '../broker/port.js';
 import { Ledger } from '../ledger/ledger.js';
 import { Projector } from '../ledger/projections.js';
@@ -277,7 +277,10 @@ export function createHarness(opts: HarnessOptions = {}): Harness {
   };
 }
 
-function intentFromClientOrderId(ledger: Ledger, clientOrderId: string | undefined): string | undefined {
+function intentFromClientOrderId(
+  ledger: Ledger,
+  clientOrderId: string | undefined,
+): string | undefined {
   if (clientOrderId === undefined) return undefined;
   const row = ledger.db
     .prepare(

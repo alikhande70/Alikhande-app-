@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import * as D from '../money/decimal.js';
+import type { ClosedTrade, TradeMetrics } from './performance.js';
 import {
   bySession,
   detectExecutionDrift,
@@ -7,7 +8,6 @@ import {
   summarisePerformance,
   withMetrics,
 } from './performance.js';
-import type { ClosedTrade, TradeMetrics } from './performance.js';
 
 const d = D.dec;
 const T0 = Date.UTC(2026, 5, 15, 14, 0);
@@ -98,18 +98,24 @@ describe('sample-size honesty', () => {
   });
 
   it('calls a medium sample indicative', () => {
-    expect(summarisePerformance(series(Array.from({ length: 50 }, (_, i) => (i % 3 ? -1 : 2)))).confidence
-      .verdict).toBe('indicative');
+    expect(
+      summarisePerformance(series(Array.from({ length: 50 }, (_, i) => (i % 3 ? -1 : 2))))
+        .confidence.verdict,
+    ).toBe('indicative');
   });
 
   it('calls a large sample meaningful', () => {
-    expect(summarisePerformance(series(Array.from({ length: 150 }, (_, i) => (i % 3 ? -1 : 2)))).confidence
-      .verdict).toBe('meaningful');
+    expect(
+      summarisePerformance(series(Array.from({ length: 150 }, (_, i) => (i % 3 ? -1 : 2))))
+        .confidence.verdict,
+    ).toBe('meaningful');
   });
 
   it('computes SQN but scales it by sample size', () => {
     const small = summarisePerformance(series([2, -1, 2, -1, 2, -1]));
-    const large = summarisePerformance(series(Array.from({ length: 60 }, (_, i) => (i % 2 ? -1 : 2))));
+    const large = summarisePerformance(
+      series(Array.from({ length: 60 }, (_, i) => (i % 2 ? -1 : 2))),
+    );
     expect(small.sqn).toBeDefined();
     expect(large.sqn).toBeDefined();
     // Same shape of edge, more evidence => higher SQN.

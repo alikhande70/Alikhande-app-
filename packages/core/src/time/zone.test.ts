@@ -1,14 +1,5 @@
 import { describe, expect, it } from 'vitest';
 import {
-  assertValidTimeZone,
-  fromWallClock,
-  lastLocalTimeAtOrBefore,
-  nextLocalTimeAfter,
-  toWallClock,
-  zoneOffsetMs,
-  ZoneError,
-} from './zone.js';
-import {
   activeSessions,
   isForexOpen,
   isTripleSwapRollover,
@@ -16,6 +7,15 @@ import {
   rolloverWindow,
   sessionContext,
 } from './sessions.js';
+import {
+  assertValidTimeZone,
+  fromWallClock,
+  lastLocalTimeAtOrBefore,
+  nextLocalTimeAfter,
+  toWallClock,
+  ZoneError,
+  zoneOffsetMs,
+} from './zone.js';
 
 const iso = (ms: number): string => new Date(ms).toISOString();
 
@@ -70,8 +70,16 @@ describe('DST edge cases', () => {
   it('keeps a daily reset at the same local hour across a DST change', () => {
     // A prop-firm day resetting at 17:00 New York must stay 17:00 local, which
     // means the UTC instant moves by an hour — not the other way round.
-    const before = lastLocalTimeAtOrBefore(Date.UTC(2026, 2, 6, 23, 0), 'America/New_York', '17:00');
-    const after = lastLocalTimeAtOrBefore(Date.UTC(2026, 2, 10, 23, 0), 'America/New_York', '17:00');
+    const before = lastLocalTimeAtOrBefore(
+      Date.UTC(2026, 2, 6, 23, 0),
+      'America/New_York',
+      '17:00',
+    );
+    const after = lastLocalTimeAtOrBefore(
+      Date.UTC(2026, 2, 10, 23, 0),
+      'America/New_York',
+      '17:00',
+    );
     expect(toWallClock(before, 'America/New_York').hour).toBe(17);
     expect(toWallClock(after, 'America/New_York').hour).toBe(17);
     expect(iso(before)).toBe('2026-03-06T22:00:00.000Z'); // EST
@@ -127,8 +135,8 @@ describe('sessions', () => {
     const june = londonNewYorkOverlap(Date.UTC(2026, 5, 10, 14, 0));
     expect(march).toBeDefined();
     expect(june).toBeDefined();
-    const mLen = (march as { endUtc: number; startUtc: number });
-    const jLen = (june as { endUtc: number; startUtc: number });
+    const mLen = march as { endUtc: number; startUtc: number };
+    const jLen = june as { endUtc: number; startUtc: number };
     expect(mLen.endUtc - mLen.startUtc).not.toBe(jLen.endUtc - jLen.startUtc);
   });
 

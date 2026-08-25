@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import type { PlotBar, Viewport } from './geometry.js';
 import {
   barIndexAt,
   includeLevels,
@@ -10,9 +11,14 @@ import {
   toPlot,
   visibleRange,
 } from './geometry.js';
-import type { PlotBar, Viewport } from './geometry.js';
 
-const view: Viewport = { width: 390, height: 400, paddingTop: 16, paddingBottom: 24, paddingRight: 56 };
+const view: Viewport = {
+  width: 390,
+  height: 400,
+  paddingTop: 16,
+  paddingBottom: 24,
+  paddingRight: 56,
+};
 
 function bars(count: number, base = 2400): PlotBar[] {
   return Array.from({ length: count }, (_, i) => ({
@@ -82,7 +88,12 @@ describe('scales', () => {
   });
 
   it('does not divide by zero on a degenerate viewport', () => {
-    const s = makeScale({ ...view, width: 0, height: 0 }, { min: 1, max: 1 }, { from: 5, to: 5 }, 0);
+    const s = makeScale(
+      { ...view, width: 0, height: 0 },
+      { min: 1, max: 1 },
+      { from: 5, to: 5 },
+      0,
+    );
     expect(Number.isFinite(s.y(1))).toBe(true);
     expect(Number.isFinite(s.x(5))).toBe(true);
   });

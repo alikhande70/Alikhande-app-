@@ -206,9 +206,7 @@ export const DeskHealth = z.object({
   criticalDivergences: z.number().int().nonnegative(),
   /** Orders currently in an UNKNOWN state, being actively resolved. */
   unresolvedOrders: z.number().int().nonnegative(),
-  lockout: z
-    .object({ until: Timestamp, reason: z.string() })
-    .optional(),
+  lockout: z.object({ until: Timestamp, reason: z.string() }).optional(),
   /** Set when the desk has started but broker credentials have not been unlocked. */
   credentialsLocked: z.boolean(),
   deskStartedAt: Timestamp,

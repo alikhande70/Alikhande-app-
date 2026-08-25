@@ -1,6 +1,6 @@
 import type { Dec } from '../money/decimal.js';
 import * as D from '../money/decimal.js';
-import { FxBook } from './fx.js';
+import type { FxBook } from './fx.js';
 import type { InstrumentSpec } from './instrument.js';
 import * as I from './instrument.js';
 

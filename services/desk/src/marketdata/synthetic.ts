@@ -1,9 +1,9 @@
-import * as D from '@keel/core';
 import type { Dec, InstrumentSpec } from '@keel/core';
+import * as D from '@keel/core';
 import type { Clock } from '../sim/clock.js';
 import { Rng } from '../sim/rng.js';
-import type { MarketDataEvent, MarketDataProvider, Tick, Timeframe, Bar } from './port.js';
 import { BarAggregator } from './aggregator.js';
+import type { Bar, MarketDataEvent, MarketDataProvider, Tick, Timeframe } from './port.js';
 
 /**
  * A synthetic feed that misbehaves on purpose.
@@ -175,7 +175,8 @@ export class SyntheticProvider implements MarketDataProvider {
         continue;
       }
 
-      const volatility = this.opts.regime === 'volatile' ? 3 : this.opts.regime === 'range' ? 0.6 : 1;
+      const volatility =
+        this.opts.regime === 'volatile' ? 3 : this.opts.regime === 'range' ? 0.6 : 1;
       let moveTicks = Math.round(this.rng.normal(s.drift, 4 * volatility));
       if (this.rng.chance(p.gapRate)) moveTicks *= 12;
 

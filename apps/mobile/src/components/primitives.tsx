@@ -1,13 +1,8 @@
 import type { ReactNode } from 'react';
-import { Text, View, useColorScheme } from 'react-native';
 import type { StyleProp, TextStyle, ViewStyle } from 'react-native';
-import {
-  certaintyStyles,
-  freshnessColorKey,
-  makeTheme,
-  pnlColor,
-} from '../design/tokens.js';
+import { Text, useColorScheme, View } from 'react-native';
 import type { Certainty, Freshness, Theme } from '../design/tokens.js';
+import { certaintyStyles, freshnessColorKey, makeTheme, pnlColor } from '../design/tokens.js';
 
 /**
  * The primitives every screen is built from.
@@ -274,7 +269,13 @@ export interface RowProps {
   readonly style?: StyleProp<ViewStyle>;
 }
 
-export function Row({ children, gap, align = 'center', justify = 'flex-start', style }: RowProps): ReactNode {
+export function Row({
+  children,
+  gap,
+  align = 'center',
+  justify = 'flex-start',
+  style,
+}: RowProps): ReactNode {
   const theme = useTheme();
   return (
     <View
@@ -294,7 +295,13 @@ export function Row({ children, gap, align = 'center', justify = 'flex-start', s
 }
 
 /** A P&L figure, coloured by sign, with zero deliberately neutral. */
-export function Pnl({ value, size = 'md' }: { value: string; size?: NumericProps['size'] }): ReactNode {
+export function Pnl({
+  value,
+  size = 'md',
+}: {
+  value: string;
+  size?: NumericProps['size'];
+}): ReactNode {
   const theme = useTheme();
   const n = Number(value);
   const sign: -1 | 0 | 1 = Number.isFinite(n) ? (n > 0 ? 1 : n < 0 ? -1 : 0) : 0;

@@ -1,8 +1,8 @@
 import * as D from '@keel/core';
 import { describe, expect, it } from 'vitest';
 import { Rng } from '../sim/rng.js';
-import { createHarness } from './harness.js';
 import type { Harness } from './harness.js';
+import { createHarness } from './harness.js';
 import { pendingResolutions } from './resolver.js';
 import type { SubmitCommand } from './supervisor.js';
 
@@ -211,10 +211,10 @@ describe('chaos: the system never claims certainty it does not have', () => {
         // having been raised. (Overfills are possible at a venue; silent ones
         // are not acceptable.)
         if (D.Decimal.gt(rec.filledQty, rec.requestedQty)) {
-          const anomalies = h.ledger
-            .readStream(intentId)
-            .filter((r) => r.kind === 'order.anomaly');
-          expect(anomalies.length, `seed ${seed}: silent overfill on ${intentId}`).toBeGreaterThan(0);
+          const anomalies = h.ledger.readStream(intentId).filter((r) => r.kind === 'order.anomaly');
+          expect(anomalies.length, `seed ${seed}: silent overfill on ${intentId}`).toBeGreaterThan(
+            0,
+          );
         }
       }
 

@@ -164,7 +164,12 @@ export class RealtimeHub {
       if (resumeFrom > state.seq) {
         // The client claims a sequence ahead of ours: we restarted and its
         // history belongs to a previous incarnation. It must start over.
-        this.resync(clientId, topic, 'server-restart', `client held seq ${resumeFrom}, desk is at ${state.seq}`);
+        this.resync(
+          clientId,
+          topic,
+          'server-restart',
+          `client held seq ${resumeFrom}, desk is at ${state.seq}`,
+        );
         this.sendSnapshot(clientId, topic, state);
         client.topics.set(topic, state.seq);
         return;
@@ -215,7 +220,10 @@ export class RealtimeHub {
     const maxFrames = this.opts.bufferSize ?? 512;
     const maxAge = this.opts.bufferMs ?? 120_000;
     const cutoff = frame.at - maxAge;
-    while (state.frames.length > maxFrames || (state.frames[0] !== undefined && state.frames[0].at < cutoff)) {
+    while (
+      state.frames.length > maxFrames ||
+      (state.frames[0] !== undefined && state.frames[0].at < cutoff)
+    ) {
       state.frames.shift();
     }
 

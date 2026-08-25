@@ -1,24 +1,19 @@
-import * as D from '@keel/core';
 import type {
   AccountSnapshot,
+  DayStats,
   DrawdownConfig,
   DrawdownReading,
   DrawdownState,
   InstrumentSpec,
   OpenPositionRisk,
   RiskPolicy,
-  DayStats,
 } from '@keel/core';
-import {
-  FxBook,
-  defaultRiskPolicy,
-  initialDrawdownState,
-  updateDrawdown,
-} from '@keel/core';
+import * as D from '@keel/core';
+import { defaultRiskPolicy, FxBook, initialDrawdownState, updateDrawdown } from '@keel/core';
 import type { Database as Db } from 'better-sqlite3';
+import type { BrokerQuote } from '../broker/port.js';
 import type { Ledger } from '../ledger/ledger.js';
 import type { Projector } from '../ledger/projections.js';
-import type { BrokerQuote } from '../broker/port.js';
 import type { Clock } from '../sim/clock.js';
 
 /**
@@ -103,10 +98,7 @@ export class DeskState {
       prev === undefined
         ? D.Decimal.rescale(spread, SPREAD_EMA_SCALE, 'half-even')
         : D.Decimal.rescale(
-            D.Decimal.add(
-              D.Decimal.mul(prev, D.dec('0.99')),
-              D.Decimal.mul(spread, D.dec('0.01')),
-            ),
+            D.Decimal.add(D.Decimal.mul(prev, D.dec('0.99')), D.Decimal.mul(spread, D.dec('0.01'))),
             SPREAD_EMA_SCALE,
             'half-even',
           ),
@@ -142,9 +134,9 @@ export class DeskState {
   // --- Instruments ----------------------------------------------------------
 
   getInstrument(canonical: string): InstrumentSpec | undefined {
-    const row = this.db.prepare('SELECT spec FROM instruments WHERE canonical = ?').get(canonical) as
-      | { spec: string }
-      | undefined;
+    const row = this.db
+      .prepare('SELECT spec FROM instruments WHERE canonical = ?')
+      .get(canonical) as { spec: string } | undefined;
     if (row === undefined) return undefined;
     return reviveSpec(JSON.parse(row.spec) as Record<string, unknown>);
   }
@@ -175,9 +167,9 @@ export class DeskState {
   // --- Positions ------------------------------------------------------------
 
   openPositions(): readonly LivePosition[] {
-    const rows = this.db
-      .prepare('SELECT * FROM positions WHERE closed_at IS NULL')
-      .all() as Array<Record<string, unknown>>;
+    const rows = this.db.prepare('SELECT * FROM positions WHERE closed_at IS NULL').all() as Array<
+      Record<string, unknown>
+    >;
     return rows.map((r) => {
       const stop = r.stop_price as string | null;
       const tp = r.take_profit as string | null;
@@ -377,7 +369,12 @@ export class DeskState {
    * "Identical" is instrument + side + rounded size, which is what a double tap
    * actually produces; a deliberate add nearly always differs in at least one.
    */
-  recentIdenticalIntents(canonical: string, side: string, volume: D.Dec, windowMs: number): number[] {
+  recentIdenticalIntents(
+    canonical: string,
+    side: string,
+    volume: D.Dec,
+    windowMs: number,
+  ): number[] {
     const since = this.clock.now() - windowMs;
     const rows = this.db
       .prepare(

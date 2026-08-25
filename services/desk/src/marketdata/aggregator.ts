@@ -1,7 +1,7 @@
-import * as D from '@keel/core';
 import type { Dec } from '@keel/core';
+import * as D from '@keel/core';
 import type { Bar, Tick, Timeframe } from './port.js';
-import { TIMEFRAME_MS, mid } from './port.js';
+import { mid, TIMEFRAME_MS } from './port.js';
 
 /**
  * Tick to bar aggregation.
@@ -157,7 +157,8 @@ export function resample(bars: readonly Bar[], from: Timeframe, to: Timeframe): 
   for (const b of bars) {
     const start = bucketStart(b.t, to);
     if (acc === undefined || acc.t !== start) {
-      if (acc !== undefined) out.push({ t: acc.t, o: acc.o, h: acc.h, l: acc.l, c: acc.c, v: acc.v });
+      if (acc !== undefined)
+        out.push({ t: acc.t, o: acc.o, h: acc.h, l: acc.l, c: acc.c, v: acc.v });
       acc = { t: start, o: b.o, h: b.h, l: b.l, c: b.c, v: b.v, ticks: 1 };
       continue;
     }
@@ -194,7 +195,10 @@ export function atr(bars: readonly Bar[], period: number): Dec | undefined {
 }
 
 /** Detect gaps in a bar series — missing buckets that should be there. */
-export function findGaps(bars: readonly Bar[], timeframe: Timeframe): readonly { from: number; to: number; missing: number }[] {
+export function findGaps(
+  bars: readonly Bar[],
+  timeframe: Timeframe,
+): readonly { from: number; to: number; missing: number }[] {
   const size = TIMEFRAME_MS[timeframe];
   const gaps: { from: number; to: number; missing: number }[] = [];
   for (let i = 1; i < bars.length; i++) {

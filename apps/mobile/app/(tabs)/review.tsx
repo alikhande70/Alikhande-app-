@@ -1,4 +1,4 @@
-import { ScrollView, View } from 'react-native';
+import { ScrollView } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Card, Label, Numeric, Row, useTheme } from '../../src/components/primitives.js';
 
@@ -36,45 +36,62 @@ export default function ReviewScreen() {
         gap: theme.space.md,
       }}
     >
-      <Label size="xl" weight="semibold">Review</Label>
+      <Label size="xl" weight="semibold">
+        Review
+      </Label>
 
       {summary === undefined ? (
         <Card>
           <Label tone="tertiary">No closed trades yet.</Label>
           <Label size="sm" tone="tertiary">
             Every trade you take is captured with its context automatically — spread at entry,
-            session, distance to the next scheduled event, slippage and latency. Nothing here has
-            to be typed in twice.
+            session, distance to the next scheduled event, slippage and latency. Nothing here has to
+            be typed in twice.
           </Label>
         </Card>
       ) : (
         <>
           <Card tone={summary.confidence.verdict === 'insufficient' ? 'warning' : 'default'}>
-            <Label size="sm" tone="secondary">Expectancy</Label>
+            <Label size="sm" tone="secondary">
+              Expectancy
+            </Label>
             <Row align="baseline" gap={theme.space.sm}>
               <Numeric value={`${summary.expectancyR}R`} size="display" weight="semibold" />
-              <Label size="sm" tone="tertiary">per trade</Label>
+              <Label size="sm" tone="tertiary">
+                per trade
+              </Label>
             </Row>
-            <Label size="sm" tone={summary.confidence.verdict === 'meaningful' ? 'secondary' : 'warning'}>
+            <Label
+              size="sm"
+              tone={summary.confidence.verdict === 'meaningful' ? 'secondary' : 'warning'}
+            >
               {summary.confidence.note}
             </Label>
           </Card>
 
           <Card>
             <Row justify="space-between">
-              <Label size="sm" tone="secondary">Trades</Label>
+              <Label size="sm" tone="secondary">
+                Trades
+              </Label>
               <Numeric value={String(summary.trades)} />
             </Row>
             <Row justify="space-between">
-              <Label size="sm" tone="secondary">Win rate</Label>
+              <Label size="sm" tone="secondary">
+                Win rate
+              </Label>
               <Numeric value={summary.winRate} />
             </Row>
             <Row justify="space-between">
-              <Label size="sm" tone="secondary">Profit factor</Label>
+              <Label size="sm" tone="secondary">
+                Profit factor
+              </Label>
               <Numeric value={summary.profitFactor ?? '—'} />
             </Row>
             <Row justify="space-between">
-              <Label size="sm" tone="secondary">Worst run</Label>
+              <Label size="sm" tone="secondary">
+                Worst run
+              </Label>
               <Numeric value={`${summary.maxDrawdownR}R`} tone="warning" />
             </Row>
           </Card>
@@ -82,7 +99,9 @@ export default function ReviewScreen() {
       )}
 
       <Card>
-        <Label size="sm" tone="secondary">Ask the copilot</Label>
+        <Label size="sm" tone="secondary">
+          Ask the copilot
+        </Label>
         <Label size="sm" tone="tertiary">
           It can only read your own ledger and journal. It cannot place, modify or cancel anything,
           and every figure it quotes carries the record it came from. If it cannot cite something,

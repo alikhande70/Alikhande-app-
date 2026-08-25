@@ -7,24 +7,18 @@
  * what lets the chaos suite replay a whole trading day deterministically.
  */
 
-export * as Decimal from './money/decimal.js';
-export type { Dec, RoundingMode } from './money/decimal.js';
-export { DecimalError, dec, raw } from './money/decimal.js';
-
-export * from './market/instrument.js';
-export * from './market/fx.js';
-export * from './market/sizing.js';
-
+export * from './analytics/performance.js';
 export * from './execution/orderState.js';
 export * from './execution/reconcile.js';
-
-export * from './risk/policy.js';
+export * from './market/fx.js';
+export * from './market/instrument.js';
+export * from './market/sizing.js';
+export type { Dec, RoundingMode } from './money/decimal.js';
+export * as Decimal from './money/decimal.js';
+export { DecimalError, dec, raw } from './money/decimal.js';
 export * from './risk/drawdown.js';
 export * from './risk/governor.js';
-
-export * from './time/zone.js';
-export * from './time/sessions.js';
-
-export * from './analytics/performance.js';
-
+export * from './risk/policy.js';
 export * as Fixtures from './testing/fixtures.js';
+export * from './time/sessions.js';
+export * from './time/zone.js';

@@ -1,8 +1,8 @@
 import * as D from '@keel/core';
 import { defaultRiskPolicy } from '@keel/core';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { createHarness, HARNESS_START } from './harness.js';
 import type { Harness } from './harness.js';
+import { createHarness, HARNESS_START } from './harness.js';
 import type { SubmitCommand } from './supervisor.js';
 
 /**
@@ -51,7 +51,11 @@ beforeEach(async () => {
   await h.run(h.broker.connect());
   h.quote('XAUUSD', '2400.00', '2400.30');
   await h.syncAccount();
-  h.ledger.append({ kind: 'day.rolled', dayStart: HARNESS_START - 3_600_000, openBalance: '10000.00' });
+  h.ledger.append({
+    kind: 'day.rolled',
+    dayStart: HARNESS_START - 3_600_000,
+    openBalance: '10000.00',
+  });
   h.projector.catchUp();
 });
 
@@ -120,7 +124,11 @@ describe('drawdown enforcement', () => {
     await g.run(g.broker.connect());
     g.quote('XAUUSD', '2400.00', '2400.30');
     await g.syncAccount();
-    g.ledger.append({ kind: 'day.rolled', dayStart: HARNESS_START - 3_600_000, openBalance: '10000.00' });
+    g.ledger.append({
+      kind: 'day.rolled',
+      dayStart: HARNESS_START - 3_600_000,
+      openBalance: '10000.00',
+    });
     g.projector.catchUp();
     await g.run(g.supervisor.submit(cmd()));
 

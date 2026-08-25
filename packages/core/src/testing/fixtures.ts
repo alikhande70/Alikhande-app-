@@ -1,5 +1,5 @@
-import { dec } from '../money/decimal.js';
 import type { InstrumentSpec } from '../market/instrument.js';
+import { dec } from '../money/decimal.js';
 
 /**
  * Instrument fixtures modelled on real MetaTrader 5 / venue specifications.

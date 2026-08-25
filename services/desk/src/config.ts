@@ -71,9 +71,13 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): DeskConfig {
     broker: env.KEEL_BROKER,
     referenceProvider: env.KEEL_REFERENCE_PROVIDER,
     accountCurrency: env.KEEL_ACCOUNT_CURRENCY,
-    instruments: env.KEEL_INSTRUMENTS?.split(',').map((s) => s.trim()).filter(Boolean),
+    instruments: env.KEEL_INSTRUMENTS?.split(',')
+      .map((s) => s.trim())
+      .filter(Boolean),
     reconcileIntervalMs:
-      env.KEEL_RECONCILE_INTERVAL_MS === undefined ? undefined : Number(env.KEEL_RECONCILE_INTERVAL_MS),
+      env.KEEL_RECONCILE_INTERVAL_MS === undefined
+        ? undefined
+        : Number(env.KEEL_RECONCILE_INTERVAL_MS),
     guardIntervalMs:
       env.KEEL_GUARD_INTERVAL_MS === undefined ? undefined : Number(env.KEEL_GUARD_INTERVAL_MS),
     expoPushToken: env.KEEL_EXPO_PUSH_TOKEN,

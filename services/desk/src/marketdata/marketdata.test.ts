@@ -1,11 +1,11 @@
 import * as D from '@keel/core';
 import { describe, expect, it } from 'vitest';
 import { TestClock } from '../sim/clock.js';
-import { BarAggregator, atr, bucketStart, findGaps, resample } from './aggregator.js';
-import { DEFAULT_DIVERGENCE, blocksOrderEntry, compareplanes } from './divergence.js';
+import { atr, BarAggregator, bucketStart, findGaps, resample } from './aggregator.js';
+import { blocksOrderEntry, compareplanes, DEFAULT_DIVERGENCE } from './divergence.js';
 import type { Bar, Tick } from './port.js';
 import { budgetFor, describeAge, freshness, isCrossed, isTradeable, mid, spread } from './port.js';
-import { CALM, HOSTILE, SyntheticProvider } from './synthetic.js';
+import { CALM, SyntheticProvider } from './synthetic.js';
 
 const d = D.dec;
 const T0 = Date.UTC(2026, 5, 15, 14, 0);
@@ -118,7 +118,9 @@ describe('bar aggregation', () => {
   it('resamples only into exact multiples', () => {
     const agg = new BarAggregator({ timeframe: '1m', retain: 100 });
     for (let i = 0; i < 20; i++) {
-      agg.push(tick({ bid: d(`240${i % 10}.00`), ask: d(`240${i % 10}.00`), asOf: T0 + i * 61_000 }));
+      agg.push(
+        tick({ bid: d(`240${i % 10}.00`), ask: d(`240${i % 10}.00`), asOf: T0 + i * 61_000 }),
+      );
     }
     const five = resample(agg.bars(), '1m', '5m');
     expect(five.length).toBeGreaterThan(0);
@@ -189,7 +191,12 @@ describe('cross-plane divergence', () => {
   it('checks freshness before price, so a freeze is not reported as a dislocation', () => {
     // A frozen execution feed will also show a big price difference. Reporting
     // that as "price divergence" would describe the freeze, not the market.
-    const exec = tick({ plane: 'execution', bid: d('2300.00'), ask: d('2300.30'), asOf: T0 - 120_000 });
+    const exec = tick({
+      plane: 'execution',
+      bid: d('2300.00'),
+      ask: d('2300.30'),
+      asOf: T0 - 120_000,
+    });
     const ref = tick({ plane: 'reference', asOf: T0 });
     expect(compareplanes('XAUUSD', exec, ref, T0).verdict).toBe('execution-frozen');
   });
@@ -200,7 +207,9 @@ describe('cross-plane divergence', () => {
     const r = compareplanes('XAUUSD', exec, ref, T0 + 500);
     expect(r.verdict).toBe('price-divergence');
     expect(r.detail).toMatch(/cannot tell which/);
-    expect(D.Decimal.gt(r.differenceFraction as D.Dec, DEFAULT_DIVERGENCE.thresholdFraction)).toBe(true);
+    expect(D.Decimal.gt(r.differenceFraction as D.Dec, DEFAULT_DIVERGENCE.thresholdFraction)).toBe(
+      true,
+    );
   });
 });
 

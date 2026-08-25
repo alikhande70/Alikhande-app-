@@ -1,4 +1,4 @@
-import { generateKeyPairSync, createHash, sign } from 'node:crypto';
+import { createHash, generateKeyPairSync, sign } from 'node:crypto';
 import { describe, expect, it } from 'vitest';
 // The desk's own implementation, imported directly so drift is impossible to
 // miss: if the two canonical strings ever diverge, this file fails in CI rather
@@ -9,17 +9,24 @@ import {
   hashBody as deskHashBody,
 } from '../../../../services/desk/src/http/auth.js';
 import { TestClock } from '../../../../services/desk/src/sim/clock.js';
-import { DeskClient } from './client.js';
 import type { ClientResult } from './client.js';
-import { canonicalString, isCommandPath } from './signing.js';
+import { DeskClient } from './client.js';
 import type { SecureSigner } from './signer.js';
+import { canonicalString, isCommandPath } from './signing.js';
 
 const T0 = Date.UTC(2026, 5, 15, 14, 0);
 
 describe('the client and the desk sign the same bytes', () => {
   const cases = [
     { method: 'GET', path: '/state', timestamp: T0, nonce: 'n1', bodyHash: 'h1' },
-    { method: 'POST', path: '/orders', timestamp: T0, nonce: 'n2', bodyHash: 'h2', commandNonce: 'c1' },
+    {
+      method: 'POST',
+      path: '/orders',
+      timestamp: T0,
+      nonce: 'n2',
+      bodyHash: 'h2',
+      commandNonce: 'c1',
+    },
     { method: 'post', path: '/preview', timestamp: 0, nonce: '', bodyHash: '' },
     {
       method: 'POST',
@@ -300,7 +307,11 @@ describe('red team: a phone with a wrong clock', () => {
     };
     expect(() =>
       auth.verifyRequest(
-        { deviceId: enrolled.deviceId, ...parts, signature: captured?.['x-keel-signature'] as string },
+        {
+          deviceId: enrolled.deviceId,
+          ...parts,
+          signature: captured?.['x-keel-signature'] as string,
+        },
         false,
       ),
     ).not.toThrow();
@@ -308,9 +319,12 @@ describe('red team: a phone with a wrong clock', () => {
 
   it('turns a clock-skew rejection into something the operator can act on', async () => {
     const fetchFn = (async () =>
-      new Response(JSON.stringify({ code: 'CLOCK_SKEW', detail: 'request timestamp is 300s from desk time' }), {
-        status: 401,
-      })) as unknown as typeof fetch;
+      new Response(
+        JSON.stringify({ code: 'CLOCK_SKEW', detail: 'request timestamp is 300s from desk time' }),
+        {
+          status: 401,
+        },
+      )) as unknown as typeof fetch;
     const res = await makeClient(fetchFn).get('/state', 1);
     expect(res.ok).toBe(false);
     if (res.ok) return;

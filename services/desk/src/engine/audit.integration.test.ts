@@ -1,8 +1,8 @@
 import * as D from '@keel/core';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { Ledger } from '../ledger/ledger.js';
-import { createHarness } from './harness.js';
 import type { Harness } from './harness.js';
+import { createHarness } from './harness.js';
 import { recordOrderEvent } from './record.js';
 import type { SubmitCommand } from './supervisor.js';
 
@@ -143,7 +143,8 @@ describe('audit: anomalies are recorded and escalated, not discarded', () => {
 
     const stream = h.ledger.readStream('i-atomic');
     const fillIdx = stream.findIndex(
-      (r) => r.kind === 'order.event' && (r.event as { event: { type: string } }).event.type === 'fill',
+      (r) =>
+        r.kind === 'order.event' && (r.event as { event: { type: string } }).event.type === 'fill',
     );
     const anomalyIdx = stream.findIndex((r) => r.kind === 'order.anomaly');
     expect(fillIdx).toBeGreaterThanOrEqual(0);
@@ -155,9 +156,7 @@ describe('audit: closing one position does not close the book', () => {
   it('closes only the requested position', async () => {
     for (let i = 0; i < 3; i++) {
       await h.run(
-        h.supervisor.submit(
-          cmd({ intentId: `018f3b8c-1a2b-7c3d-8e4f-00000000f${i}0${i}` }),
-        ),
+        h.supervisor.submit(cmd({ intentId: `018f3b8c-1a2b-7c3d-8e4f-00000000f${i}0${i}` })),
       );
       await h.clock.advance(30_000);
       h.quote('XAUUSD', '2400.00', '2400.30');
@@ -203,7 +202,11 @@ describe('audit: the ledger head survives a rolled-back batch', () => {
         { kind: 'desk.started', version: '2', config: {} },
         // Not JSON-serialisable: the batch fails part-way through.
         // @ts-expect-error deliberately invalid payload
-        { kind: 'order.event', intentId: 'x', event: { type: 'fill', at: 1, fillId: 'f', qty: 1n, price: 1n } },
+        {
+          kind: 'order.event',
+          intentId: 'x',
+          event: { type: 'fill', at: 1, fillId: 'f', qty: 1n, price: 1n },
+        },
       ]),
     ).toThrow();
 

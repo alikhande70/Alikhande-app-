@@ -1,5 +1,5 @@
-import { applyOrderEvent } from '@keel/core';
 import type { Anomaly, OrderEvent } from '@keel/core';
+import { applyOrderEvent } from '@keel/core';
 import type { Logger } from 'pino';
 import { toWireOrderEvent } from '../ledger/events.js';
 import type { Ledger } from '../ledger/ledger.js';
@@ -73,7 +73,8 @@ export function recordOrderEvent(
   projector.catchUp();
 
   for (const anomaly of outcome.anomalies) {
-    const level = anomaly.severity === 'critical' ? 'error' : anomaly.severity === 'warning' ? 'warn' : 'info';
+    const level =
+      anomaly.severity === 'critical' ? 'error' : anomaly.severity === 'warning' ? 'warn' : 'info';
     log[level]({ intentId, kind: anomaly.kind, detail: anomaly.detail }, 'order anomaly');
     deps.onAnomaly?.(intentId, anomaly);
   }

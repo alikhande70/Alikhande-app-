@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import {
-  Alert,
   AccountSnapshot,
+  Alert,
   DeskHealth,
   Divergence,
   DrawdownStatus,

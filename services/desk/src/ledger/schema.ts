@@ -208,7 +208,9 @@ export const PROJECTION_TABLES = [
 
 export function applyMigrations(db: Database): void {
   db.exec('CREATE TABLE IF NOT EXISTS schema_version (version INTEGER PRIMARY KEY)');
-  const row = db.prepare('SELECT MAX(version) AS v FROM schema_version').get() as { v: number | null };
+  const row = db.prepare('SELECT MAX(version) AS v FROM schema_version').get() as {
+    v: number | null;
+  };
   const current = row.v ?? 0;
   for (const m of MIGRATIONS) {
     if (m.version <= current) continue;

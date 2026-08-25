@@ -1,8 +1,8 @@
 import { randomUUID } from 'node:crypto';
-import * as D from '@keel/core';
 import websocketPlugin from '@fastify/websocket';
-import Fastify from 'fastify';
+import * as D from '@keel/core';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
+import Fastify from 'fastify';
 import type { Logger } from 'pino';
 import { z } from 'zod';
 import type { AlertEngine } from '../alerts/engine.js';
@@ -15,8 +15,8 @@ import type { Ledger } from '../ledger/ledger.js';
 import type { Projector } from '../ledger/projections.js';
 import type { RealtimeHub } from '../realtime/hub.js';
 import type { Clock } from '../sim/clock.js';
-import { AuthError, Authenticator, hashBody } from './auth.js';
 import type { EnrolledDevice } from './auth.js';
+import { AuthError, type Authenticator, hashBody } from './auth.js';
 
 /**
  * The desk's HTTP and WebSocket surface.
@@ -47,10 +47,7 @@ export interface ServerDeps {
   readonly auth: Authenticator;
   readonly health: () => Record<string, unknown>;
   /** Wired in main.ts, because cancelling needs the supervisor's event route. */
-  readonly cancelOrder: (
-    intentId: string,
-    reply: FastifyReply,
-  ) => Promise<Record<string, unknown>>;
+  readonly cancelOrder: (intentId: string, reply: FastifyReply) => Promise<Record<string, unknown>>;
   readonly copilotAsk?: (question: string, conversationId?: string) => Promise<unknown>;
 }
 
@@ -189,9 +186,7 @@ export async function buildServer(deps: ServerDeps): Promise<FastifyInstance> {
 
   app.get('/state', async () => buildSnapshot(deps));
 
-  app.get('/instruments', async () =>
-    deps.state.allInstruments().map((s) => specToWire(s)),
-  );
+  app.get('/instruments', async () => deps.state.allInstruments().map((s) => specToWire(s)));
 
   app.get('/orders', async () => deps.state.allOrders(200).map(orderToWire));
 
@@ -308,7 +303,10 @@ export async function buildServer(deps: ServerDeps): Promise<FastifyInstance> {
       };
     }
     const body = z
-      .object({ question: z.string().min(1).max(2000), conversationId: z.string().uuid().optional() })
+      .object({
+        question: z.string().min(1).max(2000),
+        conversationId: z.string().uuid().optional(),
+      })
       .parse(req.body);
     return deps.copilotAsk(body.question, body.conversationId);
   });
@@ -575,7 +573,14 @@ export function buildSnapshot(deps: ServerDeps): Record<string, unknown> {
       provenance: { source: 'broker', asOf: p.asOf },
     })),
     orders: deps.state
-      .ordersInState(['PENDING_SUBMIT', 'SUBMITTED', 'UNKNOWN', 'WORKING', 'PARTIALLY_FILLED', 'CANCEL_REQUESTED'])
+      .ordersInState([
+        'PENDING_SUBMIT',
+        'SUBMITTED',
+        'UNKNOWN',
+        'WORKING',
+        'PARTIALLY_FILLED',
+        'CANCEL_REQUESTED',
+      ])
       .map(orderToWire),
     divergences: deps.reconciler.openDivergences,
     drawdown: {

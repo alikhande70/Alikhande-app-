@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import {
-  Alert,
   AccountSnapshot,
+  Alert,
   BarSeries,
   DeskHealth,
   Divergence,
@@ -60,9 +60,7 @@ export const PlaceOrderRequest = z.object({
    * The quote the operator was looking at. The desk refuses if the market has
    * moved beyond `maxSlippage` since, so a stale screen cannot become a fill.
    */
-  referenceQuote: z
-    .object({ bid: DecimalString, ask: DecimalString, asOf: Timestamp })
-    .optional(),
+  referenceQuote: z.object({ bid: DecimalString, ask: DecimalString, asOf: Timestamp }).optional(),
   maxSlippage: DecimalString.optional(),
   /** Break-glass. Never silent: recorded as its own ledger event. */
   override: z.object({ reason: z.string().min(10).max(500) }).optional(),

@@ -56,9 +56,7 @@ export class ExpoPushSender implements PushSender {
 
     try {
       const result =
-        this.opts.transport !== undefined
-          ? await this.opts.transport(body)
-          : await this.post(body);
+        this.opts.transport !== undefined ? await this.opts.transport(body) : await this.post(body);
 
       if (result.status >= 400) {
         return { delivered: false, detail: `expo returned HTTP ${result.status}` };

@@ -1,24 +1,17 @@
 import { createHash } from 'node:crypto';
+import type { Dec, InstrumentSpec, RiskDecision, Side, SizingResult } from '@keel/core';
 import * as D from '@keel/core';
-import type {
-  Dec,
-  InstrumentSpec,
-  RiskDecision,
-  SizingResult,
-  Side,
-} from '@keel/core';
 import { evaluate, sizePosition } from '@keel/core';
 import type { Logger } from 'pino';
-import type { BrokerPort, BrokerOrderRequest } from '../broker/port.js';
+import type { BrokerOrderRequest, BrokerPort } from '../broker/port.js';
 import { supportsSafeRetry } from '../broker/port.js';
 import type { LedgerEvent, OrderIntent, RiskDecisionRecord } from '../ledger/events.js';
-import { toWireOrderEvent } from '../ledger/events.js';
 import type { Ledger } from '../ledger/ledger.js';
 import type { Projector } from '../ledger/projections.js';
 import type { Clock } from '../sim/clock.js';
-import type { DeskState } from './state.js';
 import { KeyedMutex } from './lock.js';
 import { recordOrderEvent } from './record.js';
+import type { DeskState } from './state.js';
 
 /**
  * The execution supervisor.
@@ -182,7 +175,10 @@ export class ExecutionSupervisor {
     projector.catchUp();
     if (state.hasIntent(cmd.intentId)) {
       const existing = projector.loadOrderRecord(cmd.intentId);
-      log.info({ intentId: cmd.intentId, state: existing?.state }, 'duplicate intent; returning prior outcome');
+      log.info(
+        { intentId: cmd.intentId, state: existing?.state },
+        'duplicate intent; returning prior outcome',
+      );
       return {
         intentId: cmd.intentId,
         accepted: existing !== undefined && existing.state !== 'FAILED_LOCAL',
@@ -232,9 +228,7 @@ export class ExecutionSupervisor {
       ...(cmd.takeProfitPrice !== undefined
         ? { attachedTakeProfit: D.Decimal.toString(cmd.takeProfitPrice) }
         : {}),
-      ...(sizing !== undefined && sizing.ok
-        ? { riskAccount: D.Decimal.toString(sizing.riskAtStop) }
-        : {}),
+      ...(sizing?.ok ? { riskAccount: D.Decimal.toString(sizing.riskAtStop) } : {}),
       ...(cmd.referenceQuote !== undefined
         ? {
             referenceQuote: {
@@ -244,7 +238,9 @@ export class ExecutionSupervisor {
             },
           }
         : {}),
-      ...(cmd.maxSlippage !== undefined ? { maxSlippage: D.Decimal.toString(cmd.maxSlippage) } : {}),
+      ...(cmd.maxSlippage !== undefined
+        ? { maxSlippage: D.Decimal.toString(cmd.maxSlippage) }
+        : {}),
     };
 
     // --- 5. Durability before transmission --------------------------------
@@ -310,7 +306,7 @@ export class ExecutionSupervisor {
     risk: RiskDecision,
     sizing: SizingResult | undefined,
   ): SubmitOutcome {
-    const { ledger, projector, broker, log } = this.deps;
+    const { projector, broker, log } = this.deps;
 
     switch (result.outcome) {
       case 'acked': {
@@ -419,12 +415,16 @@ export class ExecutionSupervisor {
    * the risk evaluation. Pure with respect to the ledger, so `preview` and
    * `submit` cannot diverge.
    */
-  private prepare(
-    cmd: SubmitCommand,
-  ):
+  private prepare(cmd: SubmitCommand):
     | { spec: InstrumentSpec; volume: Dec; risk: RiskDecision; sizing: SizingResult | undefined }
     | {
-        failure: { code: string; title: string; detail: string; retryable: boolean; outcomeUnknown: boolean };
+        failure: {
+          code: string;
+          title: string;
+          detail: string;
+          retryable: boolean;
+          outcomeUnknown: boolean;
+        };
         risk: RiskDecision;
         sizing: SizingResult | undefined;
       } {
@@ -546,8 +546,7 @@ export class ExecutionSupervisor {
     }
 
     // --- Risk --------------------------------------------------------------
-    const riskAccount =
-      sizing !== undefined && sizing.ok ? sizing.riskAtStop : undefined;
+    const riskAccount = sizing?.ok ? sizing.riskAtStop : undefined;
     const marginAccount = this.marginInAccountCurrency(spec, volume, entry, account.currency, now);
 
     const decision = evaluate(

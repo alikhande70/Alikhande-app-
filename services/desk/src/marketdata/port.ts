@@ -1,5 +1,5 @@
-import * as D from '@keel/core';
 import type { Dec } from '@keel/core';
+import * as D from '@keel/core';
 
 /**
  * The market-data plane (ADR-0013).
@@ -54,7 +54,12 @@ export type MarketDataEvent =
   | { readonly type: 'connected'; readonly at: number }
   | { readonly type: 'disconnected'; readonly at: number; readonly reason: string }
   | { readonly type: 'tick'; readonly tick: Tick }
-  | { readonly type: 'error'; readonly at: number; readonly detail: string; readonly fatal: boolean };
+  | {
+      readonly type: 'error';
+      readonly at: number;
+      readonly detail: string;
+      readonly fatal: boolean;
+    };
 
 export interface MarketDataProvider {
   readonly name: string;
@@ -144,7 +149,12 @@ export function describeAge(ms: number): string {
 
 /** Mid price. Advisory only — orders are priced from bid or ask, never the mid. */
 export function mid(tick: Tick): Dec {
-  return D.Decimal.div(D.Decimal.add(tick.bid, tick.ask), D.dec(2), Math.max(tick.bid.s, tick.ask.s) + 1, 'half-even');
+  return D.Decimal.div(
+    D.Decimal.add(tick.bid, tick.ask),
+    D.dec(2),
+    Math.max(tick.bid.s, tick.ask.s) + 1,
+    'half-even',
+  );
 }
 
 export function spread(tick: Tick): Dec {

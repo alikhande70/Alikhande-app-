@@ -297,7 +297,14 @@ export function isMultipleOf(a: Dec, step: Dec): boolean {
   return rescale(a, scale).v % rescale(step, scale).v === 0n;
 }
 
-/** Canonical string form. Always includes exactly `s` decimal places. */
+/**
+ * Canonical string form. Always includes exactly `s` decimal places.
+ *
+ * biome-ignore lint/suspicious/noShadowRestrictedNames: this is a module-level
+ * named export on a namespace that is always imported qualified (`D.toString`),
+ * not a binding that shadows `Object.prototype.toString` at any call site.
+ * Renaming it to `format` would read worse everywhere it is used.
+ */
 export function toString(a: Dec): string {
   const negative = a.v < 0n;
   const digits = (negative ? -a.v : a.v).toString().padStart(a.s + 1, '0');

@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
-import { DeskSocket, checkContiguity } from './socket.js';
 import type { ConnectionState, SocketEvents, WebSocketLike } from './socket.js';
+import { checkContiguity, DeskSocket } from './socket.js';
 
 /**
  * The client's gap detection.

@@ -214,9 +214,7 @@ export function summarisePerformance(trades: readonly TradeMetrics[]): Performan
     maxDrawdownR: maxDd,
     netPnl: D.sum(trades.map((t) => t.netPnl)),
     totalCosts,
-    costDrag: D.isZero(grossProfit)
-      ? undefined
-      : D.div(totalCosts, grossProfit, 4, 'half-even'),
+    costDrag: D.isZero(grossProfit) ? undefined : D.div(totalCosts, grossProfit, 4, 'half-even'),
     confidence,
   };
 }

@@ -2,11 +2,11 @@ import type { OrderState } from '@keel/core';
 import type { Database as Db } from 'better-sqlite3';
 import type { Logger } from 'pino';
 import type { BrokerPort } from '../broker/port.js';
-import { recordOrderEvent } from './record.js';
 import type { Ledger } from '../ledger/ledger.js';
 import type { Projector } from '../ledger/projections.js';
-import { clientOrderIdFor } from './supervisor.js';
 import type { Clock } from '../sim/clock.js';
+import { recordOrderEvent } from './record.js';
+import { clientOrderIdFor } from './supervisor.js';
 
 /**
  * Resolution of unknown outcomes.
@@ -124,7 +124,7 @@ export class UnknownResolver {
 
   private async attempt(job: Job): Promise<void> {
     if (job.stopped) return;
-    const { ledger, projector, broker, clock, log } = this.deps;
+    const { projector, broker, clock, log } = this.deps;
     job.attempts += 1;
 
     // The order may have resolved itself while we waited: a fill arriving is
@@ -220,7 +220,9 @@ export function pendingResolutions(
 ): { intentId: string; clientOrderId: string }[] {
   projector.catchUp();
   const rows = db
-    .prepare("SELECT intent_id FROM orders WHERE state IN ('UNKNOWN', 'SUBMITTED', 'PENDING_SUBMIT')")
+    .prepare(
+      "SELECT intent_id FROM orders WHERE state IN ('UNKNOWN', 'SUBMITTED', 'PENDING_SUBMIT')",
+    )
     .all() as Array<{ intent_id: string }>;
   return rows.map((r) => ({
     intentId: r.intent_id,
@@ -235,4 +237,3 @@ export const RESOLVER_CONSTANTS = {
   ESCALATE_AFTER,
   SLOW_INTERVAL_MS,
 } as const;
-

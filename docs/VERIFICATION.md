@@ -42,7 +42,7 @@ responding.
 | Reconciliation | Unit tested | Every divergence kind, including positions opened outside the system and unprotected positions. |
 | Performance analytics | Unit tested | R-multiples, expectancy, SQN, drawdown of the R curve, execution drift. |
 
-**Total: 210 tests.** Run with `pnpm --filter @keel/core test`.
+**Total: 212 tests.** Run with `pnpm --filter @keel/core test`.
 
 ---
 
@@ -62,8 +62,9 @@ responding.
 | Alerts engine | Implemented, unit paths exercised via guard tests | Dedupe, severity floor, undelivered-critical surfacing. Not separately unit tested — see *Known gaps*. |
 | Config validation | Unit tested via startup | Refuses to bind non-loopback without an explicit opt-in and TLS. |
 
-**Total: 127 tests + chaos suite.** Run with `pnpm --filter @keel/desk test` and
-`pnpm --filter @keel/desk test:chaos`.
+**Total: 130 tests, plus the 14-scenario chaos suite and 6 live network tests.**
+`pnpm --filter @keel/desk test` runs the first two (144); the live tests are
+separate, because they need the network: `pnpm --filter @keel/desk test:live`.
 
 ---
 
@@ -115,7 +116,7 @@ demo account, before any real money.
 | Secure Enclave signer | **Externally blocked** | `EnclaveSigner` is written against an `EnclaveBridge` interface; the native module it needs is not in this repository. The app falls back to a Keychain-held Ed25519 key, and the desk records it as software-only rather than claiming hardware protection. |
 | Push notifications | **Not verified** | `ExpoPushSender` follows Expo's documented API and is written against an injectable transport. Sending a real push needs a token from a physical device. Nothing has been sent to the live service. |
 
-**Total: 74 tests.** Run with `pnpm --filter @keel/mobile test`.
+**Total: 76 tests.** Run with `pnpm --filter @keel/mobile test`.
 
 ---
 

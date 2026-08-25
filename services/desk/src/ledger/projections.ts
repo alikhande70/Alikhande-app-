@@ -1,9 +1,9 @@
+import type { OrderRecord } from '@keel/core';
 import * as D from '@keel/core';
 import { applyOrderEvent, newOrderRecord } from '@keel/core';
-import type { OrderRecord } from '@keel/core';
 import type { Database as Db } from 'better-sqlite3';
-import { fromWireOrderEvent } from './events.js';
 import type { LedgerEvent } from './events.js';
+import { fromWireOrderEvent } from './events.js';
 import type { Ledger, LedgerRow } from './ledger.js';
 import { PROJECTION_TABLES } from './schema.js';
 
@@ -226,7 +226,9 @@ export class Projector {
         this.onAlertRaised(e);
         break;
       case 'alert.acknowledged':
-        this.db.prepare('UPDATE alerts SET acknowledged_at=? WHERE alert_id=?').run(e.at, e.alertId);
+        this.db
+          .prepare('UPDATE alerts SET acknowledged_at=? WHERE alert_id=?')
+          .run(e.at, e.alertId);
         break;
       case 'alert.pushDispatched':
         this.db
@@ -455,7 +457,9 @@ export class Projector {
   private bumpOpenCounter(at: number): void {
     this.ensureRiskRow(at);
     this.db
-      .prepare('UPDATE risk_state SET trades_today = trades_today + 1, last_updated_at = ? WHERE id = 1')
+      .prepare(
+        'UPDATE risk_state SET trades_today = trades_today + 1, last_updated_at = ? WHERE id = 1',
+      )
       .run(at);
   }
 

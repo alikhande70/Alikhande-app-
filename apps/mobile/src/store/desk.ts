@@ -148,7 +148,13 @@ export interface DeskStoreState {
   gapEvents: readonly { topic: string; expected: number; got: number; at: number }[];
 
   applySnapshot: (topic: string, seq: number, payload: unknown, at: number) => void;
-  applyDelta: (topic: string, seq: number, upsert: unknown, remove: readonly string[], at: number) => void;
+  applyDelta: (
+    topic: string,
+    seq: number,
+    upsert: unknown,
+    remove: readonly string[],
+    at: number,
+  ) => void;
   setConnection: (state: ConnectionState, detail?: string) => void;
   setLatency: (rttMs: number, clockOffsetMs: number) => void;
   noteGap: (topic: string, expected: number, got: number, at: number) => void;
@@ -193,7 +199,10 @@ export const useDeskStore = create<DeskStoreState>((set, get) => ({
   noteGap: (topic, expected, got, at) =>
     set((s) => ({
       gapEvents: [...s.gapEvents.slice(-49), { topic, expected, got, at }],
-      topics: { ...s.topics, [topic]: { ...(s.topics[topic] ?? { status: 'never-loaded' }), status: 'incomplete' } },
+      topics: {
+        ...s.topics,
+        [topic]: { ...(s.topics[topic] ?? { status: 'never-loaded' }), status: 'incomplete' },
+      },
     })),
 
   markTopicIncomplete: (topic) =>
@@ -346,7 +355,11 @@ export function unprotectedPositions(s: DeskStoreState): readonly Position[] {
  * than the phone's. A phone whose clock is wrong would otherwise show every
  * value as stale, or — much worse — as fresher than it is.
  */
-export function dataAgeMs(s: DeskStoreState, topic: string, nowOnPhone: number): number | undefined {
+export function dataAgeMs(
+  s: DeskStoreState,
+  topic: string,
+  nowOnPhone: number,
+): number | undefined {
   const meta = s.topics[topic];
   if (meta?.confirmedAt === undefined) return undefined;
   const deskNow = nowOnPhone + s.clockOffsetMs;

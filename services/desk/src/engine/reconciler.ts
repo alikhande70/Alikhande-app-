@@ -1,6 +1,4 @@
 import { createHash } from 'node:crypto';
-import * as D from '@keel/core';
-import { reconcile } from '@keel/core';
 import type {
   Divergence,
   LocalOrderView,
@@ -8,12 +6,14 @@ import type {
   VenueOrderView,
   VenuePositionView,
 } from '@keel/core';
+import * as D from '@keel/core';
+import { reconcile } from '@keel/core';
 import type { Logger } from 'pino';
 import type { BrokerPort } from '../broker/port.js';
-import { recordOrderEvent } from './record.js';
 import type { Ledger } from '../ledger/ledger.js';
 import type { Projector } from '../ledger/projections.js';
 import type { Clock } from '../sim/clock.js';
+import { recordOrderEvent } from './record.js';
 import type { DeskState } from './state.js';
 
 /**

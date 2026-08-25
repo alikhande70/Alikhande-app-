@@ -119,7 +119,12 @@ export type BrokerSubmitResult =
       readonly at: number;
       readonly venueStatus?: string;
     }
-  | { readonly outcome: 'rejected'; readonly reason: string; readonly code?: string; readonly at: number }
+  | {
+      readonly outcome: 'rejected';
+      readonly reason: string;
+      readonly code?: string;
+      readonly at: number;
+    }
   | { readonly outcome: 'ambiguous'; readonly reason: string; readonly at: number };
 
 /** The answer to "does the venue have this order?" after an ambiguous send. */
@@ -144,7 +149,14 @@ export type BrokerEvent =
     }
   | { readonly type: 'order'; readonly at: number; readonly order: BrokerOrder }
   | { readonly type: 'position'; readonly at: number; readonly position: BrokerPosition }
-  | { readonly type: 'positionClosed'; readonly at: number; readonly positionId: string; readonly exitPrice: Dec; readonly netPnl: Dec; readonly costs: Dec }
+  | {
+      readonly type: 'positionClosed';
+      readonly at: number;
+      readonly positionId: string;
+      readonly exitPrice: Dec;
+      readonly netPnl: Dec;
+      readonly costs: Dec;
+    }
   | { readonly type: 'account'; readonly at: number; readonly account: BrokerAccount }
   | { readonly type: 'quote'; readonly at: number; readonly quote: BrokerQuote };
 
@@ -171,7 +183,11 @@ export interface BrokerPort {
     stopLoss: Dec | undefined,
     takeProfit: Dec | undefined,
   ): Promise<BrokerSubmitResult>;
-  closePosition(positionId: string, volume: Dec | undefined, clientOrderId: string): Promise<BrokerSubmitResult>;
+  closePosition(
+    positionId: string,
+    volume: Dec | undefined,
+    clientOrderId: string,
+  ): Promise<BrokerSubmitResult>;
 
   /**
    * Locate an order by our id. Required for safe recovery from an ambiguous

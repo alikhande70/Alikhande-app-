@@ -1,8 +1,8 @@
+import * as Haptics from 'expo-haptics';
+import { router, useLocalSearchParams } from 'expo-router';
 import { useCallback, useMemo, useRef, useState } from 'react';
 import { Pressable, ScrollView, TextInput, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { router, useLocalSearchParams } from 'expo-router';
-import * as Haptics from 'expo-haptics';
 import { Card, Label, Numeric, Row, useTheme } from '../src/components/primitives.js';
 import { SlideToCommit } from '../src/components/SlideToCommit.js';
 import { canTrade, useDeskStore } from '../src/store/desk.js';
@@ -58,7 +58,7 @@ export default function TicketScreen() {
   const [stopPrice, setStopPrice] = useState('');
   const [targetPrice, setTargetPrice] = useState('');
   const [note, setNote] = useState('');
-  const [preview, setPreview] = useState<PreviewResult | undefined>(undefined);
+  const [preview, _setPreview] = useState<PreviewResult | undefined>(undefined);
   const [submitting, setSubmitting] = useState(false);
   const [outcome, setOutcome] = useState<
     { kind: 'unknown' | 'blocked' | 'sent'; title: string; detail: string } | undefined
@@ -76,7 +76,10 @@ export default function TicketScreen() {
   const blockers = preview?.risk.checks.filter((c) => c.verdict === 'block') ?? [];
   const warnings = preview?.risk.checks.filter((c) => c.verdict === 'warn') ?? [];
   const sizing = preview?.sizing;
-  const sized = sizing !== undefined && sizing.ok;
+  // Explicitly `=== true`: `sizing?.ok` is `boolean | undefined`, and an
+  // undefined sizing result means "we do not know how big this should be",
+  // which must gate the commit shut rather than leak an undefined through it.
+  const sized = sizing?.ok === true;
 
   const readyToCommit =
     gate.ok &&
@@ -162,19 +165,24 @@ export default function TicketScreen() {
                   justifyContent: 'center',
                   borderRadius: theme.radius.lg,
                   borderWidth: 2,
-                  borderColor: side === s ? (s === 'buy' ? theme.color.long : theme.color.short) : theme.color.border,
+                  borderColor:
+                    side === s
+                      ? s === 'buy'
+                        ? theme.color.long
+                        : theme.color.short
+                      : theme.color.border,
                   backgroundColor:
-                    side === s ? (s === 'buy' ? theme.color.longMuted : theme.color.shortMuted) : 'transparent',
+                    side === s
+                      ? s === 'buy'
+                        ? theme.color.longMuted
+                        : theme.color.shortMuted
+                      : 'transparent',
                 }}
                 accessibilityRole="button"
                 accessibilityState={{ selected: side === s }}
                 accessibilityLabel={s === 'buy' ? 'Buy, long' : 'Sell, short'}
               >
-                <Label
-                  size="lg"
-                  weight="bold"
-                  tone={side === s ? 'default' : 'tertiary'}
-                >
+                <Label size="lg" weight="bold" tone={side === s ? 'default' : 'tertiary'}>
                   {s === 'buy' ? 'Long' : 'Short'}
                 </Label>
                 {quote !== undefined && (
@@ -203,7 +211,9 @@ export default function TicketScreen() {
             <TextInput
               value={stopPrice}
               onChangeText={setStopPrice}
-              placeholder={quote === undefined ? '—' : side === 'buy' ? 'below entry' : 'above entry'}
+              placeholder={
+                quote === undefined ? '—' : side === 'buy' ? 'below entry' : 'above entry'
+              }
               placeholderTextColor={theme.color.textTertiary}
               keyboardType="decimal-pad"
               inputMode="decimal"
@@ -269,7 +279,11 @@ export default function TicketScreen() {
                 <Label size="sm" tone="secondary">
                   Size
                 </Label>
-                <Numeric value={(sizing as { volume: string }).volume} size="lg" weight="semibold" />
+                <Numeric
+                  value={(sizing as { volume: string }).volume}
+                  size="lg"
+                  weight="semibold"
+                />
               </Row>
               <Row justify="space-between">
                 <Label size="sm" tone="secondary">
@@ -290,7 +304,8 @@ export default function TicketScreen() {
                   <Numeric value={`${(sizing as { rewardToRisk?: string }).rewardToRisk}R`} />
                 </Row>
               )}
-              {(sizing as { crossCheckDivergencePct?: string }).crossCheckDivergencePct !== undefined && (
+              {(sizing as { crossCheckDivergencePct?: string }).crossCheckDivergencePct !==
+                undefined && (
                 <Label size="xs" tone="warning">
                   The broker's tick value disagrees with contract-size maths by{' '}
                   {(sizing as { crossCheckDivergencePct?: string }).crossCheckDivergencePct}. One of
@@ -379,7 +394,11 @@ export default function TicketScreen() {
 function Outcome({ outcome }: { outcome: { kind: string; title: string; detail: string } }) {
   const theme = useTheme();
   return (
-    <Card tone={outcome.kind === 'unknown' ? 'unknown' : outcome.kind === 'blocked' ? 'critical' : 'default'}>
+    <Card
+      tone={
+        outcome.kind === 'unknown' ? 'unknown' : outcome.kind === 'blocked' ? 'critical' : 'default'
+      }
+    >
       <Label size="lg" weight="semibold">
         {outcome.title}
       </Label>

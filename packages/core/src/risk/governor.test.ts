@@ -1,10 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import * as D from '../money/decimal.js';
 import { XAUUSD } from '../testing/fixtures.js';
-import { initialDrawdownState, updateDrawdown } from './drawdown.js';
 import type { DrawdownConfig, DrawdownReading } from './drawdown.js';
-import { UNWAIVABLE_RULES, evaluate, summariseRiskDecision } from './governor.js';
+import { initialDrawdownState, updateDrawdown } from './drawdown.js';
 import type { AccountSnapshot, RiskContext, RiskRequest } from './governor.js';
+import { evaluate, summariseRiskDecision, UNWAIVABLE_RULES } from './governor.js';
 import { defaultRiskPolicy } from './policy.js';
 
 const d = D.dec;
@@ -221,7 +221,11 @@ describe('daily loss and drawdown', () => {
     });
     const r = evaluate(
       req({ riskAccount: d('90.00') }),
-      ctx({ account: low, drawdown: dd, day: { dayOpenBalance: d('9500.00'), tradesToday: 0, consecutiveLosses: 0 } }),
+      ctx({
+        account: low,
+        drawdown: dd,
+        day: { dayOpenBalance: d('9500.00'), tradesToday: 0, consecutiveLosses: 0 },
+      }),
     );
     expect(D.toString(dd.buffer)).toBe('100.00');
     expect(r.verdict).toBe('warn'); // 90 < 100 buffer, but inside the warning band
@@ -229,7 +233,11 @@ describe('daily loss and drawdown', () => {
 
     const tooBig = evaluate(
       req({ riskAccount: d('150.00') }),
-      ctx({ account: low, drawdown: dd, day: { dayOpenBalance: d('9500.00'), tradesToday: 0, consecutiveLosses: 0 } }),
+      ctx({
+        account: low,
+        drawdown: dd,
+        day: { dayOpenBalance: d('9500.00'), tradesToday: 0, consecutiveLosses: 0 },
+      }),
     );
     expect(blockers(tooBig)).toContain('drawdown-headroom');
     // Two caps bind here: 1% of 9,500 equity = 95, and the 100 of drawdown
@@ -249,14 +257,24 @@ describe('daily loss and drawdown', () => {
       at: NOW,
     });
     expect(dd.status).toBe('breached');
-    const r = evaluate(req(), ctx({ account: bust, drawdown: dd, day: { dayOpenBalance: d('9300.00'), tradesToday: 0, consecutiveLosses: 0 } }));
+    const r = evaluate(
+      req(),
+      ctx({
+        account: bust,
+        drawdown: dd,
+        day: { dayOpenBalance: d('9300.00'), tradesToday: 0, consecutiveLosses: 0 },
+      }),
+    );
     expect(blockers(r)).toContain('drawdown');
   });
 });
 
 describe('behavioural limits', () => {
   it('blocks past the daily trade count', () => {
-    const r = evaluate(req(), ctx({ day: { dayOpenBalance: d('10000.00'), tradesToday: 5, consecutiveLosses: 0 } }));
+    const r = evaluate(
+      req(),
+      ctx({ day: { dayOpenBalance: d('10000.00'), tradesToday: 5, consecutiveLosses: 0 } }),
+    );
     expect(blockers(r)).toContain('trades-per-day');
     expect(r.checks.find((c) => c.rule === 'trades-per-day')?.message).toMatch(/revenge trading/);
   });
@@ -390,7 +408,11 @@ describe('break-glass override', () => {
     });
     const r = evaluate(
       req({ override }),
-      ctx({ account: bust, drawdown: dd, day: { dayOpenBalance: d('9000.00'), tradesToday: 0, consecutiveLosses: 0 } }),
+      ctx({
+        account: bust,
+        drawdown: dd,
+        day: { dayOpenBalance: d('9000.00'), tradesToday: 0, consecutiveLosses: 0 },
+      }),
     );
     expect(blockers(r)).toContain('drawdown');
   });

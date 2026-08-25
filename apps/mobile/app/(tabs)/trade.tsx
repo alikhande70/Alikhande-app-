@@ -1,8 +1,8 @@
+import { router } from 'expo-router';
 import { useState } from 'react';
 import { Pressable, ScrollView, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { router } from 'expo-router';
-import { Card, Label, Numeric, Row, useTheme } from '../../src/components/primitives.js';
+import { Label, Numeric, Row, useTheme } from '../../src/components/primitives.js';
 import { canTrade, useDeskStore } from '../../src/store/desk.js';
 
 const TIMEFRAMES = ['1m', '5m', '15m', '1h', '4h', '1d'] as const;
@@ -23,7 +23,7 @@ export default function TradeScreen() {
   const theme = useTheme();
   const insets = useSafeAreaInsets();
   const state = useDeskStore();
-  const [canonical, setCanonical] = useState('XAUUSD');
+  const [canonical, _setCanonical] = useState('XAUUSD');
   const [timeframe, setTimeframe] = useState<(typeof TIMEFRAMES)[number]>('15m');
 
   const quote = state.quotes[canonical];
@@ -33,7 +33,9 @@ export default function TradeScreen() {
     <View style={{ flex: 1, backgroundColor: theme.color.canvas, paddingTop: insets.top }}>
       <View style={{ paddingHorizontal: theme.space.lg, gap: theme.space.sm }}>
         <Row justify="space-between">
-          <Label size="xl" weight="semibold">{canonical}</Label>
+          <Label size="xl" weight="semibold">
+            {canonical}
+          </Label>
           {quote !== undefined && (
             <Row gap={theme.space.md} align="baseline">
               <Numeric value={quote.bid} size="lg" tone="short" />
@@ -43,9 +45,13 @@ export default function TradeScreen() {
         </Row>
         {quote !== undefined && (
           <Row justify="space-between">
-            <Label size="xs" tone="tertiary">spread {quote.spread}</Label>
+            <Label size="xs" tone="tertiary">
+              spread {quote.spread}
+            </Label>
             {quote.stale && (
-              <Label size="xs" tone="critical" weight="semibold">STALE — not tradeable</Label>
+              <Label size="xs" tone="critical" weight="semibold">
+                STALE — not tradeable
+              </Label>
             )}
           </Row>
         )}
@@ -137,8 +143,12 @@ export default function TradeScreen() {
               accessibilityRole="button"
               accessibilityLabel={`Open the ticket to ${side === 'buy' ? 'go long' : 'go short'} ${canonical}`}
             >
-              <Label size="lg" weight="bold">{side === 'buy' ? 'Long' : 'Short'}</Label>
-              <Label size="xs" tone="tertiary">opens the ticket</Label>
+              <Label size="lg" weight="bold">
+                {side === 'buy' ? 'Long' : 'Short'}
+              </Label>
+              <Label size="xs" tone="tertiary">
+                opens the ticket
+              </Label>
             </Pressable>
           ))}
         </Row>

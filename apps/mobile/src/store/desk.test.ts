@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it } from 'vitest';
-import { canTrade, dataAgeMs, needsAttention, unprotectedPositions, useDeskStore } from './desk.js';
 import type { DeskHealth, DeskStoreState, Order, Position } from './desk.js';
+import { canTrade, dataAgeMs, needsAttention, unprotectedPositions, useDeskStore } from './desk.js';
 
 /**
  * The store's job is to never claim more than it can prove. These tests are
@@ -82,8 +82,15 @@ describe('applying updates', () => {
 
   it('merges a delta by id and honours removals', () => {
     const store = useDeskStore.getState();
-    store.applySnapshot('positions', 1, [position({ positionId: 'a' }), position({ positionId: 'b' })], T0);
-    useDeskStore.getState().applyDelta('positions', 2, [position({ positionId: 'c' })], ['a'], T0 + 1);
+    store.applySnapshot(
+      'positions',
+      1,
+      [position({ positionId: 'a' }), position({ positionId: 'b' })],
+      T0,
+    );
+    useDeskStore
+      .getState()
+      .applyDelta('positions', 2, [position({ positionId: 'c' })], ['a'], T0 + 1);
     const ids = useDeskStore.getState().positions.map((p) => p.positionId);
     expect(ids.sort()).toEqual(['b', 'c']);
   });
@@ -143,7 +150,9 @@ describe('canTrade is conservative and explains itself', () => {
 
   it('refuses when the broker is down, and names it', () => {
     useDeskStore.getState().setConnection('connected');
-    useDeskStore.getState().applySnapshot('health', 1, health({ brokerConnected: false, brokerName: 'oanda' }), T0);
+    useDeskStore
+      .getState()
+      .applySnapshot('health', 1, health({ brokerConnected: false, brokerName: 'oanda' }), T0);
     const r = canTrade(useDeskStore.getState());
     expect(r.reason).toMatch(/oanda is disconnected/);
   });
@@ -152,7 +161,12 @@ describe('canTrade is conservative and explains itself', () => {
     useDeskStore.getState().setConnection('connected');
     useDeskStore
       .getState()
-      .applySnapshot('health', 1, health({ lockout: { until: T0 + 1000, reason: 'daily loss limit' } }), T0);
+      .applySnapshot(
+        'health',
+        1,
+        health({ lockout: { until: T0 + 1000, reason: 'daily loss limit' } }),
+        T0,
+      );
     expect(canTrade(useDeskStore.getState()).reason).toMatch(/daily loss limit/);
   });
 
@@ -177,7 +191,14 @@ describe('canTrade is conservative and explains itself', () => {
     useDeskStore.getState().applySnapshot(
       'drawdown',
       1,
-      { status: 'breached', buffer: '0', bufferFraction: '0', floor: '9400', highWater: '10000', explain: 'x' },
+      {
+        status: 'breached',
+        buffer: '0',
+        bufferFraction: '0',
+        floor: '9400',
+        highWater: '10000',
+        explain: 'x',
+      },
       T0,
     );
     expect(canTrade(useDeskStore.getState()).reason).toMatch(/Drawdown breached/);
@@ -186,27 +207,33 @@ describe('canTrade is conservative and explains itself', () => {
 
 describe('what the operator is shown first', () => {
   it('ranks unknown orders above everything else', () => {
-    useDeskStore.getState().applySnapshot(
-      'orders',
-      1,
-      [
-        order({ intentId: 'c', certainty: 'confirmed' }),
-        order({ intentId: 'u', certainty: 'unknown', state: 'UNKNOWN' }),
-        order({ intentId: 'f', certainty: 'in-flight', state: 'SUBMITTED' }),
-      ],
-      T0,
-    );
+    useDeskStore
+      .getState()
+      .applySnapshot(
+        'orders',
+        1,
+        [
+          order({ intentId: 'c', certainty: 'confirmed' }),
+          order({ intentId: 'u', certainty: 'unknown', state: 'UNKNOWN' }),
+          order({ intentId: 'f', certainty: 'in-flight', state: 'SUBMITTED' }),
+        ],
+        T0,
+      );
     expect(needsAttention(useDeskStore.getState()).map((o) => o.intentId)).toEqual(['u', 'f']);
   });
 
   it('surfaces positions with no stop', () => {
-    useDeskStore.getState().applySnapshot(
-      'positions',
-      1,
-      [position({ positionId: 'safe' }), position({ positionId: 'naked', stopPrice: undefined })],
-      T0,
-    );
-    expect(unprotectedPositions(useDeskStore.getState()).map((p) => p.positionId)).toEqual(['naked']);
+    useDeskStore
+      .getState()
+      .applySnapshot(
+        'positions',
+        1,
+        [position({ positionId: 'safe' }), position({ positionId: 'naked', stopPrice: undefined })],
+        T0,
+      );
+    expect(unprotectedPositions(useDeskStore.getState()).map((p) => p.positionId)).toEqual([
+      'naked',
+    ]);
   });
 });
 

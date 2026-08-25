@@ -1,9 +1,10 @@
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 import * as D from '../money/decimal.js';
+import type { OrderEvent, OrderRecord, OrderState } from './orderState.js';
 import {
-  CERTAINTY,
   applyOrderEvent,
+  CERTAINTY,
   describeCertainty,
   effectiveCertainty,
   isTerminal,
@@ -11,7 +12,6 @@ import {
   newOrderRecord,
   VENUE_FACTS,
 } from './orderState.js';
-import type { OrderEvent, OrderRecord, OrderState } from './orderState.js';
 
 const d = D.dec;
 const T = 1_000_000;
@@ -421,7 +421,12 @@ describe('local commands are refused; venue facts never are', () => {
   ];
 
   it('a venue fact is never dropped, whatever we believed', () => {
-    const believedDead: OrderState[] = ['FAILED_LOCAL', 'CONFIRMED_ABSENT', 'CANCELLED', 'REJECTED'];
+    const believedDead: OrderState[] = [
+      'FAILED_LOCAL',
+      'CONFIRMED_ABSENT',
+      'CANCELLED',
+      'REJECTED',
+    ];
     for (const state of believedDead) {
       for (const ev of venueFacts) {
         const rec: OrderRecord = { ...fresh(), state, lastEventAt: T };

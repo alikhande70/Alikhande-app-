@@ -159,8 +159,7 @@ export function sessionContext(at: number, serverTimeZone: string): SessionConte
     at,
     marketOpen,
     active: active.map((s) => s.id),
-    inOverlap:
-      marketOpen && overlap !== undefined && at >= overlap.startUtc && at < overlap.endUtc,
+    inOverlap: marketOpen && overlap !== undefined && at >= overlap.startUtc && at < overlap.endUtc,
     inRollover: roll.isInside,
     tripleSwap: isTripleSwapRollover(at, serverTimeZone),
   };

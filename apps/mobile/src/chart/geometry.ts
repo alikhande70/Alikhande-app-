@@ -44,7 +44,9 @@ export interface TimeRange {
  * The boundary is explicit and narrow so that "where does a float enter the
  * system?" has a one-line answer.
  */
-export function toPlot(bars: readonly { t: number; o: string; h: string; l: string; c: string }[]): PlotBar[] {
+export function toPlot(
+  bars: readonly { t: number; o: string; h: string; l: string; c: string }[],
+): PlotBar[] {
   return bars.map((b) => ({
     t: b.t,
     o: Number(b.o),
@@ -104,7 +106,12 @@ export interface Scale {
   readonly slotWidth: number;
 }
 
-export function makeScale(view: Viewport, price: PriceRange, time: TimeRange, barCount: number): Scale {
+export function makeScale(
+  view: Viewport,
+  price: PriceRange,
+  time: TimeRange,
+  barCount: number,
+): Scale {
   const plotTop = view.paddingTop;
   const plotHeight = Math.max(1, view.height - view.paddingTop - view.paddingBottom);
   const plotWidth = Math.max(1, view.width - view.paddingRight);
@@ -154,7 +161,16 @@ export function priceTicks(range: PriceRange, targetCount = 5): number[] {
   const rough = span / Math.max(1, targetCount);
   const magnitude = 10 ** Math.floor(Math.log10(rough));
   const normalised = rough / magnitude;
-  const step = (normalised <= 1 ? 1 : normalised <= 2 ? 2 : normalised <= 2.5 ? 2.5 : normalised <= 5 ? 5 : 10) * magnitude;
+  const step =
+    (normalised <= 1
+      ? 1
+      : normalised <= 2
+        ? 2
+        : normalised <= 2.5
+          ? 2.5
+          : normalised <= 5
+            ? 5
+            : 10) * magnitude;
   const first = Math.ceil(range.min / step) * step;
   const ticks: number[] = [];
   for (let v = first; v <= range.max + step * 1e-9; v += step) {
@@ -242,7 +258,11 @@ export function barIndexAt(bars: readonly PlotBar[], scale: Scale, x: number): n
  * long's stop should never land it *closer* to entry than the finger did, or a
  * careful drag silently tightens the stop.
  */
-export function snapToTick(price: number, tickSize: number, direction: 'safer-long' | 'safer-short' | 'nearest'): number {
+export function snapToTick(
+  price: number,
+  tickSize: number,
+  direction: 'safer-long' | 'safer-short' | 'nearest',
+): number {
   if (tickSize <= 0 || !Number.isFinite(tickSize)) return price;
   const units = price / tickSize;
   const snapped =

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import * as D from '../money/decimal.js';
-import { blocksTrading, reconcile, worstSeverity } from './reconcile.js';
 import type { ReconcileInput } from './reconcile.js';
+import { blocksTrading, reconcile, worstSeverity } from './reconcile.js';
 
 const d = D.dec;
 const NOW = 1_800_000_000_000;

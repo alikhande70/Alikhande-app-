@@ -181,30 +181,33 @@ export type AnomalySeverity = 'info' | 'warning' | 'critical';
  * Something that is not an error in this reducer but must not be swallowed:
  * the venue told us something inconsistent with what we believed.
  */
+/** The ways a venue can contradict what we believed. */
+export type AnomalyKind =
+  /** Venue filled more than we asked for. */
+  | 'OVERFILL'
+  /** The same fill id arrived twice; the second was ignored. */
+  | 'DUPLICATE_FILL'
+  /** Venue reported less progress than we had already recorded. */
+  | 'REGRESSED_STATE'
+  /** The venue's id for this intent changed under us. */
+  | 'VENUE_ID_CHANGED'
+  /** A fill arrived after we considered the order finished. */
+  | 'FILL_AFTER_TERMINAL'
+  /** The venue asserts a state we did not expect. */
+  | 'UNSOLICITED_STATE'
+  /** An order we concluded did not exist turned out to exist. */
+  | 'PHANTOM_RESURRECTION'
+  /** A venue search said "absent" but local evidence says otherwise. */
+  | 'CONTRADICTED_ABSENCE'
+  /** Reconciliation found fills that never arrived through the event path. */
+  | 'MISSED_FILL_EVENTS'
+  /** An observation older than our current knowledge; discarded. */
+  | 'STALE_OBSERVATION'
+  /** Communication failed but the order is known to exist; knowledge is stale. */
+  | 'KNOWLEDGE_STALE';
+
 export interface Anomaly {
-  readonly kind:
-    /** Venue filled more than we asked for. */
-    | 'OVERFILL'
-    /** The same fill id arrived twice; the second was ignored. */
-    | 'DUPLICATE_FILL'
-    /** Venue reported less progress than we had already recorded. */
-    | 'REGRESSED_STATE'
-    /** The venue's id for this intent changed under us. */
-    | 'VENUE_ID_CHANGED'
-    /** A fill arrived after we considered the order finished. */
-    | 'FILL_AFTER_TERMINAL'
-    /** The venue asserts a state we did not expect. */
-    | 'UNSOLICITED_STATE'
-    /** An order we concluded did not exist turned out to exist. */
-    | 'PHANTOM_RESURRECTION'
-    /** A venue search said "absent" but local evidence says otherwise. */
-    | 'CONTRADICTED_ABSENCE'
-    /** Reconciliation found fills that never arrived through the event path. */
-    | 'MISSED_FILL_EVENTS'
-    /** An observation older than our current knowledge; discarded. */
-    | 'STALE_OBSERVATION'
-    /** Communication failed but the order is known to exist; knowledge is stale. */
-    | 'KNOWLEDGE_STALE';
+  readonly kind: AnomalyKind;
   readonly severity: AnomalySeverity;
   readonly detail: string;
 }
@@ -688,12 +691,7 @@ function makeOk(prev: OrderRecord, believedAbsent: boolean) {
  */
 const AVG_PRICE_GUARD_DIGITS = 4;
 
-function weightedAverage(
-  prevAvg: Dec | undefined,
-  prevQty: Dec,
-  newPrice: Dec,
-  newQty: Dec,
-): Dec {
+function weightedAverage(prevAvg: Dec | undefined, prevQty: Dec, newPrice: Dec, newQty: Dec): Dec {
   if (prevAvg === undefined || D.isZero(prevQty)) return newPrice;
   const totalQty = D.add(prevQty, newQty);
   if (D.isZero(totalQty)) return newPrice;

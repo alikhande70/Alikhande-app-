@@ -59,7 +59,12 @@ export class TestClock implements Clock {
   }
 
   setTimeout(fn: () => void, ms: number): () => void {
-    const task: ScheduledTask = { at: this.current + Math.max(0, ms), seq: this.seq++, fn, cancelled: false };
+    const task: ScheduledTask = {
+      at: this.current + Math.max(0, ms),
+      seq: this.seq++,
+      fn,
+      cancelled: false,
+    };
     this.tasks.push(task);
     return () => {
       task.cancelled = true;

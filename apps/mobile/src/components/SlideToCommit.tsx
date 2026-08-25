@@ -1,3 +1,4 @@
+import * as Haptics from 'expo-haptics';
 import { useCallback } from 'react';
 import { View } from 'react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
@@ -8,7 +9,6 @@ import Animated, {
   withSpring,
   withTiming,
 } from 'react-native-reanimated';
-import * as Haptics from 'expo-haptics';
 import { Label, useTheme } from './primitives.js';
 
 /**
@@ -45,7 +45,7 @@ export function SlideToCommit({ label, enabled, side, onCommit }: SlideToCommitP
     void onCommit();
   }, [onCommit]);
 
-  const reset = useCallback(() => {
+  const _reset = useCallback(() => {
     knobX.value = withSpring(0, { damping: 20, stiffness: 200 });
     committed.value = false;
   }, [knobX, committed]);

@@ -1,14 +1,13 @@
+import { router } from 'expo-router';
 import { useMemo } from 'react';
 import { Pressable, ScrollView, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { router } from 'expo-router';
 import {
   AgeBadge,
   Card,
   CertaintyChip,
   Label,
   Numeric,
-  Pnl,
   Row,
   useTheme,
 } from '../../src/components/primitives.js';
@@ -80,7 +79,9 @@ export default function PulseScreen() {
       {naked.length > 0 && (
         <Card tone="critical">
           <Label size="lg" weight="semibold" tone="critical">
-            {naked.length === 1 ? 'A position has no stop' : `${naked.length} positions have no stop`}
+            {naked.length === 1
+              ? 'A position has no stop'
+              : `${naked.length} positions have no stop`}
           </Label>
           <Label size="sm" tone="secondary">
             Their downside is unbounded until one is attached.
@@ -110,13 +111,19 @@ export default function PulseScreen() {
       {attention.length > 0 && (
         <Card tone={attention.some((o) => o.certainty === 'unknown') ? 'unknown' : 'warning'}>
           <Label size="lg" weight="semibold">
-            {attention.length === 1 ? 'One order needs attention' : `${attention.length} orders need attention`}
+            {attention.length === 1
+              ? 'One order needs attention'
+              : `${attention.length} orders need attention`}
           </Label>
           {attention.slice(0, 4).map((o) => (
             <Pressable
               key={o.intentId}
               onPress={() => router.push(`/order/${o.intentId}`)}
-              style={{ minHeight: theme.hit.comfortable, justifyContent: 'center', gap: theme.space.xs }}
+              style={{
+                minHeight: theme.hit.comfortable,
+                justifyContent: 'center',
+                gap: theme.space.xs,
+              }}
               accessibilityRole="button"
               accessibilityLabel={`${o.canonical} ${o.state}. ${o.certaintyText}`}
             >
@@ -210,7 +217,15 @@ export default function PulseScreen() {
       </Card>
 
       {state.drawdown !== undefined && state.drawdown.status !== 'not-applicable' && (
-        <Card tone={state.drawdown.status === 'breached' ? 'critical' : state.drawdown.status === 'warning' ? 'warning' : 'default'}>
+        <Card
+          tone={
+            state.drawdown.status === 'breached'
+              ? 'critical'
+              : state.drawdown.status === 'warning'
+                ? 'warning'
+                : 'default'
+          }
+        >
           <Row justify="space-between">
             <Label size="sm" tone="secondary">
               Drawdown buffer
@@ -230,7 +245,10 @@ export default function PulseScreen() {
               left before the account ends
             </Label>
           </Row>
-          <BufferBar fraction={Number(state.drawdown.bufferFraction)} status={state.drawdown.status} />
+          <BufferBar
+            fraction={Number(state.drawdown.bufferFraction)}
+            status={state.drawdown.status}
+          />
           <Label size="xs" tone="tertiary">
             {state.drawdown.explain}
           </Label>
@@ -295,9 +313,15 @@ function ConnectionBar() {
     connection === 'connected' && health?.brokerConnected === true
       ? { text: `${health.brokerName} · live`, tone: 'tertiary' as const }
       : connection === 'connected'
-        ? { text: `desk up · ${health?.brokerName ?? 'broker'} disconnected`, tone: 'critical' as const }
+        ? {
+            text: `desk up · ${health?.brokerName ?? 'broker'} disconnected`,
+            tone: 'critical' as const,
+          }
         : connection === 'resyncing'
-          ? { text: `resyncing${connectionDetail !== undefined ? ` · ${connectionDetail}` : ''}`, tone: 'warning' as const }
+          ? {
+              text: `resyncing${connectionDetail !== undefined ? ` · ${connectionDetail}` : ''}`,
+              tone: 'warning' as const,
+            }
           : connection === 'connecting'
             ? { text: 'connecting to your desk', tone: 'warning' as const }
             : { text: 'not connected — showing last known state', tone: 'critical' as const };

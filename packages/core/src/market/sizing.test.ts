@@ -2,8 +2,8 @@ import { describe, expect, it } from 'vitest';
 import * as D from '../money/decimal.js';
 import { BTCUSD_PERP, EURUSD, FIXTURE_TIME, GBPJPY, XAUUSD } from '../testing/fixtures.js';
 import { FxBook } from './fx.js';
-import { sizePosition, rewardToRisk } from './sizing.js';
 import type { SizingRequest } from './sizing.js';
+import { rewardToRisk, sizePosition } from './sizing.js';
 
 const d = D.dec;
 const now = FIXTURE_TIME;
@@ -138,9 +138,7 @@ describe('sizePosition — the arithmetic', () => {
     // A venue that wants 2dp rejects "0.20000000".
     const gold = sizePosition(req({}));
     expect(gold.ok && D.toString(gold.volume)).toBe('0.20');
-    const btc = sizePosition(
-      req({ spec: BTCUSD_PERP, entry: d('79000.0'), stop: d('78000.0') }),
-    );
+    const btc = sizePosition(req({ spec: BTCUSD_PERP, entry: d('79000.0'), stop: d('78000.0') }));
     expect(btc.ok && D.toString(btc.volume)).toBe('0.1000');
   });
 });
@@ -177,9 +175,7 @@ describe('sizePosition — refusals', () => {
   });
 
   it('refuses a stop inside the venue minimum distance', () => {
-    const r = sizePosition(
-      req({ entry: d('2400.00'), stop: d('2399.90'), market: d('2400.00') }),
-    );
+    const r = sizePosition(req({ entry: d('2400.00'), stop: d('2399.90'), market: d('2400.00') }));
     expect(r.ok).toBe(false);
     if (r.ok) return;
     expect(r.code).toBe('STOP_TOO_CLOSE');

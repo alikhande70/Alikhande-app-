@@ -116,9 +116,7 @@ export class Guard {
       ledger.append({
         kind: 'drawdown.breached',
         floor: D.Decimal.toString(reading.state.floor),
-        observed: D.Decimal.toString(
-          config.basis === 'equity' ? account.equity : account.balance,
-        ),
+        observed: D.Decimal.toString(config.basis === 'equity' ? account.equity : account.balance),
         at: clock.now(),
       });
       projector.catchUp();
@@ -227,7 +225,11 @@ export class Guard {
   private msUntilNextDay(): number {
     const policy = this.deps.state.policy;
     const now = this.deps.clock.now();
-    const start = lastLocalTimeAtOrBefore(now, policy.dayBoundaryTimeZone, policy.dayBoundaryLocalTime);
+    const start = lastLocalTimeAtOrBefore(
+      now,
+      policy.dayBoundaryTimeZone,
+      policy.dayBoundaryLocalTime,
+    );
     const next = start + 86_400_000;
     return Math.max(60_000, next - now);
   }

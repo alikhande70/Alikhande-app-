@@ -1,7 +1,7 @@
 import * as D from '@keel/core';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { createHarness, HARNESS_START } from './harness.js';
 import type { Harness } from './harness.js';
+import { createHarness, HARNESS_START } from './harness.js';
 import type { SubmitCommand } from './supervisor.js';
 
 /**
@@ -130,7 +130,11 @@ describe('risk is enforced server-side', () => {
       asOf: h.clock.now(),
       source: 'broker',
     });
-    h.ledger.append({ kind: 'day.rolled', dayStart: HARNESS_START - 3_600_000, openBalance: '10000.00' });
+    h.ledger.append({
+      kind: 'day.rolled',
+      dayStart: HARNESS_START - 3_600_000,
+      openBalance: '10000.00',
+    });
     h.projector.catchUp();
 
     const out = await h.run(h.supervisor.submit(cmd()));

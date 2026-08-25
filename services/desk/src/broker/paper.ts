@@ -1,5 +1,5 @@
-import * as D from '@keel/core';
 import type { Dec, InstrumentSpec } from '@keel/core';
+import * as D from '@keel/core';
 import type { Clock } from '../sim/clock.js';
 import { Rng } from '../sim/rng.js';
 import type {
@@ -249,7 +249,8 @@ export class PaperBroker implements BrokerPort {
     const spec = this.specs.get(p.canonical);
     if (q === undefined || spec === undefined) return D.Decimal.ZERO;
     const exit = p.side === 'buy' ? q.bid : q.ask;
-    const move = p.side === 'buy' ? D.Decimal.sub(exit, p.entryPrice) : D.Decimal.sub(p.entryPrice, exit);
+    const move =
+      p.side === 'buy' ? D.Decimal.sub(exit, p.entryPrice) : D.Decimal.sub(p.entryPrice, exit);
     return D.Decimal.mul(D.Decimal.mul(move, spec.contractSize), p.volume);
   }
 
@@ -309,7 +310,12 @@ export class PaperBroker implements BrokerPort {
 
     const spec = this.specs.get(req.canonical);
     if (spec === undefined) {
-      return { outcome: 'rejected', reason: `unknown instrument ${req.canonical}`, code: 'NO_SYMBOL', at };
+      return {
+        outcome: 'rejected',
+        reason: `unknown instrument ${req.canonical}`,
+        code: 'NO_SYMBOL',
+        at,
+      };
     }
     const quote = this.quotes.get(req.canonical);
     if (quote === undefined) {
@@ -324,11 +330,21 @@ export class PaperBroker implements BrokerPort {
     // Stops-level: the venue refuses a protective stop too close to market.
     const market = req.side === 'buy' ? quote.ask : quote.bid;
     if (req.stopLoss !== undefined && !D.respectsStopsLevel(spec, market, req.stopLoss)) {
-      return { outcome: 'rejected', reason: 'stop is inside the minimum distance', code: 'INVALID_STOPS', at };
+      return {
+        outcome: 'rejected',
+        reason: 'stop is inside the minimum distance',
+        code: 'INVALID_STOPS',
+        at,
+      };
     }
 
     if (this.rng.chance(this.cfg.faults.rejectRate)) {
-      return { outcome: 'rejected', reason: 'venue rejected: temporary market condition', code: 'REQUOTE', at };
+      return {
+        outcome: 'rejected',
+        reason: 'venue rejected: temporary market condition',
+        code: 'REQUOTE',
+        at,
+      };
     }
 
     const margin = D.marginQuote(spec, volumeCheck.volume, market);
@@ -438,11 +454,18 @@ export class PaperBroker implements BrokerPort {
       'down',
     );
     const firstPiece = D.volumeAtVenuePrecision(spec, half);
-    if (D.Decimal.lte(firstPiece, D.Decimal.ZERO) || D.Decimal.gte(firstPiece, total)) return [total];
+    if (D.Decimal.lte(firstPiece, D.Decimal.ZERO) || D.Decimal.gte(firstPiece, total))
+      return [total];
     return [firstPiece, D.volumeAtVenuePrecision(spec, D.Decimal.sub(total, firstPiece))];
   }
 
-  private applyFill(order: SimOrder, qty: Dec, spec: InstrumentSpec, quote: BrokerQuote, at: number): void {
+  private applyFill(
+    order: SimOrder,
+    qty: Dec,
+    spec: InstrumentSpec,
+    quote: BrokerQuote,
+    at: number,
+  ): void {
     const base = order.side === 'buy' ? quote.ask : quote.bid;
     const price = this.withSlippage(base, spec, order.side);
     order.filledQty = D.Decimal.add(order.filledQty, qty);
@@ -458,7 +481,9 @@ export class PaperBroker implements BrokerPort {
             spec.digits + 2,
             'half-even',
           );
-    order.state = D.Decimal.gte(order.filledQty, order.requestedQty) ? 'FILLED' : 'PARTIALLY_FILLED';
+    order.state = D.Decimal.gte(order.filledQty, order.requestedQty)
+      ? 'FILLED'
+      : 'PARTIALLY_FILLED';
 
     this.openOrAdjustPosition(order, qty, price, spec, at);
 
@@ -581,8 +606,15 @@ export class PaperBroker implements BrokerPort {
     this.emit({ type: 'position', at, position: this.toBrokerPosition(p) });
   }
 
-  private reducePosition(p: SimPosition, qty: Dec, price: Dec, spec: InstrumentSpec, at: number): void {
-    const move = p.side === 'buy' ? D.Decimal.sub(price, p.entryPrice) : D.Decimal.sub(p.entryPrice, price);
+  private reducePosition(
+    p: SimPosition,
+    qty: Dec,
+    price: Dec,
+    spec: InstrumentSpec,
+    at: number,
+  ): void {
+    const move =
+      p.side === 'buy' ? D.Decimal.sub(price, p.entryPrice) : D.Decimal.sub(p.entryPrice, price);
     const pnl = D.Decimal.rescale(
       D.Decimal.mul(D.Decimal.mul(move, spec.contractSize), qty),
       2,
@@ -617,7 +649,8 @@ export class PaperBroker implements BrokerPort {
     const at = this.clock.now();
     if (!this.connected) return { outcome: 'ambiguous', reason: 'not connected', at };
     const order = this.orders.get(venueOrderId);
-    if (order === undefined) return { outcome: 'rejected', reason: 'unknown order', code: 'NO_ORDER', at };
+    if (order === undefined)
+      return { outcome: 'rejected', reason: 'unknown order', code: 'NO_ORDER', at };
     if (order.state === 'FILLED') {
       return { outcome: 'rejected', reason: 'order already filled', code: 'TOO_LATE', at };
     }
@@ -636,16 +669,27 @@ export class PaperBroker implements BrokerPort {
     const at = this.clock.now();
     if (!this.connected) return { outcome: 'ambiguous', reason: 'not connected', at };
     const p = this.positions.get(positionId);
-    if (p === undefined) return { outcome: 'rejected', reason: 'unknown position', code: 'NO_POSITION', at };
+    if (p === undefined)
+      return { outcome: 'rejected', reason: 'unknown position', code: 'NO_POSITION', at };
     const spec = this.specs.get(p.canonical);
     const quote = this.quotes.get(p.canonical);
     if (spec !== undefined && quote !== undefined && stopLoss !== undefined) {
       const market = p.side === 'buy' ? quote.bid : quote.ask;
       if (D.insideFreezeLevel(spec, market, stopLoss)) {
-        return { outcome: 'rejected', reason: 'price is inside the freeze level', code: 'FROZEN', at };
+        return {
+          outcome: 'rejected',
+          reason: 'price is inside the freeze level',
+          code: 'FROZEN',
+          at,
+        };
       }
       if (!D.respectsStopsLevel(spec, market, stopLoss)) {
-        return { outcome: 'rejected', reason: 'stop is inside the minimum distance', code: 'INVALID_STOPS', at };
+        return {
+          outcome: 'rejected',
+          reason: 'stop is inside the minimum distance',
+          code: 'INVALID_STOPS',
+          at,
+        };
       }
     }
     if (stopLoss !== undefined) p.stopPrice = stopLoss;
@@ -723,7 +767,9 @@ export class PaperBroker implements BrokerPort {
         // Stops fill at the trigger plus slippage, not at the trigger. Modelling
         // them as exact is the single biggest lie a paper simulator can tell.
         const trigger = hitStop ? (p.stopPrice as Dec) : (p.takeProfitPrice as Dec);
-        const fill = hitStop ? this.withSlippage(trigger, spec, p.side === 'buy' ? 'sell' : 'buy') : trigger;
+        const fill = hitStop
+          ? this.withSlippage(trigger, spec, p.side === 'buy' ? 'sell' : 'buy')
+          : trigger;
         this.reducePosition(p, p.volume, fill, spec, at);
       }
     }

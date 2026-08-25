@@ -1,8 +1,8 @@
 import { generateKeyPairSync, randomUUID, sign } from 'node:crypto';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import WebSocket from 'ws';
-import { startDesk } from '../main.js';
 import type { Desk } from '../main.js';
+import { startDesk } from '../main.js';
 import { canonicalString, hashBody } from './auth.js';
 
 /**
@@ -35,7 +35,9 @@ async function call(
     bodyHash: hashBody(text),
     ...(commandNonce !== undefined ? { commandNonce } : {}),
   };
-  const signature = sign(null, Buffer.from(canonicalString(base), 'utf8'), privateKey).toString('base64');
+  const signature = sign(null, Buffer.from(canonicalString(base), 'utf8'), privateKey).toString(
+    'base64',
+  );
   const headers: Record<string, string> = {
     'content-type': 'application/json',
     'x-keel-device': deviceId,

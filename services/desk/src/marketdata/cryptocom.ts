@@ -1,6 +1,6 @@
 import * as D from '@keel/core';
-import WebSocket from 'ws';
 import { request } from 'undici';
+import WebSocket from 'ws';
 import type { Clock } from '../sim/clock.js';
 import type { Bar, MarketDataEvent, MarketDataProvider, Tick, Timeframe } from './port.js';
 import { isCrossed } from './port.js';
@@ -131,7 +131,9 @@ export class CryptoComProvider implements MarketDataProvider {
 
   private openSocket(): Promise<void> {
     return new Promise<void>((resolve) => {
-      const factory = this.opts.socketFactory ?? ((url: string) => new WebSocket(url) as unknown as WebSocketLike);
+      const factory =
+        this.opts.socketFactory ??
+        ((url: string) => new WebSocket(url) as unknown as WebSocketLike);
       let settled = false;
       let ws: WebSocketLike;
       try {
@@ -241,7 +243,12 @@ export class CryptoComProvider implements MarketDataProvider {
     const channels = canonicals.map((c) => `ticker.${this.venueSymbol(c)}`);
     for (const c of canonicals) this.subscriptions.delete(c);
     if (!this.connected || channels.length === 0) return;
-    this.send({ id: this.nextId++, method: 'unsubscribe', params: { channels }, nonce: this.opts.clock.now() });
+    this.send({
+      id: this.nextId++,
+      method: 'unsubscribe',
+      params: { channels },
+      nonce: this.opts.clock.now(),
+    });
   }
 
   /**
@@ -255,14 +262,24 @@ export class CryptoComProvider implements MarketDataProvider {
   private async replaySubscriptions(): Promise<void> {
     if (this.subscriptions.size === 0) return;
     const channels = [...this.subscriptions].map((c) => `ticker.${this.venueSymbol(c)}`);
-    this.send({ id: this.nextId++, method: 'subscribe', params: { channels }, nonce: this.opts.clock.now() });
+    this.send({
+      id: this.nextId++,
+      method: 'subscribe',
+      params: { channels },
+      nonce: this.opts.clock.now(),
+    });
   }
 
   private send(payload: unknown): void {
     try {
       this.ws?.send(JSON.stringify(payload));
     } catch (err) {
-      this.emit({ type: 'error', at: this.opts.clock.now(), detail: `send failed: ${errText(err)}`, fatal: false });
+      this.emit({
+        type: 'error',
+        at: this.opts.clock.now(),
+        detail: `send failed: ${errText(err)}`,
+        fatal: false,
+      });
     }
   }
 
@@ -341,7 +358,8 @@ export class CryptoComProvider implements MarketDataProvider {
     const rows = ((body.result as Record<string, unknown> | undefined)?.data ?? []) as CandleRow[];
     const bars: Bar[] = [];
     for (const r of rows) {
-      if (r.o === undefined || r.h === undefined || r.l === undefined || r.c === undefined) continue;
+      if (r.o === undefined || r.h === undefined || r.l === undefined || r.c === undefined)
+        continue;
       try {
         bars.push({
           t: r.t ?? 0,
@@ -365,7 +383,9 @@ export class CryptoComProvider implements MarketDataProvider {
       symbol?: string;
       tradable?: boolean;
     }>;
-    return rows.filter((r) => r.tradable !== false && r.symbol !== undefined).map((r) => r.symbol as string);
+    return rows
+      .filter((r) => r.tradable !== false && r.symbol !== undefined)
+      .map((r) => r.symbol as string);
   }
 
   /** A one-shot ticker read, used to prime state before the socket delivers. */

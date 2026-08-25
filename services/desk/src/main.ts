@@ -6,15 +6,15 @@ import { ExpoPushSender } from './alerts/push.js';
 import { PaperBroker, REALISTIC_FAULTS } from './broker/paper.js';
 import type { BrokerPort } from './broker/port.js';
 import { describeCapabilities } from './broker/port.js';
-import { loadConfig } from './config.js';
 import type { DeskConfig } from './config.js';
+import { loadConfig } from './config.js';
 import { Guard } from './engine/guard.js';
 import { Reconciler } from './engine/reconciler.js';
-import { UnknownResolver, pendingResolutions } from './engine/resolver.js';
+import { pendingResolutions, UnknownResolver } from './engine/resolver.js';
 import { DeskState, specToJson } from './engine/state.js';
-import { ExecutionSupervisor, clientOrderIdFor } from './engine/supervisor.js';
-import { buildServer, buildSnapshot, orderToWire } from './http/server.js';
+import { clientOrderIdFor, ExecutionSupervisor } from './engine/supervisor.js';
 import { Authenticator } from './http/auth.js';
+import { buildServer, buildSnapshot, orderToWire } from './http/server.js';
 import { Ledger } from './ledger/ledger.js';
 import { Projector } from './ledger/projections.js';
 import { CryptoComProvider } from './marketdata/cryptocom.js';
@@ -315,7 +315,8 @@ export async function startDesk(config: DeskConfig = loadConfig()): Promise<Desk
       brokerName: broker.name,
       referenceFeedConnected: reference?.isConnected() ?? false,
       openDivergences: reconciler.openDivergences.length,
-      criticalDivergences: reconciler.openDivergences.filter((d) => d.severity === 'critical').length,
+      criticalDivergences: reconciler.openDivergences.filter((d) => d.severity === 'critical')
+        .length,
       unresolvedOrders: resolver.activeJobs,
       undeliveredCriticalAlerts: undelivered.length,
       lockout: state.lockout(),
@@ -517,7 +518,10 @@ function buildBroker(config: DeskConfig, clock: typeof systemClock): BrokerPort 
 }
 
 /** Find the intent that produced a venue-side client order id. */
-function intentForClientOrderId(ledger: Ledger, clientOrderId: string | undefined): string | undefined {
+function intentForClientOrderId(
+  ledger: Ledger,
+  clientOrderId: string | undefined,
+): string | undefined {
   if (clientOrderId === undefined) return undefined;
   const row = ledger.db
     .prepare(
@@ -530,13 +534,13 @@ function intentForClientOrderId(ledger: Ledger, clientOrderId: string | undefine
 }
 
 function orderRow(ledger: Ledger, intentId: string): Record<string, unknown> {
-  return (ledger.db.prepare('SELECT * FROM orders WHERE intent_id = ?').get(intentId) ?? {}) as Record<
-    string,
-    unknown
-  >;
+  return (ledger.db.prepare('SELECT * FROM orders WHERE intent_id = ?').get(intentId) ??
+    {}) as Record<string, unknown>;
 }
 
-const isMain = process.argv[1] !== undefined && import.meta.url.endsWith(process.argv[1].replace(/^.*[/\\]/, ''));
+const isMain =
+  process.argv[1] !== undefined &&
+  import.meta.url.endsWith(process.argv[1].replace(/^.*[/\\]/, ''));
 if (isMain) {
   startDesk()
     .then((desk) => {
@@ -549,7 +553,9 @@ if (isMain) {
       process.on('SIGTERM', () => shutdown('SIGTERM'));
     })
     .catch((err: unknown) => {
-      process.stderr.write(`desk failed to start: ${err instanceof Error ? err.message : String(err)}\n`);
+      process.stderr.write(
+        `desk failed to start: ${err instanceof Error ? err.message : String(err)}\n`,
+      );
       process.exit(1);
     });
 }

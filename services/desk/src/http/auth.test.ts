@@ -163,7 +163,9 @@ describe('request signing', () => {
 
   it('rejects an unknown device', () => {
     const { auth, device } = setup();
-    expect(() => auth.verifyRequest(signedRequest(device, 'nope'), false)).toThrow(/unknown device/);
+    expect(() => auth.verifyRequest(signedRequest(device, 'nope'), false)).toThrow(
+      /unknown device/,
+    );
   });
 
   it('rejects a tampered body while the signature stays valid for the old one', () => {

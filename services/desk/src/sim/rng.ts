@@ -10,7 +10,7 @@ export class Rng {
 
   constructor(seed: number) {
     // Avoid the zero fixed point of xorshift.
-    this.state = (seed >>> 0) || 0x9e3779b9;
+    this.state = seed >>> 0 || 0x9e3779b9;
   }
 
   /** xorshift32. Fast, adequate for simulation, and identical across runtimes. */

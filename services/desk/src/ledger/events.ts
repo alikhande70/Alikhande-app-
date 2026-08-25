@@ -1,5 +1,5 @@
-import * as D from '@keel/core';
 import type { Anomaly, Dec, OrderEvent, OrderState } from '@keel/core';
+import * as D from '@keel/core';
 
 /**
  * Everything that can change the desk's state, as immutable facts.
@@ -83,7 +83,14 @@ export type LedgerEvent =
       foreign: boolean;
       asOf: number;
     }
-  | { kind: 'position.closed'; positionId: string; exitPrice: string; netPnl: string; costs: string; closedAt: number }
+  | {
+      kind: 'position.closed';
+      positionId: string;
+      exitPrice: string;
+      netPnl: string;
+      costs: string;
+      closedAt: number;
+    }
   | {
       kind: 'account.observed';
       currency: string;
@@ -124,8 +131,22 @@ export type LedgerEvent =
   | { kind: 'divergence.resolved'; divergenceId: string; how: string; at: number }
   | { kind: 'reconcile.completed'; checkedAt: number; divergences: number; clean: boolean }
   | { kind: 'journal.opened'; tradeId: string; entry: Record<string, unknown> }
-  | { kind: 'journal.closed'; tradeId: string; exitPrice: string; netPnl: string; costs: string; r: string; closedAt: number }
-  | { kind: 'journal.noted'; tradeId: string; postTradeNote: string; tags: readonly string[]; at: number }
+  | {
+      kind: 'journal.closed';
+      tradeId: string;
+      exitPrice: string;
+      netPnl: string;
+      costs: string;
+      r: string;
+      closedAt: number;
+    }
+  | {
+      kind: 'journal.noted';
+      tradeId: string;
+      postTradeNote: string;
+      tags: readonly string[];
+      at: number;
+    }
   | { kind: 'alert.raised'; alertId: string; alert: Record<string, unknown> }
   | { kind: 'alert.acknowledged'; alertId: string; at: number }
   | { kind: 'alert.pushDispatched'; alertId: string; at: number }

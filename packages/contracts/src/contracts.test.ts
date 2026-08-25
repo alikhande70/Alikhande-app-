@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   ClientMessage,
+  checkContiguity,
   DecimalString,
   Order,
   PlaceOrderRequest,
@@ -8,7 +9,6 @@ import {
   Quote,
   ServerMessage,
   Topic,
-  checkContiguity,
 } from './index.js';
 
 describe('decimal strings on the wire', () => {

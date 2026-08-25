@@ -189,7 +189,8 @@ export class KeychainSigner implements SecureSigner {
   async sign(canonical: string, reason: string, requireBiometric: boolean): Promise<string> {
     if (requireBiometric) {
       const passed = await this.biometricGate(reason);
-      if (!passed) throw new SignerError('biometric authentication was not passed', 'BIOMETRIC_FAILED');
+      if (!passed)
+        throw new SignerError('biometric authentication was not passed', 'BIOMETRIC_FAILED');
     }
     const priv = await this.store.getItem('keel.device.private');
     if (priv === null) throw new SignerError('no device key found', 'NO_KEY');

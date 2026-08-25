@@ -1,7 +1,7 @@
-import type { Dec } from '../money/decimal.js';
-import * as D from '../money/decimal.js';
 import type { InstrumentSpec } from '../market/instrument.js';
 import type { Side } from '../market/sizing.js';
+import type { Dec } from '../money/decimal.js';
+import * as D from '../money/decimal.js';
 import { sessionContext } from '../time/sessions.js';
 import type { DrawdownReading } from './drawdown.js';
 import type { RiskPolicy } from './policy.js';
@@ -382,11 +382,23 @@ export function evaluate(req: RiskRequest, ctx: RiskContext): RiskDecision {
 
   if (ctx.drawdown.status === 'breached') {
     checks.push(
-      check('drawdown', 'block', 'breached', D.toString(ctx.drawdown.state.floor), ctx.drawdown.explain),
+      check(
+        'drawdown',
+        'block',
+        'breached',
+        D.toString(ctx.drawdown.state.floor),
+        ctx.drawdown.explain,
+      ),
     );
   } else if (ctx.drawdown.status === 'warning') {
     checks.push(
-      check('drawdown', 'warn', D.toString(ctx.drawdown.buffer), D.toString(ctx.drawdown.state.floor), ctx.drawdown.explain),
+      check(
+        'drawdown',
+        'warn',
+        D.toString(ctx.drawdown.buffer),
+        D.toString(ctx.drawdown.state.floor),
+        ctx.drawdown.explain,
+      ),
     );
   }
 
@@ -407,8 +419,7 @@ export function evaluate(req: RiskRequest, ctx: RiskContext): RiskDecision {
         ),
       );
       const capped = D.rescale(buffer, 2, 'down');
-      cappedRiskBudget =
-        cappedRiskBudget === undefined ? capped : D.min(cappedRiskBudget, capped);
+      cappedRiskBudget = cappedRiskBudget === undefined ? capped : D.min(cappedRiskBudget, capped);
     }
   }
 
@@ -438,10 +449,7 @@ export function evaluate(req: RiskRequest, ctx: RiskContext): RiskDecision {
     );
   }
 
-  if (
-    ctx.day.consecutiveLosses >= policy.lossStreakLimit &&
-    ctx.day.lastLossAt !== undefined
-  ) {
+  if (ctx.day.consecutiveLosses >= policy.lossStreakLimit && ctx.day.lastLossAt !== undefined) {
     const until = ctx.day.lastLossAt + policy.cooldownMinutes * 60_000;
     if (ctx.now < until) {
       const mins = Math.ceil((until - ctx.now) / 60_000);
@@ -461,9 +469,7 @@ export function evaluate(req: RiskRequest, ctx: RiskContext): RiskDecision {
 
   const session = sessionContext(ctx.now, req.spec.venueTimeZone);
   if (policy.sessions.requireMarketOpen && !session.marketOpen) {
-    checks.push(
-      check('market-open', 'block', 'closed', 'open', 'The market is closed.'),
-    );
+    checks.push(check('market-open', 'block', 'closed', 'open', 'The market is closed.'));
   }
   if (policy.sessions.allowed.length > 0 && session.marketOpen) {
     const inAllowed = session.active.some((s) => policy.sessions.allowed.includes(s));
@@ -513,7 +519,11 @@ export function evaluate(req: RiskRequest, ctx: RiskContext): RiskDecision {
     }
   }
 
-  if (req.spread !== undefined && req.typicalSpread !== undefined && D.gt(req.typicalSpread, D.ZERO)) {
+  if (
+    req.spread !== undefined &&
+    req.typicalSpread !== undefined &&
+    D.gt(req.typicalSpread, D.ZERO)
+  ) {
     const multiple = D.div(req.spread, req.typicalSpread, 2, 'half-even');
     if (D.gt(multiple, policy.maxSpreadMultiple)) {
       checks.push(
@@ -635,7 +645,9 @@ export function summariseRiskDecision(decision: RiskDecision): string {
   const blockers = decision.checks.filter((c) => c.verdict === 'block');
   if (blockers.length === 0) {
     const warns = decision.checks.filter((c) => c.verdict === 'warn');
-    return warns.length === 0 ? 'All risk checks passed.' : `Passed with ${warns.length} warning(s).`;
+    return warns.length === 0
+      ? 'All risk checks passed.'
+      : `Passed with ${warns.length} warning(s).`;
   }
   return `Blocked by ${blockers.map((b) => b.rule).join(', ')}.`;
 }

@@ -1,5 +1,5 @@
-import { biometricReason, canonicalString, isCommandPath } from './signing.js';
 import type { SecureSigner } from './signer.js';
+import { biometricReason, canonicalString, isCommandPath } from './signing.js';
 
 /**
  * The signed HTTP client.

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
+import type { LedgerEvent } from './events.js';
 import { Ledger } from './ledger.js';
 import { Projector } from './projections.js';
-import type { LedgerEvent } from './events.js';
 
 function makeLedger(): Ledger {
   return new Ledger({ path: ':memory:', synchronous: 'OFF', now: () => 1_000 });
@@ -30,7 +30,11 @@ describe('append-only guarantees', () => {
   it('assigns contiguous sequences and chains hashes', () => {
     const l = makeLedger();
     const a = l.append(intent('i1'));
-    const b = l.append({ kind: 'order.event', intentId: 'i1', event: { type: 'submit.started', at: 1 } });
+    const b = l.append({
+      kind: 'order.event',
+      intentId: 'i1',
+      event: { type: 'submit.started', at: 1 },
+    });
     expect(a.seq).toBe(1);
     expect(b.seq).toBe(2);
     expect(b.prevHash).toBe(a.hash);
@@ -52,7 +56,11 @@ describe('append-only guarantees', () => {
     l.append(intent('i1'));
     l.append(intent('i2'));
     // Simulate someone editing history directly in the database file.
-    l.db.prepare("UPDATE ledger SET payload = json_set(payload, '$.intent.volume', '99.00') WHERE seq = 1").run();
+    l.db
+      .prepare(
+        "UPDATE ledger SET payload = json_set(payload, '$.intent.volume', '99.00') WHERE seq = 1",
+      )
+      .run();
     const v = l.verifyChain();
     expect(v.ok).toBe(false);
     if (v.ok) return;
@@ -119,7 +127,10 @@ describe('projections', () => {
     });
     p.catchUp();
 
-    const row = l.db.prepare('SELECT * FROM orders WHERE intent_id = ?').get('i1') as Record<string, unknown>;
+    const row = l.db.prepare('SELECT * FROM orders WHERE intent_id = ?').get('i1') as Record<
+      string,
+      unknown
+    >;
     expect(row.state).toBe('PARTIALLY_FILLED');
     expect(row.venue_order_id).toBe('V1');
     expect(row.filled_qty).toBe('0.40');
@@ -152,7 +163,10 @@ describe('projections', () => {
     expect(check.ok, check.ok ? '' : `${check.table}: ${check.detail}`).toBe(true);
 
     // And the live state survived the verification.
-    const row = l.db.prepare('SELECT * FROM orders WHERE intent_id = ?').get('i1') as Record<string, unknown>;
+    const row = l.db.prepare('SELECT * FROM orders WHERE intent_id = ?').get('i1') as Record<
+      string,
+      unknown
+    >;
     expect(row.state).toBe('WORKING');
     l.close();
   });
