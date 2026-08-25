@@ -31,6 +31,20 @@ export interface ClientOptions {
   readonly fetchFn?: typeof fetch;
   readonly now?: () => number;
   readonly timeoutMs?: number;
+  /**
+   * Milliseconds to add to the phone's clock to get the desk's.
+   *
+   * Measured by the realtime socket from its ping round trip. Requests are
+   * rejected outside a 60-second skew window, so a phone whose clock is even a
+   * few minutes off would otherwise fail *every* request with an opaque
+   * "timestamp is far from desk time" — including the reads that would let the
+   * operator see what is happening. Red-team finding.
+   *
+   * Note this is a usability correction, not a security hole: the desk still
+   * enforces its own window against its own clock, so a client cannot widen it
+   * by lying here.
+   */
+  readonly clockOffsetMs?: () => number;
 }
 
 export type ClientResult<T> =
@@ -118,7 +132,8 @@ export class DeskClient {
     const parts = {
       method,
       path,
-      timestamp: this.now(),
+      // Stamped in the desk's frame of reference, not the phone's.
+      timestamp: this.now() + (this.opts.clockOffsetMs?.() ?? 0),
       nonce: this.opts.randomId(),
       bodyHash: await this.opts.hashBody(text),
       ...(commandNonce !== undefined ? { commandNonce } : {}),
@@ -163,10 +178,25 @@ export class DeskClient {
       });
       const json = (await res.json().catch(() => ({}))) as Record<string, unknown>;
       if (res.ok) return { ok: true, status: res.status, data: json as T };
+      const code = (json.code as string) ?? `HTTP_${res.status}`;
+      if (code === 'CLOCK_SKEW') {
+        // Actionable, rather than a cryptic auth failure on every request.
+        return {
+          ok: false,
+          status: res.status,
+          code,
+          title: "This phone's clock disagrees with your desk",
+          detail:
+            `${(json.detail as string) ?? ''} Turn on automatic date and time on this device. ` +
+            'Until then the desk will refuse every request, including reads.',
+          retryable: true,
+          outcomeUnknown: false,
+        };
+      }
       return {
         ok: false,
         status: res.status,
-        code: (json.code as string) ?? `HTTP_${res.status}`,
+        code,
         title: (json.title as string) ?? 'The desk refused this request',
         detail: (json.detail as string) ?? `HTTP ${res.status}`,
         retryable: (json.retryable as boolean) ?? res.status >= 500,

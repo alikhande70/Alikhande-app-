@@ -130,8 +130,11 @@ export class Guard {
         body: reading.explain,
       });
       if (config.breachAction === 'soft') {
-        await this.flatten('drawdown-breach', 'drawdown floor breached');
+        // Lock out FIRST. Flattening takes seconds and involves awaits; an
+        // order submitted during that window would open a position moments
+        // after the guard reported the account flat. Red-team finding.
         this.lockout(this.msUntilNextDay(), 'drawdown breached');
+        await this.flatten('drawdown-breach', 'drawdown floor breached');
       } else {
         // A hard breach ends the account; flattening is the venue's business,
         // not ours. Lock out so nothing else is sent into a dead account.
@@ -172,8 +175,9 @@ export class Guard {
             `${D.Decimal.toString(D.Decimal.mul(limit, D.dec(100)))}% limit. ` +
             'Positions have been closed and entries are locked until the next trading day.',
         });
-        await this.flatten('daily-loss-limit', 'daily loss limit reached');
+        // Lock out before flattening, not after — see the drawdown path above.
         this.lockout(this.msUntilNextDay(), 'daily loss limit reached');
+        await this.flatten('daily-loss-limit', 'daily loss limit reached');
       }
       return;
     }
@@ -409,9 +413,34 @@ export class Guard {
           projector.catchUp();
         }
 
+        // Cancel anything resting before closing. A working limit or stop that
+        // triggers moments after the positions are closed re-opens exposure
+        // into an account the operator has been told is flat.
+        try {
+          for (const order of await broker.getOpenOrders()) {
+            await broker.cancelOrder(order.venueOrderId, order.clientOrderId ?? order.venueOrderId);
+          }
+        } catch (err) {
+          log.warn(
+            { err: err instanceof Error ? err.message : String(err) },
+            'could not cancel resting orders during flatten',
+          );
+        }
+
         if (positions.length === 0) {
-          lastDetail = 'venue reports flat';
-          break;
+          let restingRemain = 0;
+          try {
+            restingRemain = (await broker.getOpenOrders()).length;
+          } catch {
+            restingRemain = -1;
+          }
+          if (restingRemain === 0) {
+            lastDetail = 'venue reports flat, with no resting orders';
+            break;
+          }
+          lastDetail = `no positions, but ${restingRemain} order(s) still resting`;
+          await clock.sleep(backoffMs(attempts));
+          continue;
         }
 
         for (const p of positions) {
@@ -437,10 +466,17 @@ export class Guard {
         await clock.sleep(backoffMs(attempts));
       }
 
-      // The venue is the authority on whether we are flat, not our count.
+      // The venue is the authority on whether we are flat, not our count — and
+      // "flat" means no positions AND nothing resting that could open one.
       let remaining = -1;
       try {
-        remaining = broker.isConnected() ? (await broker.getPositions()).length : -1;
+        if (broker.isConnected()) {
+          const [positions, resting] = await Promise.all([
+            broker.getPositions(),
+            broker.getOpenOrders(),
+          ]);
+          remaining = positions.length + resting.length;
+        }
       } catch {
         remaining = -1;
       }

@@ -119,6 +119,36 @@ demo account, before any real money.
 
 ---
 
+## Defects found after the first pass, and by what
+
+Recorded because the *source* of each finding says something about which kinds
+of testing were actually earning their keep.
+
+| Found by | Defect | Severity |
+| --- | --- | --- |
+| Property test | `CONFIRMED_ABSENT` swallowed a later fill — a real position the system believed did not exist | Severe |
+| Property test | `resolution.absent` downgraded a confirmed cancel | Moderate |
+| Property test | `cancel.rejected` could un-fill a `FILLED` order | Moderate |
+| Property test | Terminal-exit escalation was per-branch, so a new branch could forget it | Moderate |
+| Integration test | `clientOrderIdFor` truncated the intent id; two intents could collide, and the second trade silently never happened | Severe |
+| Integration test | An acknowledgement carrying fills was discarded | Moderate |
+| Integration test | The guard tracked the day boundary in memory, so a mid-day restart cleared the daily loss limit | Severe |
+| Chaos suite | Unbounded precision creep in two accumulators; both threw in production paths | Severe |
+| Chaos suite | The paper venue opened a position per partial fill, masking the duplicate-position invariant | Moderate |
+| Audit | The entire anomaly pipeline was dead — computed and discarded | Severe |
+| Audit | `POST /positions/:id/close` flattened the whole book | Severe |
+| Audit | `POST /orders/:id/cancel` sent nothing while reporting success | Severe |
+| Audit | `Ledger.appendAll` corrupted its in-memory chain head on rollback | Severe |
+| Audit | A stale FX rate reported a stopped position as having no stop | Moderate |
+| Red team | Lockout was applied *after* flattening, leaving a window to open a new position | Severe |
+| Red team | Flatten ignored resting orders, which could re-open exposure moments later | Severe |
+| Red team | A phone with a skewed clock was locked out of everything, including reads | Moderate |
+
+The pattern worth noting: **example-based tests found almost nothing.** Property
+tests, randomized chaos, and reading the code adversarially found everything
+severe. Four of the five audit findings were code that typechecked, read
+correctly, and did the wrong thing.
+
 ## Known gaps, stated without hedging
 
 1. **No real broker.** The single largest gap. Nothing in this system has ever

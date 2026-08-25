@@ -248,3 +248,73 @@ describe('authorisation', () => {
     expect(seen.filter((u) => u.endsWith('/command-nonce'))).toHaveLength(1);
   });
 });
+
+describe('red team: a phone with a wrong clock', () => {
+  it('stamps requests in the desk time frame, not the phone one', async () => {
+    // The desk rejects anything more than 60s from its own clock. A phone five
+    // minutes behind would otherwise fail every single request — including the
+    // reads that would let the operator see what is going on.
+    const clock = new TestClock(T0);
+    const auth = new Authenticator(clock);
+    const { publicKey, privateKey } = generateKeyPairSync('ed25519');
+    const enrolled = auth.enrol(
+      auth.createEnrolmentCode('phone'),
+      publicKey.export({ format: 'der', type: 'spki' }).toString('base64'),
+    );
+
+    const phoneClockMs = T0 - 300_000; // five minutes slow
+    let captured: Record<string, string> | undefined;
+    const fetchFn = (async (_url: string, init?: { headers?: Record<string, string> }) => {
+      captured = init?.headers;
+      return new Response('{}', { status: 200 });
+    }) as unknown as typeof fetch;
+
+    const client = new DeskClient({
+      baseUrl: 'https://desk.local',
+      signer: {
+        identity: { publicKey: '', keyKind: 'ed25519', hardwareBacked: false },
+        sign: async (canonical) =>
+          sign(null, Buffer.from(canonical, 'utf8'), privateKey).toString('base64'),
+        isProvisioned: async () => true,
+        provision: async () => ({ publicKey: '', keyKind: 'ed25519', hardwareBacked: false }),
+        destroy: async () => undefined,
+      },
+      deviceId: enrolled.deviceId,
+      hashBody: async (b) => createHash('sha256').update(b).digest('base64'),
+      randomId: () => 'req-skew',
+      fetchFn,
+      now: () => phoneClockMs,
+      clockOffsetMs: () => 300_000, // measured by the socket
+    });
+
+    await client.get('/state', 1);
+
+    // The desk accepts it, because it was stamped in the desk's frame.
+    expect(captured).toBeDefined();
+    const parts = {
+      method: 'GET',
+      path: '/state',
+      timestamp: Number(captured?.['x-keel-timestamp']),
+      nonce: captured?.['x-keel-nonce'] as string,
+      bodyHash: deskHashBody(''),
+    };
+    expect(() =>
+      auth.verifyRequest(
+        { deviceId: enrolled.deviceId, ...parts, signature: captured?.['x-keel-signature'] as string },
+        false,
+      ),
+    ).not.toThrow();
+  });
+
+  it('turns a clock-skew rejection into something the operator can act on', async () => {
+    const fetchFn = (async () =>
+      new Response(JSON.stringify({ code: 'CLOCK_SKEW', detail: 'request timestamp is 300s from desk time' }), {
+        status: 401,
+      })) as unknown as typeof fetch;
+    const res = await makeClient(fetchFn).get('/state', 1);
+    expect(res.ok).toBe(false);
+    if (res.ok) return;
+    expect(res.title).toMatch(/clock disagrees/);
+    expect(res.detail).toMatch(/automatic date and time/);
+  });
+});
