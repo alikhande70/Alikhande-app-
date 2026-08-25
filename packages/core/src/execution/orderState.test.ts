@@ -242,6 +242,47 @@ describe('fills', () => {
   });
 });
 
+describe('accumulators must not grow their own precision', () => {
+  it('survives many partial fills without overflowing the scale ceiling', () => {
+    // The bug this pins: the running average derived its scale from its own
+    // previous output, growing by two digits per fill. At around seventeen
+    // fills it exceeded the scale ceiling and threw inside the fill handler —
+    // taking down the path that records executions. Found by the chaos suite,
+    // not by any example-based test, because no example ran long enough.
+    let rec = drive(fresh('100.00'), [started, acked]);
+    for (let i = 0; i < 200; i++) {
+      const r = applyOrderEvent(rec, {
+        type: 'fill',
+        at: T + i,
+        fillId: `F${i}`,
+        qty: d('0.50'),
+        price: d(`2400.${String(i % 100).padStart(2, '0')}`),
+      });
+      expect(r.ok, `fill ${i} was refused`).toBe(true);
+      if (!r.ok) return;
+      rec = r.record;
+    }
+    const avg = rec.avgFillPrice as D.Dec;
+    // Precision stays bounded rather than creeping upward.
+    expect(avg.s).toBeLessThanOrEqual(8);
+    // And the answer is still right: prices cycle 2400.00..2400.99, so the
+    // average sits in that band.
+    expect(D.gt(avg, d('2400.00'))).toBe(true);
+    expect(D.lt(avg, d('2401.00'))).toBe(true);
+  });
+
+  it('keeps the average correct across two fills', () => {
+    const rec = drive(fresh('1.00'), [
+      started,
+      acked,
+      { type: 'fill', at: T + 1, fillId: 'F1', qty: d('0.25'), price: d('2400.00') },
+      { type: 'fill', at: T + 2, fillId: 'F2', qty: d('0.75'), price: d('2404.00') },
+    ]);
+    // (0.25*2400 + 0.75*2404) / 1.00 = 2403.00
+    expect(D.eq(rec.avgFillPrice as D.Dec, d('2403.00'))).toBe(true);
+  });
+});
+
 describe('cancellation', () => {
   it('a rejected cancel returns the order to live, never to CANCELLED', () => {
     const rec = drive(fresh(), [

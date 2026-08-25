@@ -675,6 +675,19 @@ function makeOk(prev: OrderRecord, believedAbsent: boolean) {
   };
 }
 
+/**
+ * Extra digits kept beyond the venue's own price precision when averaging.
+ *
+ * Four is enough that rounding cannot accumulate visibly across the handful of
+ * fills a single order ever receives, and — critically — it is a *constant*.
+ * An earlier version used `max(prevAvg.s, newPrice.s) + 2`, which grows the
+ * scale by two on every fill: after seventeen fills the running average
+ * overflowed the scale ceiling and threw, taking the fill handler down with it.
+ * A running accumulator must never derive its precision from its own previous
+ * output.
+ */
+const AVG_PRICE_GUARD_DIGITS = 4;
+
 function weightedAverage(
   prevAvg: Dec | undefined,
   prevQty: Dec,
@@ -684,8 +697,12 @@ function weightedAverage(
   if (prevAvg === undefined || D.isZero(prevQty)) return newPrice;
   const totalQty = D.add(prevQty, newQty);
   if (D.isZero(totalQty)) return newPrice;
-  const notional = D.add(D.mul(prevAvg, prevQty), D.mul(newPrice, newQty));
-  return D.div(notional, totalQty, Math.max(prevAvg.s, newPrice.s) + 2, 'half-even');
+  // Bound both operands before multiplying, so neither the inputs nor the
+  // output can drift upward over a sequence of fills.
+  const scale = newPrice.s + AVG_PRICE_GUARD_DIGITS;
+  const boundedPrev = prevAvg.s > scale ? D.rescale(prevAvg, scale, 'half-even') : prevAvg;
+  const notional = D.add(D.mul(boundedPrev, prevQty), D.mul(newPrice, newQty));
+  return D.div(notional, totalQty, scale, 'half-even');
 }
 
 /**

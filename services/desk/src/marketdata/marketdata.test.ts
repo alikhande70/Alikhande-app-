@@ -283,3 +283,37 @@ describe('the synthetic feed produces the pathologies we claim to survive', () =
     expect(ticks.some((t) => isCrossed(t))).toBe(true);
   });
 });
+
+describe('accumulators stay bounded under a live feed', () => {
+  it('the spread moving average does not grow its own precision', async () => {
+    // The bug this pins: the EMA multiplied its previous value by a 2-decimal
+    // weight each tick, growing the scale by two per quote. On a live feed it
+    // overflowed the scale ceiling within seconds and threw inside the quote
+    // handler. Found by the chaos suite crashing, not by any unit test.
+    const { DeskState } = await import('../engine/state.js');
+    const { Ledger } = await import('../ledger/ledger.js');
+    const { Projector } = await import('../ledger/projections.js');
+
+    const clock = new TestClock(T0);
+    const ledger = new Ledger({ path: ':memory:', synchronous: 'OFF', now: () => clock.now() });
+    const state = new DeskState(ledger, new Projector(ledger), clock);
+
+    for (let i = 0; i < 500; i++) {
+      // A moving bid with a constant 0.30 spread. Built from cents so the ask
+      // can never cross the bid at the wrap-around.
+      const bidCents = 240_000 + (i % 100);
+      state.setExecutionQuote({
+        canonical: 'XAUUSD',
+        bid: d((bidCents / 100).toFixed(2)),
+        ask: d(((bidCents + 30) / 100).toFixed(2)),
+        asOf: clock.now() + i,
+      });
+    }
+
+    const typical = state.getTypicalSpread('XAUUSD');
+    expect(typical).toBeDefined();
+    expect((typical as D.Dec).s).toBeLessThanOrEqual(10);
+    expect(D.Decimal.gt(typical as D.Dec, D.Decimal.ZERO)).toBe(true);
+    ledger.close();
+  });
+});

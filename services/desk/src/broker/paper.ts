@@ -147,6 +147,8 @@ export class PaperBroker implements BrokerPort {
   private readonly orders = new Map<string, SimOrder>();
   private readonly byClientId = new Map<string, string>();
   private readonly positions = new Map<string, SimPosition>();
+  /** Which position each order opened, so its later fills accumulate into it. */
+  private readonly positionByOrder = new Map<string, string>();
   private readonly closedPositionIds = new Set<string>();
 
   private connected = false;
@@ -507,6 +509,29 @@ export class PaperBroker implements BrokerPort {
     spec: InstrumentSpec,
     at: number,
   ): void {
+    // A partially filled order produces several deals but ONE position. An
+    // earlier version of this simulator opened a position per fill, which made
+    // one order look like two positions carrying the same client order id —
+    // indistinguishable, from the outside, from a duplicate execution. A venue
+    // model that gets this wrong tests the wrong thing.
+    const fromSameOrder = this.positionByOrder.get(order.venueOrderId);
+    const existing = fromSameOrder === undefined ? undefined : this.positions.get(fromSameOrder);
+    if (existing !== undefined) {
+      const total = D.Decimal.add(existing.volume, qty);
+      existing.entryPrice = D.Decimal.div(
+        D.Decimal.add(
+          D.Decimal.mul(existing.entryPrice, existing.volume),
+          D.Decimal.mul(price, qty),
+        ),
+        total,
+        spec.digits + 2,
+        'half-even',
+      );
+      existing.volume = total;
+      this.emit({ type: 'position', at, position: this.toBrokerPosition(existing) });
+      return;
+    }
+
     if (this.capabilities.positionModel === 'netting') {
       const opposite = [...this.positions.values()].find(
         (p) => p.canonical === order.canonical && p.side !== order.side,
@@ -552,6 +577,7 @@ export class PaperBroker implements BrokerPort {
       clientOrderId: order.clientOrderId,
     };
     this.positions.set(p.positionId, p);
+    this.positionByOrder.set(order.venueOrderId, p.positionId);
     this.emit({ type: 'position', at, position: this.toBrokerPosition(p) });
   }
 
@@ -566,6 +592,9 @@ export class PaperBroker implements BrokerPort {
     p.volume = D.Decimal.sub(p.volume, qty);
     if (D.Decimal.lte(p.volume, D.Decimal.ZERO)) {
       this.positions.delete(p.positionId);
+      for (const [orderId, positionId] of this.positionByOrder) {
+        if (positionId === p.positionId) this.positionByOrder.delete(orderId);
+      }
       this.closedPositionIds.add(p.positionId);
       this.emit({
         type: 'positionClosed',

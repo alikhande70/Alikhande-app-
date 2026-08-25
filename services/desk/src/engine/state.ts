@@ -45,6 +45,12 @@ export interface LivePosition {
   readonly asOf: number;
 }
 
+/**
+ * Working precision for the spread moving average. Well beyond any venue's
+ * price precision, and fixed — see `setExecutionQuote`.
+ */
+const SPREAD_EMA_SCALE = 10;
+
 export class DeskState {
   private readonly db: Db;
   private readonly fx = new FxBook();
@@ -86,13 +92,23 @@ export class DeskState {
     const spread = D.Decimal.sub(q.ask, q.bid);
     const prev = this.typicalSpread.get(q.canonical);
     // Exponential moving average of spread, for the abnormal-spread rule.
+    //
+    // The rescale is not cosmetic. Each step multiplies the previous average by
+    // a 2-decimal weight, so without it the scale grows by two on every quote
+    // and overflows the ceiling within a few seconds of a live feed — which is
+    // exactly how this was found, by the chaos suite crashing the quote path.
+    // Any accumulator fed by its own output has to be re-bounded each step.
     this.typicalSpread.set(
       q.canonical,
       prev === undefined
-        ? spread
-        : D.Decimal.add(
-            D.Decimal.mul(prev, D.dec('0.99')),
-            D.Decimal.mul(spread, D.dec('0.01')),
+        ? D.Decimal.rescale(spread, SPREAD_EMA_SCALE, 'half-even')
+        : D.Decimal.rescale(
+            D.Decimal.add(
+              D.Decimal.mul(prev, D.dec('0.99')),
+              D.Decimal.mul(spread, D.dec('0.01')),
+            ),
+            SPREAD_EMA_SCALE,
+            'half-even',
           ),
     );
   }
