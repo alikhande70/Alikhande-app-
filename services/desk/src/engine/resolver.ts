@@ -244,7 +244,9 @@ export function lookupContextForIntent(
   if (parsed.kind !== 'intent.created' || intent === undefined) return undefined;
 
   const eventRows = ledger.db
-    .prepare("SELECT payload FROM ledger WHERE stream = ? AND kind = 'order.event' ORDER BY seq ASC")
+    .prepare(
+      "SELECT payload FROM ledger WHERE stream = ? AND kind = 'order.event' ORDER BY seq ASC",
+    )
     .all(intentId) as Array<{ payload: string }>;
 
   let sentNotBefore: number | undefined;
