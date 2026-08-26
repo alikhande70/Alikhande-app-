@@ -18,7 +18,7 @@ Architecture documents describe intent; this file describes delivery state.
 ### Verification performed
 
 - Previous CI at `c715206e8ae952356ac850bf9c37a0213c52da83` was green.
-- Repository CI was triggered for the stage-B source and safety-contract test. The final conclusion must be checked before this stage is treated as green.
+- Stage-B safety-contract CI completed successfully at `7d0e5bb54753a6f7a7d3c12903cf386aded520e2` (workflow `verify`, run 44).
 - MQL5 source has **not** been compiled in MetaEditor in this environment. Source-level verification is not a substitute for a real MetaEditor compile.
 
 ### Verification ladder impact
