@@ -84,20 +84,14 @@ describe('MT5 agent protocol', () => {
 describe('MT5 agent session', () => {
   it('requires authenticated hello before accepting any state', () => {
     const close = vi.fn();
-    const session = new Mt5AgentSession(
-      { write: vi.fn(), close },
-      { token: '0123456789abcdef' },
-    );
+    const session = new Mt5AgentSession({ write: vi.fn(), close }, { token: '0123456789abcdef' });
     expect(() => session.receive(heartbeat())).toThrow(Mt5AgentProtocolError);
     expect(close).toHaveBeenCalledOnce();
   });
 
   it('rejects a wrong token and never becomes authenticated', () => {
     const close = vi.fn();
-    const session = new Mt5AgentSession(
-      { write: vi.fn(), close },
-      { token: '0123456789abcdef' },
-    );
+    const session = new Mt5AgentSession({ write: vi.fn(), close }, { token: '0123456789abcdef' });
     expect(() => session.receive(hello('fedcba9876543210'))).toThrow(Mt5AgentProtocolError);
     expect(session.isAuthenticated()).toBe(false);
     expect(close).toHaveBeenCalledOnce();

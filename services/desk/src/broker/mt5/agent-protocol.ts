@@ -155,7 +155,10 @@ export function decodeAgentMessage(line: string): Mt5AgentMessage {
       };
     }
     case 'heartbeat':
-      if (typeof parsed.terminalConnected !== 'boolean' || typeof parsed.tradeAllowed !== 'boolean') {
+      if (
+        typeof parsed.terminalConnected !== 'boolean' ||
+        typeof parsed.tradeAllowed !== 'boolean'
+      ) {
         throw new Mt5AgentProtocolError('heartbeat connection flags must be boolean');
       }
       return {
@@ -204,7 +207,8 @@ export function decodeAgentMessage(line: string): Mt5AgentMessage {
           : { price: optionalString(parsed, 'price') }),
       } as Mt5AgentTransactionMessage;
     case 'result':
-      if (!isRecord(parsed.result)) throw new Mt5AgentProtocolError('result message requires result object');
+      if (!isRecord(parsed.result))
+        throw new Mt5AgentProtocolError('result message requires result object');
       return {
         type: 'result',
         requestId: requiredString(parsed, 'requestId'),

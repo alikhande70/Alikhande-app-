@@ -1,15 +1,15 @@
 import { randomUUID, timingSafeEqual } from 'node:crypto';
-import type { Mt5HostSubmitResult } from './host-types.js';
 import {
   encodeDeskCommand,
   type Mt5AgentHeartbeat,
   type Mt5AgentHello,
   type Mt5AgentMessage,
+  Mt5AgentProtocolError,
   type Mt5AgentSnapshotMessage,
   type Mt5AgentTransactionMessage,
   type Mt5DeskCommandMessage,
-  Mt5AgentProtocolError,
 } from './agent-protocol.js';
+import type { Mt5HostSubmitResult } from './host-types.js';
 
 export interface Mt5AgentTransport {
   write(data: string): void;
@@ -129,8 +129,7 @@ export class Mt5AgentSession {
     const heartbeat = this.heartbeatMessage;
     return (
       this.isAuthenticated() &&
-      heartbeat !== undefined &&
-      heartbeat.terminalConnected &&
+      heartbeat?.terminalConnected &&
       now - heartbeat.at <= this.heartbeatStaleMs
     );
   }

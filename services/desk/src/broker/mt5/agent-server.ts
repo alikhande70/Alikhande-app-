@@ -6,7 +6,8 @@ import {
   type Mt5AgentTransport,
 } from './agent-session.js';
 
-export interface Mt5AgentBridgeServerOptions extends Omit<Mt5AgentSessionOptions, 'onAuthenticated'> {
+export interface Mt5AgentBridgeServerOptions
+  extends Omit<Mt5AgentSessionOptions, 'onAuthenticated'> {
   readonly port: number;
   readonly host?: '127.0.0.1' | '::1';
   readonly onSessionReady?: (session: Mt5AgentSession) => void;
