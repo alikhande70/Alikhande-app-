@@ -15,7 +15,7 @@ const fingerprint = {
 };
 
 function candidate(overrides: Partial<Mt5EvidenceCandidate> = {}): Mt5EvidenceCandidate {
-  return {
+  const base: Mt5EvidenceCandidate = {
     kind: 'deal',
     ticket: '9001',
     magic: MAGIC,
@@ -25,8 +25,12 @@ function candidate(overrides: Partial<Mt5EvidenceCandidate> = {}): Mt5EvidenceCa
     price: '1.10000',
     serverTime: 10_050,
     positionId: '7001',
-    ...overrides,
   };
+  const merged = { ...base, ...overrides } as Mt5EvidenceCandidate;
+  if (merged.kind === 'order' && merged.orderState === undefined) {
+    return { ...merged, orderState: 'WORKING' };
+  }
+  return merged;
 }
 
 function observation(
@@ -48,23 +52,22 @@ function observation(
 }
 
 describe('resolveMt5Evidence', () => {
-  it('treats any matching magic in broker state/history as confirmed existence', () => {
-    const result = resolveMt5Evidence(MAGIC, fingerprint, [
-      observation(11_000, [candidate()]),
-      observation(12_000),
-    ]);
+  it('treats matching magic as confirmed venue evidence without inventing execution state', () => {
+    const rejectedOrder = candidate({ kind: 'order', ticket: '8001', orderState: 'REJECTED' });
+    const result = resolveMt5Evidence(MAGIC, fingerprint, [observation(11_000, [rejectedOrder])]);
 
     expect(result.outcome).toBe('found');
     if (result.outcome === 'found') {
       expect(result.certainty).toBe('confirmed');
-      expect(result.matches).toHaveLength(1);
+      expect(result.matches).toEqual([rejectedOrder]);
+      expect(result.matches[0]?.orderState).toBe('REJECTED');
     }
   });
 
   it('does not count order/deal/position from one position as three fingerprint executions', () => {
     const result = resolveMt5Evidence(MAGIC, fingerprint, [
       observation(11_000, [
-        candidate({ kind: 'order', ticket: '8001', magic: '0' }),
+        candidate({ kind: 'order', ticket: '8001', magic: '0', orderState: 'FILLED' }),
         candidate({ kind: 'deal', ticket: '9001', magic: '0' }),
         candidate({ kind: 'position', ticket: '7001', magic: '0' }),
       ]),
@@ -83,6 +86,22 @@ describe('resolveMt5Evidence', () => {
     ]);
 
     expect(result).toMatchObject({ outcome: 'indeterminate' });
+  });
+
+  it('rejects order evidence that omits terminal/working state', () => {
+    const invalid = {
+      kind: 'order',
+      ticket: '8001',
+      magic: MAGIC,
+      symbol: 'EURUSD',
+      side: 'buy',
+      volume: '0.10',
+      serverTime: 10_050,
+    } as Mt5EvidenceCandidate;
+
+    expect(() => resolveMt5Evidence(MAGIC, fingerprint, [observation(11_000, [invalid])])).toThrow(
+      'orderState',
+    );
   });
 
   it('requires repeated separated full negatives before declaring absence', () => {
