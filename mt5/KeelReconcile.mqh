@@ -32,6 +32,24 @@ bool KeelReconcileSideFromDealType(const long type,string &side)
      }
   }
 
+string KeelEvidenceOrderState(const long raw_state)
+  {
+   switch((ENUM_ORDER_STATE)raw_state)
+     {
+      case ORDER_STATE_STARTED:        return("PENDING_SUBMIT");
+      case ORDER_STATE_PLACED:         return("WORKING");
+      case ORDER_STATE_CANCELED:       return("CANCELLED");
+      case ORDER_STATE_PARTIAL:        return("PARTIAL");
+      case ORDER_STATE_FILLED:         return("FILLED");
+      case ORDER_STATE_REJECTED:       return("REJECTED");
+      case ORDER_STATE_EXPIRED:        return("EXPIRED");
+      case ORDER_STATE_REQUEST_ADD:    return("PENDING_SUBMIT");
+      case ORDER_STATE_REQUEST_MODIFY: return("WORKING");
+      case ORDER_STATE_REQUEST_CANCEL: return("CANCEL_PENDING");
+      default:                         return("UNKNOWN");
+     }
+  }
+
 void KeelAppendCandidate(string &json,int &emitted,const string row)
   {
    if(emitted++>0) json+=",";
@@ -82,11 +100,12 @@ bool KeelBuildCurrentOrderCandidates(string &json,int &emitted)
       double volume=OrderGetDouble(ORDER_VOLUME_INITIAL);
       double price=OrderGetDouble(ORDER_PRICE_OPEN);
       long when=(long)OrderGetInteger(ORDER_TIME_SETUP_MSC);
+      string order_state=KeelEvidenceOrderState(OrderGetInteger(ORDER_STATE));
       int digits=(int)SymbolInfoInteger(symbol,SYMBOL_DIGITS);
       string row=StringFormat(
-         "{\"kind\":\"order\",\"ticket\":\"%s\",\"magic\":\"%s\",\"symbol\":\"%s\",\"side\":\"%s\",\"volume\":\"%s\",\"price\":\"%s\",\"serverTime\":%I64d,\"positionId\":\"%s\"}",
+         "{\"kind\":\"order\",\"ticket\":\"%s\",\"magic\":\"%s\",\"symbol\":\"%s\",\"side\":\"%s\",\"volume\":\"%s\",\"price\":\"%s\",\"serverTime\":%I64d,\"positionId\":\"%s\",\"orderState\":\"%s\"}",
          ULongText(ticket),ULongText(magic),JsonEscape(symbol),side,KeelDecimal(volume,8),
-         KeelDecimal(price,digits),when,ULongText(position_id));
+         KeelDecimal(price,digits),when,ULongText(position_id),order_state);
       KeelAppendCandidate(json,emitted,row);
      }
    return(true);
@@ -116,11 +135,12 @@ bool KeelBuildHistoryCandidates(const datetime history_from,const datetime histo
       double volume=HistoryOrderGetDouble(ticket,ORDER_VOLUME_INITIAL);
       double price=HistoryOrderGetDouble(ticket,ORDER_PRICE_OPEN);
       long when=(long)HistoryOrderGetInteger(ticket,ORDER_TIME_SETUP_MSC);
+      string order_state=KeelEvidenceOrderState(HistoryOrderGetInteger(ticket,ORDER_STATE));
       int digits=(int)SymbolInfoInteger(symbol,SYMBOL_DIGITS);
       string row=StringFormat(
-         "{\"kind\":\"order\",\"ticket\":\"%s\",\"magic\":\"%s\",\"symbol\":\"%s\",\"side\":\"%s\",\"volume\":\"%s\",\"price\":\"%s\",\"serverTime\":%I64d,\"positionId\":\"%s\"}",
+         "{\"kind\":\"order\",\"ticket\":\"%s\",\"magic\":\"%s\",\"symbol\":\"%s\",\"side\":\"%s\",\"volume\":\"%s\",\"price\":\"%s\",\"serverTime\":%I64d,\"positionId\":\"%s\",\"orderState\":\"%s\"}",
          ULongText(ticket),ULongText(magic),JsonEscape(symbol),side,KeelDecimal(volume,8),
-         KeelDecimal(price,digits),when,ULongText(position_id));
+         KeelDecimal(price,digits),when,ULongText(position_id),order_state);
       KeelAppendCandidate(json,emitted,row);
      }
 
