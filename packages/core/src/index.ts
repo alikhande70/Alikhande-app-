@@ -15,7 +15,7 @@ export * from './market/instrument.js';
 export * from './market/sizing.js';
 export type { Dec, RoundingMode } from './money/decimal.js';
 export * as Decimal from './money/decimal.js';
-export { DecimalError, ZERO, dec, raw, rescale } from './money/decimal.js';
+export { DecimalError, dec, raw, rescale, ZERO } from './money/decimal.js';
 export * from './risk/drawdown.js';
 export * from './risk/governor.js';
 export * from './risk/policy.js';
