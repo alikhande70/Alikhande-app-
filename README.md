@@ -48,6 +48,7 @@ proves it continuously.
 | [`docs/AUDIT-mt5-pivot.md`](docs/AUDIT-mt5-pivot.md) | What survived the move from OANDA to LiteFinance/MT5, and why |
 | [`docs/BENCHMARK.md`](docs/BENCHMARK.md) | Scored against MT5, cTrader, TradingView, TradeLocker, Quantower and the journals |
 | [`docs/DESIGN-REVIEW-mt5.md`](docs/DESIGN-REVIEW-mt5.md) | Twelve attacks on the MT5 architecture; seven changed it |
+| [`docs/BRAIN-DESIGN-REVIEW.md`](docs/BRAIN-DESIGN-REVIEW.md) | Why confidence scores need scans not trades, and fifteen flaws in the intelligence design |
 | [`docs/RUNBOOK.md`](docs/RUNBOOK.md) | Deploying, pairing, and what to do at 2am |
 | [`docs/THREAT-MODEL.md`](docs/THREAT-MODEL.md) | Security assumptions, including where they are weaker than they sound |
 

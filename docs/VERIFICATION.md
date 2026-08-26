@@ -244,6 +244,9 @@ of testing were actually earning their keep.
 | Self-review | An OANDA order that was found but could not be mapped fell through and was reported absent | Severe |
 | Self-review | The OANDA stream announced "reconnected" before it had reopened, and caught up before subscribing | Moderate |
 | Self-review | `test:live` and `test:chaos` used an unquoted `src/**/*` glob, which the shell expands to a single directory level — so the OANDA live suite existed but the documented command never ran it | Moderate |
+| Architecture review | Requirement 7 (meaningful confidence scores) is arithmetically unreachable from executed trades — a realistic 3-point effect needs ~43 years at personal volume. Scans, not trades, must be the unit of analysis | Severe |
+| Architecture review | Confidence scores are self-fulfilling: an operator who sees "91" manages the trade differently, so trade-level calibration measures their reaction to the label. No clean fix; scan-level evidence is used instead | Severe |
+| Architecture review | Scan-population drift — changing the instrument list or timeframes silently invalidates every longitudinal statistic. Fixed by versioning scan configuration | Moderate |
 | Architecture review | The reference price plane was Crypto.com, which cannot price XAUUSD or EURUSD — so the divergence monitor could never have fired for any instrument actually being traded. Latent since ADR-0013, independent of the venue change | Severe |
 
 The pattern worth noting: **example-based tests found almost nothing.** Property
@@ -260,6 +263,11 @@ and which was still easy to get wrong twice in one function.
 
 ## Known gaps, stated without hedging
 
+0. **The entire intelligence layer is designed and unbuilt.** ADR-0018 through
+   ADR-0022 describe the Trade Mission, the Trading Brain, memory, evaluation and
+   champion/challenger. `BRAIN-DESIGN-REVIEW.md` scores that design 88 of 100 and
+   what is delivered **0 of 100**. An 88-point design with nothing built is a plan,
+   not a system, and it is listed first here so it cannot be mistaken for progress.
 1. **The production venue has no adapter at all.** LiteFinance/MT5 is stage 1 of
    9 — designed and reviewed, not written. The OANDA adapter is thoroughly
    tested but is no longer the production target, and a stub written from the
