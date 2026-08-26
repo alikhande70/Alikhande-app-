@@ -113,12 +113,8 @@ function mapPosition(raw: Mt5HostPosition): BrokerPosition {
     volume: D.dec(raw.volume),
     entryPrice: D.dec(raw.entryPrice),
     ...(raw.stopPrice === undefined ? {} : { stopPrice: D.dec(raw.stopPrice) }),
-    ...(raw.takeProfitPrice === undefined
-      ? {}
-      : { takeProfitPrice: D.dec(raw.takeProfitPrice) }),
-    ...(raw.unrealisedPnl === undefined
-      ? {}
-      : { unrealisedPnl: D.dec(raw.unrealisedPnl) }),
+    ...(raw.takeProfitPrice === undefined ? {} : { takeProfitPrice: D.dec(raw.takeProfitPrice) }),
+    ...(raw.unrealisedPnl === undefined ? {} : { unrealisedPnl: D.dec(raw.unrealisedPnl) }),
     openedAt: raw.openedAt,
   };
 }
@@ -135,9 +131,7 @@ function mapOrder(raw: Mt5HostOrder, clientOrderId?: string): BrokerOrder {
     filledQty: D.dec(raw.filledQty),
     ...(raw.limitPrice === undefined ? {} : { limitPrice: D.dec(raw.limitPrice) }),
     ...(raw.stopPrice === undefined ? {} : { stopPrice: D.dec(raw.stopPrice) }),
-    ...(raw.avgFillPrice === undefined
-      ? {}
-      : { avgFillPrice: D.dec(raw.avgFillPrice) }),
+    ...(raw.avgFillPrice === undefined ? {} : { avgFillPrice: D.dec(raw.avgFillPrice) }),
     createdAt: raw.createdAt,
   };
 }
@@ -151,9 +145,7 @@ function mapQuote(raw: Mt5HostSnapshot['quotes'][number]): BrokerQuote {
   };
 }
 
-function venueId(
-  result: Extract<Mt5HostSubmitResult, { outcome: 'acked' }>,
-): string | undefined {
+function venueId(result: Extract<Mt5HostSubmitResult, { outcome: 'acked' }>): string | undefined {
   return result.orderTicket ?? result.dealTicket;
 }
 
@@ -184,9 +176,7 @@ function mapSubmit(result: Mt5HostSubmitResult): BrokerSubmitResult {
         venueOrderId: id,
         state: mapOrderState(result.state),
         filledQty: D.dec(result.filledQty),
-        ...(result.avgFillPrice === undefined
-          ? {}
-          : { avgFillPrice: D.dec(result.avgFillPrice) }),
+        ...(result.avgFillPrice === undefined ? {} : { avgFillPrice: D.dec(result.avgFillPrice) }),
         at: result.serverTime,
         venueStatus: result.retcodeName,
       };
@@ -307,9 +297,7 @@ export class Mt5BrokerAdapter implements BrokerPort {
           ...(req.stopTriggerPrice === undefined
             ? {}
             : { stopTriggerPrice: D.Decimal.toString(req.stopTriggerPrice) }),
-          ...(req.stopLoss === undefined
-            ? {}
-            : { stopLoss: D.Decimal.toString(req.stopLoss) }),
+          ...(req.stopLoss === undefined ? {} : { stopLoss: D.Decimal.toString(req.stopLoss) }),
           ...(req.takeProfit === undefined
             ? {}
             : { takeProfit: D.Decimal.toString(req.takeProfit) }),
@@ -324,10 +312,7 @@ export class Mt5BrokerAdapter implements BrokerPort {
     }
   }
 
-  async cancelOrder(
-    venueOrderId: string,
-    clientOrderId: string,
-  ): Promise<BrokerSubmitResult> {
+  async cancelOrder(venueOrderId: string, clientOrderId: string): Promise<BrokerSubmitResult> {
     this.assertCanTrade();
     const magic = magicToWire(magicForClientOrderId(clientOrderId, this.systemPrefix));
     try {
@@ -350,9 +335,7 @@ export class Mt5BrokerAdapter implements BrokerPort {
         await this.client.modifyPosition({
           positionId,
           ...(stopLoss === undefined ? {} : { stopLoss: D.Decimal.toString(stopLoss) }),
-          ...(takeProfit === undefined
-            ? {}
-            : { takeProfit: D.Decimal.toString(takeProfit) }),
+          ...(takeProfit === undefined ? {} : { takeProfit: D.Decimal.toString(takeProfit) }),
         }),
       );
     } catch (error) {
