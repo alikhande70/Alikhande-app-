@@ -7,6 +7,33 @@ function clientWith(request: Mt5HostRequest): Mt5HostClient {
   return new Mt5HostClient({ baseUrl: 'http://127.0.0.1:8790', token: TOKEN, request });
 }
 
+function validSnapshot(): Record<string, unknown> {
+  return {
+    protocolVersion: 1,
+    hostId: 'host-test',
+    terminalConnected: true,
+    tradeAllowed: true,
+    account: {
+      login: '123',
+      server: 'LiteFinance-Demo',
+      company: 'LiteFinance',
+      currency: 'USD',
+      tradeMode: 'demo',
+      positionModel: 'hedging',
+      balance: '10000.00',
+      equity: '10050.00',
+      marginUsed: '50.00',
+      marginFree: '10000.00',
+      asOf: 1_700_000_000_000,
+    },
+    instruments: [],
+    positions: [],
+    orders: [],
+    quotes: [],
+    observedAt: 1_700_000_000_000,
+  };
+}
+
 describe('Mt5HostClient', () => {
   it('adds bearer auth and preserves decimal-string identifiers', async () => {
     const request = vi.fn<Mt5HostRequest>().mockResolvedValue({
@@ -42,6 +69,27 @@ describe('Mt5HostClient', () => {
       magic: '9223372036854775000',
       volume: '0.01',
     });
+  });
+
+  it('revalidates snapshot truth at the HTTP boundary', async () => {
+    const client = clientWith(async () => ({ status: 200, body: validSnapshot() }));
+    await expect(client.snapshot()).resolves.toMatchObject({
+      hostId: 'host-test',
+      terminalConnected: true,
+    });
+  });
+
+  it('fails closed when the HTTP host returns an incomplete snapshot', async () => {
+    const malformed = validSnapshot();
+    delete malformed.orders;
+    const client = clientWith(async () => ({ status: 200, body: malformed }));
+
+    await expect(client.snapshot()).rejects.toMatchObject({
+      name: 'Mt5HostError',
+      status: 200,
+      responseBody: malformed,
+    });
+    await expect(client.snapshot()).rejects.toThrow('invalid snapshot truth');
   });
 
   it('does not turn an HTTP failure into a trade rejection', async () => {
