@@ -31,28 +31,35 @@ The project is still in the MT5 execution-truth phase. Trading Mission, Trading 
 - **P0 false-fill defect closed fail-safe:** an old MT5 order carrying the expected magic no longer proves execution by itself. Actual deal/position evidence is required to confirm execution when the order is no longer active.
 - Reconcile responses cross a strict runtime-validation boundary on the Windows side. Malformed candidate kind/side, missing or unknown order state, illegal order state on deal/position evidence, invalid decimal strings, invalid/out-of-range uint64 ids, missing scan flags or inverted history windows are rejected before they can affect broker truth.
 
-### Newly implemented on the current head — CI verification pending
+### Newly implemented on the current head — verification pending
 
-- Trustworthy order-only terminal history can now resolve an ambiguous send **positively** to `REJECTED`, `CANCELLED` or `EXPIRED` when the expected MT5 magic identifies one consistent terminal order and no deal/position execution evidence exists.
+- Trustworthy order-only terminal history can resolve an ambiguous send **positively** to `REJECTED`, `CANCELLED` or `EXPIRED` when the expected MT5 magic identifies one consistent terminal order and no deal/position execution evidence exists.
 - A historical `FILLED` order **without** deal/position evidence remains indeterminate; order state alone is still not accepted as proof of execution.
 - Conflicting terminal order evidence for the same magic remains indeterminate rather than being guessed through.
-- The existing public broker lookup contract did not need expansion: `found: true` means the venue definitely has evidence for the order, while `BrokerOrder.state` carries the actual terminal state. This reuses the existing `resolution.found` path in the core reducer.
-- Focused tests now cover `UNKNOWN → REJECTED/CANCELLED/EXPIRED` recovery with zero fabricated fill quantity.
-- A self-review caught an unsafe test-file replacement that would have removed existing coverage. That commit was removed from the branch before proceeding, and the new recovery test was re-added as an independent file so the previous test suite remains intact.
+- Focused core tests cover `UNKNOWN → REJECTED/CANCELLED/EXPIRED` recovery with zero fabricated fill quantity.
+- **New P0 recovery fix:** a durable `RESULT` carrying `outcome: ambiguous` after the irreversible `SENT` boundary is no longer classified as resolved after restart. It now remains `must_reconcile`, so an uncertain broker call cannot be converted into success/rejection by the command journal alone.
+- Added targeted recovery tests for:
+  - host crash while a reconcile request is outstanding;
+  - a late response from the pre-crash request arriving after a new host session starts;
+  - duplicate concurrent reconcile requests resolving independently by request id;
+  - an out-of-order snapshot with the correct request id being ignored until a newer broker-truth sequence arrives;
+  - `SENT → ambiguous RESULT → restart` remaining non-retryable and reconciliation-required.
+- Opened draft PR #1 (`gpt/trading-brain-build` → `main`) as the long-running integration/review surface. It is explicitly not merge-ready and must remain draft until the verification ladder is complete.
 
 ### Self-audit findings still open
 
-1. **Crash/restart chaos coverage must expand around reconciliation.** Required cases include host crash during reconcile, EA restart after durable receipt, duplicate reconcile request, response loss, stale/out-of-order response and terminal reconnect while resolution is active.
+1. **Recovery chaos coverage is improved but not complete.** The current head now covers host crash/response loss/stale response/request correlation. Still required: a fuller EA-spool replay simulation, terminal reconnect while an unknown resolver job is active, and durable duplicate-command recovery across an actual agent restart boundary.
 2. **Canonical instrument mapping is not complete.** The EA currently keeps broker symbols as their own canonical value in its snapshot. Broker suffix/prefix mapping must be driven by configured symbol metadata rather than guessed.
 3. **Instrument metadata is intentionally not fabricated.** EA snapshots currently do not claim contract/tick/volume metadata that has not been truthfully mapped from MT5.
 4. **No-send boundary remains intentional.** Demo `OrderSend` stays disabled until reconciliation/recovery semantics and chaos tests are strong enough, followed by MetaEditor compilation and real LiteFinance Demo validation.
 
 ### Latest verification
 
-- The branch is under GitHub Actions verification with `pnpm verify` (lint + TypeScript + full repository tests).
-- The last fully verified baseline before this terminal-resolution change was green.
-- GitHub Actions for the new terminal-resolution commits are currently pending/queued. Therefore the new head is **IMPLEMENTED BUT NOT YET REPOSITORY-VERIFIED** and must not be called green until its exact workflow run succeeds.
-- The pending change includes direct observation-layer tests, adapter tests and a core reducer recovery test for rejected/cancelled/expired terminal outcomes.
+- The repository verification workflow is `pnpm verify` (Biome lint + TypeScript + full repository tests).
+- The last fully verified baseline before the terminal-resolution/recovery changes was green.
+- The newest connector-authored commits did **not** create a new push-triggered GitHub Actions run. A draft PR was opened to provide an independent `pull_request` trigger, but at the time of this report GitHub still shows no workflow run for current head `b5f0707f942000a18582dc00e1d02a472ae7dc97`.
+- Therefore the current head is **IMPLEMENTED AND SELF-AUDITED, BUT NOT YET REPOSITORY-VERIFIED**. It must not be described as green until an exact-head workflow succeeds or an equivalent isolated `pnpm verify` run is captured.
+- A remote isolated-shell verification attempt was also unavailable in this non-interactive run, so no substitute verification is claimed.
 
 ### External verification boundary
 
@@ -72,10 +79,10 @@ No real-money execution is enabled or claimed.
 | Stage | Status | Evidence / remaining work |
 | --- | --- | --- |
 | 1. Architecture reviewed | **DONE** | ADR-0015 through ADR-0022 and design reviews accepted. |
-| 2. Implementation | **IN PROGRESS** | Broker adapter, agent bridge, durable preflight, current snapshot, bounded history reconcile, strict reconcile validation and positive non-fill terminal recovery built. Chaos hardening, canonical mapping, demo send, cancel/modify/close and final host assembly remain. |
-| 3. Repository unit/static tests | **IN PROGRESS** | CI runs lint + TypeScript + full tests for pushed changes. The exact terminal-resolution head is awaiting GitHub Actions execution and is not yet marked verified. MQL compilation is not covered by Linux CI. |
-| 4. Integration simulation | **IN PROGRESS** | Protocol/session/recovery/reconcile components tested; full simulated terminal lifecycle and response-loss matrix still required. |
-| 5. Chaos/failure tests | **PARTIAL** | Existing chaos suite already covers ambiguous execution, disconnects, duplicated/dropped fill events, duplicate intent submission and eventual reconciliation convergence. Crash boundaries, stale/out-of-order reconciliation and spool replay need broader targeted coverage. |
+| 2. Implementation | **IN PROGRESS** | Broker adapter, agent bridge, durable preflight, current snapshot, bounded history reconcile, strict reconcile validation, positive non-fill terminal recovery, and targeted crash/stale-response hardening built. Canonical mapping, demo send, cancel/modify/close and final host assembly remain. |
+| 3. Repository unit/static tests | **IN PROGRESS** | Workflow exists, but current connector-authored head has no exact-head Actions run yet. Current changes remain unverified until `pnpm verify` executes on the exact head. MQL compilation is not covered by Linux CI. |
+| 4. Integration simulation | **IN PROGRESS** | Protocol/session/recovery/reconcile components tested in repository suites; current head adds host-crash and request-correlation scenarios but awaits exact-head execution. |
+| 5. Chaos/failure tests | **PARTIAL** | Broad paper-broker chaos exists. Targeted MT5 recovery coverage now includes crash, late/stale response, duplicate concurrent reconcile isolation and out-of-order snapshot rejection. EA spool replay/restart and reconnect-during-resolution still need deeper coverage. |
 | 6. MetaEditor compile | **NOT VERIFIED** | Requires Windows + MetaEditor. |
 | 7. Real MT5 terminal | **NOT VERIFIED** | Requires target terminal. |
 | 8. LiteFinance Demo | **NOT VERIFIED** | Requires demo account/terminal. |
@@ -83,9 +90,8 @@ No real-money execution is enabled or claimed.
 
 ## Next highest-priority sequence
 
-1. Wait for the exact current head to run through GitHub Actions; repair any lint/type/test failure before adding broker-facing execution work.
-2. Add targeted simulated crash/restart/duplicate/response-loss/stale-response tests around reconciliation and unknown-order recovery, without duplicating the broad chaos coverage that already exists.
-3. Complete canonical symbol/instrument metadata mapping without guessing broker suffixes or contract metadata.
-4. Re-audit the entire `RECEIVED → CHECKED → SENT → RESULT → RECONCILED` path for duplicate execution and false absence.
-5. Only after those gates pass, introduce a **demo-only** durable `SENT` + `OrderSend` boundary and classify the immediate MT5 result without inferring fill.
-6. Compile in MetaEditor and then validate on LiteFinance Demo before any intelligence phase can claim an end-to-end broker-truth foundation.
+1. Obtain an exact-head `pnpm verify` result for the current branch/PR; repair any lint/type/test failure before adding broker-facing execution work.
+2. Complete canonical symbol/instrument metadata mapping without guessing broker suffixes or contract metadata.
+3. Add the remaining restart/spool-replay/reconnect recovery tests and re-audit the full `RECEIVED → CHECKED → SENT → RESULT → RECONCILED` path for duplicate execution and false absence.
+4. Only after those gates pass, introduce a **demo-only** durable `SENT` + `OrderSend` boundary and classify the immediate MT5 result without inferring fill.
+5. Compile in MetaEditor and then validate on LiteFinance Demo before any intelligence phase can claim an end-to-end broker-truth foundation.
