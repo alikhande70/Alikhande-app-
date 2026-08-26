@@ -4,9 +4,14 @@ import { Mt5AdapterError, Mt5BrokerAdapter } from './adapter.js';
 import { Mt5HostClient, type Mt5HostRequest } from './host-client.js';
 import type { Mt5HostSnapshot } from './host-types.js';
 import { magicForClientOrderId, magicToWire } from './identity.js';
+import { Mt5InstrumentBinding } from './instrument-binding.js';
+import { Mt5SymbolMap } from './symbol-map.js';
 
 const TOKEN = 'test-token-0123456789';
 const PREFIX = 0x4b45;
+const BINDING = new Mt5InstrumentBinding(new Mt5SymbolMap(), {
+  XAUUSD: { assetClass: 'metal', base: 'XAU', quote: 'USD', venueTimeZone: 'Etc/UTC' },
+});
 
 function snapshot(overrides: Partial<Mt5HostSnapshot> = {}): Mt5HostSnapshot {
   return {
@@ -60,8 +65,15 @@ function clientWith(request: Mt5HostRequest): Mt5HostClient {
   return new Mt5HostClient({ baseUrl: 'http://127.0.0.1:8790', token: TOKEN, request });
 }
 
-function adapterWith(request: Mt5HostRequest): Mt5BrokerAdapter {
-  return new Mt5BrokerAdapter({ client: clientWith(request), systemPrefix: PREFIX });
+function adapterWith(
+  request: Mt5HostRequest,
+  instrumentBinding: Mt5InstrumentBinding = BINDING,
+): Mt5BrokerAdapter {
+  return new Mt5BrokerAdapter({
+    client: clientWith(request),
+    systemPrefix: PREFIX,
+    instrumentBinding,
+  });
 }
 
 describe('Mt5BrokerAdapter', () => {
@@ -80,6 +92,51 @@ describe('Mt5BrokerAdapter', () => {
     expect(D.Decimal.toString(spec?.contractSize ?? D.dec('0'))).toBe('100');
   });
 
+  it('applies one explicit symbol binding across instruments, positions, orders and quotes', async () => {
+    const binding = new Mt5InstrumentBinding(new Mt5SymbolMap({ 'XAUUSD.x': 'XAUUSD' }), {
+      XAUUSD: { assetClass: 'metal', base: 'XAU', quote: 'USD', venueTimeZone: 'Etc/UTC' },
+    });
+    const aliased = snapshot({
+      instruments: [{ ...snapshot().instruments[0]!, symbol: 'XAUUSD.x', canonical: 'XAUUSD.x' }],
+      positions: [
+        {
+          ticket: '10',
+          positionId: '11',
+          magic: '0',
+          symbol: 'XAUUSD.x',
+          canonical: 'XAUUSD.x',
+          side: 'buy',
+          volume: '0.01',
+          entryPrice: '2500.00',
+          openedAt: 1_700_000_000_000,
+        },
+      ],
+      orders: [
+        {
+          ticket: '12',
+          magic: '0',
+          symbol: 'XAUUSD.x',
+          canonical: 'XAUUSD.x',
+          side: 'buy',
+          state: 'WORKING',
+          requestedQty: '0.01',
+          filledQty: '0.00',
+          createdAt: 1_700_000_000_000,
+        },
+      ],
+      quotes: [
+        { canonical: 'XAUUSD.x', bid: '2500.10', ask: '2500.30', asOf: 1_700_000_000_000 },
+      ],
+    });
+    const adapter = adapterWith(async () => ({ status: 200, body: aliased }), binding);
+    await adapter.connect();
+
+    expect((await adapter.getInstruments())[0]?.canonical).toBe('XAUUSD');
+    expect((await adapter.getPositions())[0]?.canonical).toBe('XAUUSD');
+    expect((await adapter.getOpenOrders())[0]?.canonical).toBe('XAUUSD');
+    expect((await adapter.getQuote('XAUUSD'))?.canonical).toBe('XAUUSD');
+  });
+
   it('refuses a real account by default before enabling the adapter', async () => {
     const real = snapshot({ account: { ...snapshot().account, tradeMode: 'real' } });
     const adapter = adapterWith(async () => ({ status: 200, body: real }));
@@ -94,6 +151,7 @@ describe('Mt5BrokerAdapter', () => {
         new Mt5BrokerAdapter({
           client: clientWith(async () => ({ status: 200, body: snapshot() })),
           systemPrefix: PREFIX,
+          instrumentBinding: BINDING,
           allowedTradeModes: ['demo', 'real'],
         }),
     ).toThrow(Mt5AdapterError);
