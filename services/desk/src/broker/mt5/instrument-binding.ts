@@ -1,7 +1,7 @@
 import type { AssetClass, InstrumentSpec, PositionModel } from '@keel/core';
 import * as D from '@keel/core';
 import type { Mt5HostInstrument } from './host-types.js';
-import { Mt5SymbolMap } from './symbol-map.js';
+import type { Mt5SymbolMap } from './symbol-map.js';
 
 export class Mt5InstrumentBindingError extends Error {
   constructor(message: string) {
