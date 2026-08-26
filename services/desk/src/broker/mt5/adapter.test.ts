@@ -249,4 +249,102 @@ describe('Mt5BrokerAdapter', () => {
     });
     expect(result).toMatchObject({ found: 'indeterminate' });
   });
+
+  it('never reconstructs a rejected historical order as FILLED', async () => {
+    const clientOrderId = 'rejected-history';
+    const expectedMagic = magicToWire(magicForClientOrderId(clientOrderId, PREFIX));
+    const request: Mt5HostRequest = async (url) => {
+      if (url.endsWith('/v1/snapshot')) return { status: 200, body: snapshot() };
+      if (url.endsWith('/v1/reconcile')) {
+        return {
+          status: 200,
+          body: {
+            observation: {
+              observedAt: 1_700_000_002_000,
+              connected: true,
+              positionsScanned: true,
+              ordersScanned: true,
+              historySelected: true,
+              historyFrom: 1_699_999_990_000,
+              historyTo: 1_700_000_020_000,
+              candidates: [
+                {
+                  kind: 'order',
+                  ticket: '8001',
+                  magic: expectedMagic,
+                  symbol: 'XAUUSD',
+                  side: 'buy',
+                  volume: '0.01',
+                  price: '2500.30',
+                  serverTime: 1_700_000_000_500,
+                  orderState: 'REJECTED',
+                },
+              ],
+            },
+          },
+        };
+      }
+      throw new Error(`unexpected ${url}`);
+    };
+    const adapter = adapterWith(request);
+    await adapter.connect();
+
+    const result = await adapter.findByClientOrderId(clientOrderId, {
+      canonical: 'XAUUSD',
+      symbol: 'XAUUSD',
+      side: 'buy',
+      volume: D.dec('0.01'),
+      sentNotBefore: 1_700_000_000_000,
+      sentNotAfter: 1_700_000_001_000,
+    });
+    expect(result).toMatchObject({ found: 'indeterminate' });
+  });
+
+  it('fails closed when reconcile order evidence omits orderState', async () => {
+    const clientOrderId = 'malformed-history';
+    const expectedMagic = magicToWire(magicForClientOrderId(clientOrderId, PREFIX));
+    const request: Mt5HostRequest = async (url) => {
+      if (url.endsWith('/v1/snapshot')) return { status: 200, body: snapshot() };
+      if (url.endsWith('/v1/reconcile')) {
+        return {
+          status: 200,
+          body: {
+            observation: {
+              observedAt: 1_700_000_002_000,
+              connected: true,
+              positionsScanned: true,
+              ordersScanned: true,
+              historySelected: true,
+              historyFrom: 1_699_999_990_000,
+              historyTo: 1_700_000_020_000,
+              candidates: [
+                {
+                  kind: 'order',
+                  ticket: '8001',
+                  magic: expectedMagic,
+                  symbol: 'XAUUSD',
+                  side: 'buy',
+                  volume: '0.01',
+                  serverTime: 1_700_000_000_500,
+                },
+              ],
+            },
+          },
+        };
+      }
+      throw new Error(`unexpected ${url}`);
+    };
+    const adapter = adapterWith(request);
+    await adapter.connect();
+
+    const result = await adapter.findByClientOrderId(clientOrderId, {
+      canonical: 'XAUUSD',
+      symbol: 'XAUUSD',
+      side: 'buy',
+      volume: D.dec('0.01'),
+      sentNotBefore: 1_700_000_000_000,
+      sentNotAfter: 1_700_000_001_000,
+    });
+    expect(result).toMatchObject({ found: 'indeterminate' });
+  });
 });
