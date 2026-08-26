@@ -5,6 +5,7 @@ import {
   type Mt5AgentSessionOptions,
   type Mt5AgentTransport,
 } from './agent-session.js';
+import { validateMt5HostSnapshot } from './snapshot-validation.js';
 
 export interface Mt5AgentBridgeServerOptions
   extends Omit<Mt5AgentSessionOptions, 'onAuthenticated'> {
@@ -101,7 +102,15 @@ export class Mt5AgentBridgeServer {
 
     socket.on('data', (chunk) => {
       try {
-        for (const line of decoder.feed(chunk)) session.receive(decodeAgentMessage(line));
+        for (const line of decoder.feed(chunk)) {
+          const message = decodeAgentMessage(line);
+          if (message.type === 'snapshot') {
+            const snapshot = validateMt5HostSnapshot(message.snapshot);
+            session.receive({ ...message, snapshot });
+          } else {
+            session.receive(message);
+          }
+        }
       } catch (error) {
         const parsed = error instanceof Error ? error : new Error(String(error));
         this.options.onProtocolError?.(parsed);
