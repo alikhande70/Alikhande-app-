@@ -102,6 +102,15 @@ describe('KeelAgent source safety contract', () => {
     expect(reconcile).toContain('reconcile_exceeds_transport_limit');
   });
 
+  it('preserves historical MT5 order state so rejected/cancelled orders cannot masquerade as fills', async () => {
+    const reconcile = await reconcileSource();
+    expect(reconcile).toContain('ORDER_STATE_REJECTED');
+    expect(reconcile).toContain('ORDER_STATE_CANCELED');
+    expect(reconcile).toContain('ORDER_STATE_EXPIRED');
+    expect(reconcile).toContain('HistoryOrderGetInteger(ticket,ORDER_STATE)');
+    expect(reconcile).toContain('orderState\\\"');
+  });
+
   it('keeps duplicate command delivery fail-closed', async () => {
     const source = await agentSource();
     expect(source).toContain('request_already_received_requires_reconciliation');
