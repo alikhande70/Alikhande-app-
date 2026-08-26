@@ -60,6 +60,7 @@ export class Mt5AgentSession {
   private helloMessage: Mt5AgentHello | undefined;
   private heartbeatMessage: Mt5AgentHeartbeat | undefined;
   private clockFault: string | undefined;
+  private agentEpoch: string | undefined;
   private clockWarnings: readonly string[] = [];
   private lastEventSeq = -1n;
   private disconnected = false;
@@ -86,6 +87,23 @@ export class Mt5AgentSession {
       if (!tokensEqual(this.options.token, message.token)) {
         this.transport.close();
         throw new Mt5AgentProtocolError('MT5 agent authentication failed');
+      }
+      // A new agent run restarts its event sequence, so the watermark from the
+      // previous run must not be carried across. Resetting here is what keeps an
+      // EA restart from silently deafening the session.
+      const epoch = message.agentEpoch ?? '0';
+      if (this.agentEpoch !== undefined && BigInt(epoch) < BigInt(this.agentEpoch)) {
+        // Epochs only move forward. A lower one means a stale agent reconnected
+        // or the epoch store was lost; either way its sequence numbers cannot be
+        // trusted against ours, so refuse rather than accept ambiguous ordering.
+        throw new Mt5AgentProtocolError(
+          `MT5 agent epoch went backwards (${this.agentEpoch} -> ${epoch}); refusing to reuse ` +
+            'a sequence watermark across an untrusted agent run',
+        );
+      }
+      if (this.agentEpoch !== epoch) {
+        this.agentEpoch = epoch;
+        this.lastEventSeq = -1n;
       }
       this.helloMessage = message;
       this.options.onAuthenticated?.(message);
@@ -282,10 +300,26 @@ export class Mt5AgentSession {
     }
   }
 
+  /**
+   * Accept an event only if it advances this epoch's sequence.
+   *
+   * Duplicates and replays are dropped here rather than deduplicated later,
+   * which is what makes a spool replay harmless: the agent may re-send anything
+   * it is unsure the desk received, and everything already seen is ignored.
+   *
+   * Sequence numbers restart with each agent epoch, so the watermark is reset on
+   * a new epoch in `receive`. In the normal path a reconnect already gets a
+   * fresh session; the reset matters when one session sees more than one run.
+   */
   private acceptSequence(sequence: string): boolean {
     const parsed = BigInt(sequence);
     if (parsed <= this.lastEventSeq) return false;
     this.lastEventSeq = parsed;
     return true;
+  }
+
+  /** The agent run this session is tracking, for observability. */
+  epoch(): string | undefined {
+    return this.agentEpoch;
   }
 }
