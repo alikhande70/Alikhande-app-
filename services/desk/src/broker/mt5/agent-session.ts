@@ -10,7 +10,7 @@ import {
   type Mt5DeskCommandMessage,
 } from './agent-protocol.js';
 import { validateMt5Command } from './command-validation.js';
-import type { Mt5HostSubmitResult } from './host-types.js';
+import type { Mt5HostSnapshot, Mt5HostSubmitResult } from './host-types.js';
 
 export interface Mt5AgentTransport {
   write(data: string): void;
@@ -39,6 +39,12 @@ interface PendingCommand {
   readonly timer: ReturnType<typeof setTimeout>;
 }
 
+interface PendingSnapshot {
+  readonly resolve: (snapshot: Mt5HostSnapshot) => void;
+  readonly reject: (error: Error) => void;
+  readonly timer: ReturnType<typeof setTimeout>;
+}
+
 function tokensEqual(expected: string, actual: string): boolean {
   const left = Buffer.from(expected, 'utf8');
   const right = Buffer.from(actual, 'utf8');
@@ -49,6 +55,7 @@ export class Mt5AgentSession {
   private readonly commandTimeoutMs: number;
   private readonly heartbeatStaleMs: number;
   private readonly pending = new Map<string, PendingCommand>();
+  private readonly pendingSnapshots = new Map<string, PendingSnapshot>();
   private helloMessage: Mt5AgentHello | undefined;
   private heartbeatMessage: Mt5AgentHeartbeat | undefined;
   private lastEventSeq = -1n;
@@ -91,15 +98,33 @@ export class Mt5AgentSession {
         if (!this.acceptSequence(message.eventSeq)) return;
         this.heartbeatMessage = message;
         return;
-      case 'snapshot':
+      case 'snapshot': {
         if (!this.acceptSequence(message.eventSeq)) return;
+        const pending = this.pendingSnapshots.get(message.requestId);
+        if (pending !== undefined) {
+          clearTimeout(pending.timer);
+          this.pendingSnapshots.delete(message.requestId);
+          pending.resolve(message.snapshot);
+        }
         this.options.onSnapshot?.(message);
         return;
+      }
       case 'transaction':
         if (!this.acceptSequence(message.eventSeq)) return;
         this.options.onTransaction?.(message);
         return;
       case 'result': {
+        const snapshotPending = this.pendingSnapshots.get(message.requestId);
+        if (snapshotPending !== undefined) {
+          clearTimeout(snapshotPending.timer);
+          this.pendingSnapshots.delete(message.requestId);
+          snapshotPending.reject(
+            new Mt5AgentProtocolError(
+              `MT5 snapshot request did not return authoritative snapshot: ${message.result.outcome}`,
+            ),
+          );
+          return;
+        }
         const pending = this.pending.get(message.requestId);
         if (pending === undefined) return;
         clearTimeout(pending.timer);
@@ -135,17 +160,39 @@ export class Mt5AgentSession {
     );
   }
 
+  async snapshot(): Promise<Mt5HostSnapshot> {
+    this.assertReady();
+    const validated = validateMt5Command('snapshot', {});
+    const requestId = randomUUID();
+    const message: Mt5DeskCommandMessage = {
+      type: 'command',
+      protocolVersion: 1,
+      requestId,
+      command: validated.command,
+      payload: validated.payload,
+    };
+
+    return new Promise<Mt5HostSnapshot>((resolve, reject) => {
+      const timer = setTimeout(() => {
+        this.pendingSnapshots.delete(requestId);
+        reject(new Mt5AgentDisconnectedError('MT5 agent snapshot command timed out'));
+      }, this.commandTimeoutMs);
+      this.pendingSnapshots.set(requestId, { resolve, reject, timer });
+      try {
+        this.transport.write(encodeDeskCommand(message));
+      } catch (error) {
+        clearTimeout(timer);
+        this.pendingSnapshots.delete(requestId);
+        reject(error instanceof Error ? error : new Error(String(error)));
+      }
+    });
+  }
+
   async command(
-    command: Mt5DeskCommandMessage['command'],
+    command: Exclude<Mt5DeskCommandMessage['command'], 'snapshot'>,
     payload: unknown,
   ): Promise<Mt5HostSubmitResult> {
-    if (!this.isAuthenticated()) {
-      throw new Mt5AgentDisconnectedError('MT5 agent is not authenticated');
-    }
-    if (!this.isLive()) {
-      throw new Mt5AgentDisconnectedError('MT5 agent heartbeat is stale or terminal disconnected');
-    }
-
+    this.assertReady();
     const validated = validateMt5Command(command, payload);
     const requestId = randomUUID();
     const message: Mt5DeskCommandMessage = {
@@ -180,6 +227,20 @@ export class Mt5AgentSession {
       pending.reject(new Mt5AgentDisconnectedError(reason));
     }
     this.pending.clear();
+    for (const pending of this.pendingSnapshots.values()) {
+      clearTimeout(pending.timer);
+      pending.reject(new Mt5AgentDisconnectedError(reason));
+    }
+    this.pendingSnapshots.clear();
+  }
+
+  private assertReady(): void {
+    if (!this.isAuthenticated()) {
+      throw new Mt5AgentDisconnectedError('MT5 agent is not authenticated');
+    }
+    if (!this.isLive()) {
+      throw new Mt5AgentDisconnectedError('MT5 agent heartbeat is stale or terminal disconnected');
+    }
   }
 
   private acceptSequence(sequence: string): boolean {
