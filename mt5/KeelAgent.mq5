@@ -3,7 +3,7 @@
 //|  Loopback-only MT5 bridge for the Keel personal trading system. |
 //+------------------------------------------------------------------+
 #property strict
-#property version   "0.2.0"
+#property version   "0.3.0"
 #property description "Keel MT5 bridge. Add 127.0.0.1 to Tools > Options > Expert Advisors > allowed addresses before use."
 
 input string InpDeskHost = "127.0.0.1";
@@ -34,15 +34,8 @@ string JsonEscape(const string value)
    return(out);
   }
 
-string ULongText(const ulong value)
-  {
-   return(StringFormat("%I64u",value));
-  }
-
-string LongText(const long value)
-  {
-   return(StringFormat("%I64d",value));
-  }
+string ULongText(const ulong value) { return(StringFormat("%I64u",value)); }
+string LongText(const long value) { return(StringFormat("%I64d",value)); }
 
 string TradeModeText()
   {
@@ -59,10 +52,7 @@ string PositionModelText()
    return("netting");
   }
 
-long UnixMillis()
-  {
-   return((long)TimeTradeServer()*1000);
-  }
+long UnixMillis() { return((long)TimeTradeServer()*1000); }
 
 bool AppendLineToFile(const string file_name,const string line)
   {
@@ -79,25 +69,15 @@ bool AppendLineToFile(const string file_name,const string line)
    return(true);
   }
 
-bool AppendSpool(const string line)
-  {
-   return(AppendLineToFile(g_spool_file,line));
-  }
-
-bool AppendCommandReceipt(const string line)
-  {
-   return(AppendLineToFile(g_command_spool_file,line));
-  }
+bool AppendSpool(const string line) { return(AppendLineToFile(g_spool_file,line)); }
+bool AppendCommandReceipt(const string line) { return(AppendLineToFile(g_command_spool_file,line)); }
 
 bool SendLine(const string line)
   {
-   if(g_socket==INVALID_HANDLE || !SocketIsConnected(g_socket))
-      return(false);
-
+   if(g_socket==INVALID_HANDLE || !SocketIsConnected(g_socket)) return(false);
    uchar bytes[];
    int copied=StringToCharArray(line+"\n",bytes,0,-1,CP_UTF8);
-   if(copied<=1)
-      return(false);
+   if(copied<=1) return(false);
    int length=copied-1;
    int sent=SocketSend(g_socket,bytes,(uint)length);
    if(sent!=length)
@@ -121,9 +101,7 @@ void CloseSocket()
 
 bool ConnectDesk()
   {
-   if(g_socket!=INVALID_HANDLE && SocketIsConnected(g_socket))
-      return(true);
-
+   if(g_socket!=INVALID_HANDLE && SocketIsConnected(g_socket)) return(true);
    CloseSocket();
    ResetLastError();
    g_socket=SocketCreate(SOCKET_DEFAULT);
@@ -149,7 +127,6 @@ bool SendHello()
       Print("KeelAgent: token must be at least 16 characters; refusing bridge authentication");
       return(false);
      }
-
    string line=StringFormat(
       "{\"type\":\"hello\",\"protocolVersion\":1,\"token\":\"%s\",\"agentId\":\"%s\",\"terminalBuild\":%d,\"accountLogin\":\"%s\",\"server\":\"%s\",\"tradeMode\":\"%s\",\"positionModel\":\"%s\",\"at\":%I64d}",
       JsonEscape(InpAgentToken),JsonEscape(InpAgentId),(int)TerminalInfoInteger(TERMINAL_BUILD),
@@ -164,7 +141,6 @@ void SendHeartbeat()
   {
    if(!ConnectDesk()) return;
    if(!g_hello_sent && !SendHello()) return;
-
    g_event_seq++;
    bool terminal_connected=(bool)TerminalInfoInteger(TERMINAL_CONNECTED);
    bool trade_allowed=(bool)AccountInfoInteger(ACCOUNT_TRADE_ALLOWED) &&
@@ -198,16 +174,8 @@ bool JsonStringField(const string line,const string key,string &value)
          escaped=false;
          continue;
         }
-      if(ch=='\\')
-        {
-         escaped=true;
-         continue;
-        }
-      if(ch=='\"')
-        {
-         value=out;
-         return(true);
-        }
+      if(ch=='\\') { escaped=true; continue; }
+      if(ch=='\"') { value=out; return(true); }
       if(ch<32) return(false);
       out+=ShortToString(ch);
      }
@@ -256,8 +224,7 @@ bool IsAllowedCommand(const string command)
 bool HasSeenRequestId(const string request_id)
   {
    int count=ArraySize(g_seen_request_ids);
-   for(int i=0;i<count;i++)
-      if(g_seen_request_ids[i]==request_id) return(true);
+   for(int i=0;i<count;i++) if(g_seen_request_ids[i]==request_id) return(true);
    return(false);
   }
 
@@ -298,6 +265,8 @@ void SendRejectedResult(const string request_id,const string reason)
    if(!SendLine(line)) CloseSocket();
   }
 
+#include "KeelOrderCheck.mqh"
+
 void HandleCommandLine(const string line)
   {
    if(StringLen(line)<=0 || StringLen(line)>KEEL_MAX_LINE_CHARS)
@@ -319,17 +288,13 @@ void HandleCommandLine(const string line)
       return;
      }
 
-   // Idempotency rule: a request seen before restart or reconnect is never executed again.
-   // We cannot know whether an earlier process crashed after receipt, so replay is ambiguous
-   // until authoritative reconciliation proves the broker state.
    if(HasSeenRequestId(request_id))
      {
       SendAmbiguousResult(request_id,"request_already_received_requires_reconciliation");
       return;
      }
 
-   // Durability ordering: receipt is flushed before any command may advance toward MT5.
-   // Future execution stages must append CHECKED/SENT/RESULT records before side effects.
+   // RECEIVED is flushed before any check or broker-facing action.
    if(!AppendCommandReceipt(line))
      {
       SendAmbiguousResult(request_id,"command_receipt_not_durable");
@@ -337,7 +302,15 @@ void HandleCommandLine(const string line)
      }
    RememberRequestId(request_id);
 
-   if(command=="place_order" || command=="cancel_order" || command=="modify_position" || command=="close_position")
+   if(command=="place_order")
+     {
+      // Demo-only preflight. This performs OrderCheck and persists CHECKED/RESULT,
+      // but deliberately has no OrderSend path yet.
+      HandlePlaceOrderPrecheck(line,request_id);
+      return;
+     }
+
+   if(command=="cancel_order" || command=="modify_position" || command=="close_position")
      {
       if(TradeModeText()!="demo")
         {
@@ -349,7 +322,6 @@ void HandleCommandLine(const string line)
      }
 
    // Snapshot/reconcile handlers are intentionally not faked with empty broker state.
-   // Returning ambiguity is safer than manufacturing a false "no orders/no positions" truth.
    SendAmbiguousResult(request_id,"authoritative_snapshot_reconcile_not_enabled_yet");
   }
 
@@ -362,11 +334,7 @@ void ReceiveCommands()
       uint to_read=(uint)MathMin((double)readable,65536.0);
       uchar bytes[];
       int count=SocketRead(g_socket,bytes,to_read,10);
-      if(count<=0)
-        {
-         CloseSocket();
-         return;
-        }
+      if(count<=0) { CloseSocket(); return; }
       string chunk=CharArrayToString(bytes,0,count,CP_UTF8);
       g_rx_buffer+=chunk;
       if(StringLen(g_rx_buffer)>KEEL_MAX_LINE_CHARS)
@@ -375,7 +343,6 @@ void ReceiveCommands()
          CloseSocket();
          return;
         }
-
       for(;;)
         {
          int newline=StringFind(g_rx_buffer,"\n");
@@ -399,7 +366,6 @@ void EmitTransaction(const MqlTradeTransaction &trans,const MqlTradeRequest &req
       ULongText(g_event_seq),now,JsonEscape(EnumToString(trans.type)),ULongText(trans.order),ULongText(trans.deal),
       ULongText(trans.position),JsonEscape(trans.symbol),ULongText(request.magic),
       DoubleToString(trans.volume,8),DoubleToString(trans.price,_Digits));
-
    if(!AppendSpool(line))
      {
       Print("KeelAgent: transaction not transmitted because durable spool write failed");
