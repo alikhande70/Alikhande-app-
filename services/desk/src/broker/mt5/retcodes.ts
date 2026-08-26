@@ -127,11 +127,19 @@ export function classifyMt5Submit(
     case MT5_RETCODE.ORDER_CHANGED:
       return { outcome: 'ambiguous', retcode, reason: 'order state changed while processing' };
     case MT5_RETCODE.NO_CHANGES:
-      return { outcome: 'ambiguous', retcode, reason: 'server reported no changes; resulting state must be read back' };
+      return {
+        outcome: 'ambiguous',
+        retcode,
+        reason: 'server reported no changes; resulting state must be read back',
+      };
     case MT5_RETCODE.LOCKED:
       return { outcome: 'ambiguous', retcode, reason: 'request is locked for processing' };
     case MT5_RETCODE.CONNECTION:
-      return { outcome: 'ambiguous', retcode, reason: 'terminal has no confirmed trade-server connection' };
+      return {
+        outcome: 'ambiguous',
+        retcode,
+        reason: 'terminal has no confirmed trade-server connection',
+      };
     default:
       return {
         outcome: 'ambiguous',
