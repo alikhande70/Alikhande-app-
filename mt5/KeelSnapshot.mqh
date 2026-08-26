@@ -6,6 +6,8 @@ string KeelDecimal(const double value,const int digits=8)
    return(DoubleToString(value,digits));
   }
 
+#include "KeelInstrumentFacts.mqh"
+
 string KeelPositionSide(const long type)
   {
    return(type==POSITION_TYPE_BUY ? "buy" : "sell");
@@ -187,7 +189,9 @@ bool KeelSendAuthoritativeSnapshot(const string request_id)
    string positions="";
    string orders="";
    string quotes="";
-   if(!KeelBuildPositionsJson(positions) || !KeelBuildOrdersJson(orders) || !KeelBuildQuotesJson(quotes))
+   string instrument_facts="";
+   if(!KeelBuildPositionsJson(positions) || !KeelBuildOrdersJson(orders) ||
+      !KeelBuildQuotesJson(quotes) || !KeelBuildInstrumentFactsJson(instrument_facts))
      {
       SendAmbiguousResult(request_id,"authoritative_state_scan_failed");
       return(false);
@@ -205,8 +209,9 @@ bool KeelSendAuthoritativeSnapshot(const string request_id)
 
    g_event_seq++;
    string line=StringFormat(
-      "{\"type\":\"snapshot\",\"requestId\":\"%s\",\"eventSeq\":\"%s\",\"snapshot\":{\"protocolVersion\":1,\"hostId\":\"%s\",\"terminalConnected\":true,\"tradeAllowed\":%s,\"account\":%s,\"instruments\":[],\"positions\":%s,\"orders\":%s,\"quotes\":%s,\"observedAt\":%I64d}}",
-      JsonEscape(request_id),ULongText(g_event_seq),JsonEscape(InpAgentId),trade_allowed?"true":"false",account,positions,orders,quotes,now);
+      "{\"type\":\"snapshot\",\"requestId\":\"%s\",\"eventSeq\":\"%s\",\"snapshot\":{\"protocolVersion\":1,\"hostId\":\"%s\",\"terminalConnected\":true,\"tradeAllowed\":%s,\"account\":%s,\"instruments\":[],\"instrumentFacts\":%s,\"positions\":%s,\"orders\":%s,\"quotes\":%s,\"observedAt\":%I64d}}",
+      JsonEscape(request_id),ULongText(g_event_seq),JsonEscape(InpAgentId),trade_allowed?"true":"false",account,
+      instrument_facts,positions,orders,quotes,now);
    if(StringLen(line)>KEEL_MAX_LINE_CHARS)
      {
       SendAmbiguousResult(request_id,"snapshot_exceeds_transport_limit");
