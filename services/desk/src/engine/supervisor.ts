@@ -555,7 +555,10 @@ export class ExecutionSupervisor {
         side: cmd.side,
         volume,
         requestedRiskBudget: riskAccount ?? D.dec('0.00'),
-        marginRequiredAccount: marginAccount ?? D.dec('0.00'),
+        // Deliberately not `?? 0.00`. An unavailable margin used to be coerced
+        // to zero here, which made the governor's free-margin rule pass
+        // trivially -- a stale FX rate disabled the check without a trace.
+        ...(marginAccount === undefined ? {} : { marginRequiredAccount: marginAccount }),
         hasPreTradeNote: cmd.preTradeNote.trim().length > 0,
         recentIdenticalIntents: state.recentIdenticalIntents(
           cmd.canonical,
@@ -619,6 +622,9 @@ export class ExecutionSupervisor {
   ): Dec | undefined {
     if (entry === undefined) return undefined;
     const quoteMargin = D.marginQuote(spec, volume, entry);
+    // No published margin rate — the normal case on MT5, where margin is
+    // request-specific and must come from OrderCalcMargin. Unknown, not zero.
+    if (quoteMargin === undefined) return undefined;
     const conv = this.deps.state.fxBook.convert({
       amount: quoteMargin,
       from: spec.quote,

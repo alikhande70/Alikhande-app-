@@ -1,6 +1,5 @@
 import type {
   Mt5HostAccount,
-  Mt5HostInstrument,
   Mt5HostInstrumentFacts,
   Mt5HostOrder,
   Mt5HostPosition,
@@ -17,7 +16,6 @@ export class Mt5SnapshotValidationError extends Error {
 
 type RecordLike = Record<string, unknown>;
 
-const ASSET_CLASSES = new Set(['fx', 'metal', 'index', 'commodity', 'crypto', 'equity', 'future']);
 const ORDER_STATES = new Set([
   'PENDING_SUBMIT',
   'WORKING',
@@ -123,19 +121,6 @@ function arrayField(value: RecordLike, key: string, path: string): readonly unkn
   return field;
 }
 
-function optionalArrayField(
-  value: RecordLike,
-  key: string,
-  path: string,
-): readonly unknown[] | undefined {
-  const field = value[key];
-  if (field === undefined) return undefined;
-  if (!Array.isArray(field)) {
-    throw new Mt5SnapshotValidationError(`${path}.${key} must be an array when present`);
-  }
-  return field;
-}
-
 function parseAccount(value: unknown): Mt5HostAccount {
   const row = record(value, 'snapshot.account');
   const tradeMode = oneOf<Mt5HostAccount['tradeMode']>(
@@ -162,36 +147,6 @@ function parseAccount(value: unknown): Mt5HostAccount {
     marginUsed: decimalText(row, 'marginUsed', 'snapshot.account'),
     marginFree: decimalText(row, 'marginFree', 'snapshot.account'),
     asOf: numberField(row, 'asOf', 'snapshot.account'),
-  };
-}
-
-function parseInstrument(value: unknown, index: number): Mt5HostInstrument {
-  const path = `snapshot.instruments[${index}]`;
-  const row = record(value, path);
-  const assetClass = oneOf<Mt5HostInstrument['assetClass']>(row, 'assetClass', path, ASSET_CLASSES);
-  const digits = numberField(row, 'digits', path);
-  const tickValueAccount = optionalDecimal(row, 'tickValueAccount', path);
-  if (!Number.isInteger(digits) || digits > 20) {
-    throw new Mt5SnapshotValidationError(`${path}.digits must be an integer between 0 and 20`);
-  }
-  return {
-    symbol: stringField(row, 'symbol', path),
-    canonical: stringField(row, 'canonical', path),
-    assetClass,
-    base: stringField(row, 'base', path),
-    quote: stringField(row, 'quote', path),
-    digits,
-    tickSize: decimalText(row, 'tickSize', path),
-    contractSize: decimalText(row, 'contractSize', path),
-    minVolume: decimalText(row, 'minVolume', path),
-    maxVolume: decimalText(row, 'maxVolume', path),
-    volumeStep: decimalText(row, 'volumeStep', path),
-    ...(tickValueAccount === undefined ? {} : { tickValueAccount }),
-    stopsLevel: decimalText(row, 'stopsLevel', path),
-    freezeLevel: decimalText(row, 'freezeLevel', path),
-    marginRate: decimalText(row, 'marginRate', path),
-    venueTimeZone: stringField(row, 'venueTimeZone', path),
-    asOf: numberField(row, 'asOf', path),
   };
 }
 
@@ -287,9 +242,7 @@ export function validateMt5HostSnapshot(value: unknown): Mt5HostSnapshot {
   if (row.protocolVersion !== 1) {
     throw new Mt5SnapshotValidationError('snapshot.protocolVersion must equal 1');
   }
-  const instruments = arrayField(row, 'instruments', 'snapshot').map(parseInstrument);
-  const rawInstrumentFacts = optionalArrayField(row, 'instrumentFacts', 'snapshot');
-  const instrumentFacts = rawInstrumentFacts?.map(parseInstrumentFacts);
+  const instrumentFacts = arrayField(row, 'instrumentFacts', 'snapshot').map(parseInstrumentFacts);
   const positions = arrayField(row, 'positions', 'snapshot').map(parsePosition);
   const orders = arrayField(row, 'orders', 'snapshot').map(parseOrder);
   const quotes = arrayField(row, 'quotes', 'snapshot').map(parseQuote);
@@ -299,8 +252,7 @@ export function validateMt5HostSnapshot(value: unknown): Mt5HostSnapshot {
     terminalConnected: booleanField(row, 'terminalConnected', 'snapshot'),
     tradeAllowed: booleanField(row, 'tradeAllowed', 'snapshot'),
     account: parseAccount(row.account),
-    instruments,
-    ...(instrumentFacts === undefined ? {} : { instrumentFacts }),
+    instrumentFacts,
     positions,
     orders,
     quotes,

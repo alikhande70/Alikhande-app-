@@ -61,7 +61,7 @@ function snapshotMessage(requestId: string, eventSeq: string, observedAt: number
           marginFree: '10000.00',
           asOf: observedAt,
         },
-        instruments: [],
+        instrumentFacts: [],
         positions: [],
         orders: [],
         quotes: [],

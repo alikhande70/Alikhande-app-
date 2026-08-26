@@ -31,3 +31,22 @@ state on every account update and can auto-flatten and lock out with no client c
   "what were my limits when I placed that trade?", which matters for honest review.
 - A "break glass" override exists, is **never silent**, requires re-authentication, is
   scoped to one intent, and is written to the ledger as a first-class event.
+
+## Amendment — `margin-unknown` is unwaivable
+
+Added after an audit found the desk coercing an unavailable margin figure to
+`0.00` before handing it to the governor. The free-margin rule then computed
+`marginFree - 0`, which passes for any account with any free margin at all — so
+a stale FX rate, a missing conversion path or an absent entry price silently
+disabled the margin check rather than stopping the order.
+
+`marginRequiredAccount` is now optional and **undefined means unknown, never
+zero**. An unknown value raises `margin-unknown`, which blocks.
+
+It is unwaivable because break-glass exists for judgement calls, and this is not
+one. When margin is unknown there is no number for the operator to weigh against
+their conviction; overriding it would waive a check that never ran, which is a
+different and worse thing than overriding a check that ran and said no.
+
+The correct repair is to obtain the real figure — on MT5 that means
+`OrderCalcMargin` for the specific proposed request — not to assume a value.

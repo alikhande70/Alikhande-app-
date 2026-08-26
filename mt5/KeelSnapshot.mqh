@@ -191,7 +191,7 @@ bool KeelSendAuthoritativeSnapshot(const string request_id)
    string quotes="";
    string instrument_facts="";
    if(!KeelBuildPositionsJson(positions) || !KeelBuildOrdersJson(orders) ||
-      !KeelBuildQuotesJson(quotes) || !KeelBuildInstrumentFactsJson(instrument_facts))
+      !KeelBuildQuotesJson(quotes) || !KeelBuildInstrumentFactsJson(InpSymbols,instrument_facts))
      {
       SendAmbiguousResult(request_id,"authoritative_state_scan_failed");
       return(false);
@@ -209,7 +209,7 @@ bool KeelSendAuthoritativeSnapshot(const string request_id)
 
    g_event_seq++;
    string line=StringFormat(
-      "{\"type\":\"snapshot\",\"requestId\":\"%s\",\"eventSeq\":\"%s\",\"snapshot\":{\"protocolVersion\":1,\"hostId\":\"%s\",\"terminalConnected\":true,\"tradeAllowed\":%s,\"account\":%s,\"instruments\":[],\"instrumentFacts\":%s,\"positions\":%s,\"orders\":%s,\"quotes\":%s,\"observedAt\":%I64d}}",
+      "{\"type\":\"snapshot\",\"requestId\":\"%s\",\"eventSeq\":\"%s\",\"snapshot\":{\"protocolVersion\":1,\"hostId\":\"%s\",\"terminalConnected\":true,\"tradeAllowed\":%s,\"account\":%s,\"instrumentFacts\":%s,\"positions\":%s,\"orders\":%s,\"quotes\":%s,\"observedAt\":%I64d}}",
       JsonEscape(request_id),ULongText(g_event_seq),JsonEscape(InpAgentId),trade_allowed?"true":"false",account,
       instrument_facts,positions,orders,quotes,now);
    if(StringLen(line)>KEEL_MAX_LINE_CHARS)

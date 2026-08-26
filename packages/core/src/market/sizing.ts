@@ -76,7 +76,12 @@ export interface SizingSuccess {
   /** Fraction of the budget actually used, e.g. 0.94 after rounding down. */
   readonly budgetUtilisation: Dec;
   readonly notionalQuote: Dec;
-  readonly marginQuote: Dec;
+  /**
+   * Margin in the quote currency, when the venue publishes a margin rate.
+   * Undefined on venues that do not (MT5), where a request-specific figure must
+   * be obtained instead. Never defaulted to zero.
+   */
+  readonly marginQuote?: Dec;
   /** Reward:risk, present only when a target was supplied. */
   readonly rewardToRisk?: Dec;
   readonly trace: SizingTrace;
@@ -289,7 +294,10 @@ export function sizePosition(req: SizingRequest): SizingResult {
     riskAtStop,
     budgetUtilisation,
     notionalQuote: D.rescale(I.notionalQuote(spec, volume, entry), 2, 'half-even'),
-    marginQuote: D.rescale(I.marginQuote(spec, volume, entry), 2, 'ceil'),
+    ...(() => {
+      const quoteMargin = I.marginQuote(spec, volume, entry);
+      return quoteMargin === undefined ? {} : { marginQuote: D.rescale(quoteMargin, 2, 'ceil') };
+    })(),
     trace,
     ...(req.target !== undefined
       ? { rewardToRisk: rewardToRisk(entry, stop, req.target, side) }

@@ -313,7 +313,7 @@ export class Mt5BrokerAdapter implements BrokerPort {
   async getInstruments() {
     const snapshot = await this.refreshConnected();
     return this.instrumentBinding.toInstrumentSpecs(
-      snapshot.instruments,
+      snapshot.instrumentFacts,
       snapshot.account.positionModel,
     );
   }

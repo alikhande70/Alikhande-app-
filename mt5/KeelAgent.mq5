@@ -11,6 +11,11 @@ input uint   InpDeskPort = 28761;
 input string InpAgentToken = "";
 input string InpAgentId = "keel-mt5-agent";
 input uint   InpHeartbeatSeconds = 1;
+// Explicit tradable universe, comma separated, exactly as the broker spells the
+// symbols (suffixes included). Instrument discovery must not depend on what
+// happens to be open: a flat account would otherwise publish no instruments at
+// all, and nothing could be sized until a position already existed.
+input string InpSymbols = "XAUUSD,EURUSD";
 
 int    g_socket = INVALID_HANDLE;
 bool   g_hello_sent = false;

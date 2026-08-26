@@ -47,7 +47,19 @@ export interface InstrumentSpec {
   /** Distance from market inside which modification is refused, in price units. */
   readonly freezeLevel: Dec;
   /** Fraction of notional required as margin (0.01 = 100:1 leverage). */
-  readonly marginRate: Dec;
+  /**
+   * Fraction of notional required as margin, when the venue genuinely publishes
+   * one (0.01 = 100:1).
+   *
+   * Optional, because MT5 does not have this concept in a usable form. Required
+   * margin there depends on the specific proposed order and the account's state
+   * at that moment, and is obtained per request through `OrderCalcMargin`. A
+   * scalar on the instrument would be a value the venue never asserted.
+   *
+   * When absent, `marginQuote` returns undefined and the caller must obtain a
+   * request-specific figure. It must never be defaulted.
+   */
+  readonly marginRate?: Dec;
   readonly positionModel: PositionModel;
   /** Venue timezone for session/rollover reasoning (IANA name). */
   readonly venueTimeZone: string;
@@ -167,9 +179,18 @@ export function notionalQuote(spec: InstrumentSpec, volume: Dec, price: Dec): De
   return D.mul(D.mul(volume, spec.contractSize), price);
 }
 
-/** Margin required in the quote currency, before conversion to account currency. */
-export function marginQuote(spec: InstrumentSpec, volume: Dec, price: Dec): Dec {
-  return D.mul(notionalQuote(spec, volume, price), spec.marginRate);
+/**
+ * Margin required in the quote currency, before conversion to account currency.
+ *
+ * Returns `undefined` when the venue publishes no margin rate — which is the
+ * normal case on MT5. Callers must then obtain a request-specific figure rather
+ * than substituting a default; a zero here would read as "this order needs no
+ * margin" and clear the free-margin rule for any funded account.
+ */
+export function marginQuote(spec: InstrumentSpec, volume: Dec, price: Dec): Dec | undefined {
+  return spec.marginRate === undefined
+    ? undefined
+    : D.mul(notionalQuote(spec, volume, price), spec.marginRate);
 }
 
 /**

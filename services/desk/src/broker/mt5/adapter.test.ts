@@ -32,24 +32,20 @@ function snapshot(overrides: Partial<Mt5HostSnapshot> = {}): Mt5HostSnapshot {
       marginFree: '10000.00',
       asOf: 1_700_000_000_000,
     },
-    instruments: [
+    instrumentFacts: [
       {
         symbol: 'XAUUSD',
-        canonical: 'XAUUSD',
-        assetClass: 'metal',
-        base: 'XAU',
-        quote: 'USD',
         digits: 2,
+        point: '0.01',
         tickSize: '0.01',
         contractSize: '100',
         minVolume: '0.01',
-        maxVolume: '100',
+        maxVolume: '50.00',
         volumeStep: '0.01',
         tickValueAccount: '1.00',
-        stopsLevel: '0.00',
-        freezeLevel: '0.00',
-        marginRate: '0.01',
-        venueTimeZone: 'Etc/UTC',
+        stopsLevel: '0',
+        freezeLevel: '0',
+        tradeMode: 4,
         asOf: 1_700_000_000_000,
       },
     ],
@@ -96,11 +92,10 @@ describe('Mt5BrokerAdapter', () => {
     const binding = new Mt5InstrumentBinding(new Mt5SymbolMap({ 'XAUUSD.x': 'XAUUSD' }), {
       XAUUSD: { assetClass: 'metal', base: 'XAU', quote: 'USD', venueTimeZone: 'Etc/UTC' },
     });
-    const baseInstrument = snapshot().instruments[0];
-    if (baseInstrument === undefined)
-      throw new Error('test fixture must contain XAUUSD instrument');
+    const baseFacts = snapshot().instrumentFacts[0];
+    if (baseFacts === undefined) throw new Error('test fixture must contain XAUUSD instrument');
     const aliased = snapshot({
-      instruments: [{ ...baseInstrument, symbol: 'XAUUSD.x', canonical: 'XAUUSD.x' }],
+      instrumentFacts: [{ ...baseFacts, symbol: 'XAUUSD.x' }],
       positions: [
         {
           ticket: '10',
