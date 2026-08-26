@@ -41,8 +41,8 @@ describe('Mt5InstrumentBinding', () => {
     expect(spec.base).toBe('XAU');
     expect(spec.quote).toBe('USD');
     expect(spec.positionModel).toBe('hedging');
-    expect(spec.contractSize).toEqual({ m: 100n, s: 0 });
-    expect(spec.tickSize).toEqual({ m: 1n, s: 2 });
+    expect(spec.contractSize).toEqual({ v: 100n, s: 0 });
+    expect(spec.tickSize).toEqual({ v: 1n, s: 2 });
   });
 
   it('fails closed when a venue symbol has no configured semantic metadata', () => {
