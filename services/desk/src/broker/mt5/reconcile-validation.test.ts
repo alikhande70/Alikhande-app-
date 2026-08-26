@@ -1,7 +1,20 @@
 import { describe, expect, it } from 'vitest';
 import { validateMt5HostReconcileResponse } from './reconcile-validation.js';
 
-function baseResponse() {
+interface TestResponse {
+  observation: {
+    observedAt: number;
+    connected: boolean;
+    positionsScanned: boolean;
+    ordersScanned: boolean;
+    historySelected: boolean;
+    historyFrom: number;
+    historyTo: number;
+    candidates: unknown[];
+  };
+}
+
+function baseResponse(): TestResponse {
   return {
     observation: {
       observedAt: 1_700_000_002_000,
@@ -91,7 +104,9 @@ describe('validateMt5HostReconcileResponse', () => {
   });
 
   it('rejects incomplete scans and invalid history shape instead of fabricating truth', () => {
-    const missing = baseResponse() as { observation: Record<string, unknown> };
+    const missing: { observation: Record<string, unknown> } = {
+      observation: { ...baseResponse().observation },
+    };
     delete missing.observation.historySelected;
     expect(() => validateMt5HostReconcileResponse(missing)).toThrow('historySelected');
 
