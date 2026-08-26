@@ -31,7 +31,34 @@ export const DeskConfig = z.object({
   /** `FULL` fsyncs every commit. Only lower it for tests. */
   synchronous: z.enum(['FULL', 'NORMAL', 'OFF']).default('FULL'),
 
-  broker: z.enum(['paper', 'oanda', 'metaapi']).default('paper'),
+  // 'metaapi' is gone: ADR-0016 rejected third-party MT5 cloud bridges on
+  // credential custody, so offering the value implied a path that will not exist.
+  broker: z.enum(['paper', 'oanda', 'mt5']).default('paper'),
+
+  /** Base URL of the Windows execution host. Loopback in the normal topology. */
+  mt5HostUrl: z.string().optional(),
+  /** Shared secret between desk and execution host. */
+  mt5HostToken: z.string().optional(),
+  /**
+   * Installation-wide high bits of the MT5 magic number (ADR-0015). Identifies
+   * trades as ours and separates them from anything opened by hand.
+   */
+  mt5SystemPrefix: z.number().int().min(0).max(0xffff).default(0x4b45),
+  /**
+   * Venue symbol -> canonical alias map, as JSON. Explicit only: no suffix
+   * stripping, no fuzzy matching.
+   */
+  mt5SymbolAliases: z.string().optional(),
+  /**
+   * Canonical -> semantic metadata, as JSON. MT5 cannot prove asset class,
+   * base/quote or session timezone, so they are configured or the instrument is
+   * refused.
+   */
+  mt5InstrumentMetadata: z.string().optional(),
+  /** Trade modes this desk may attach to. Demo unless widened deliberately. */
+  mt5AllowedTradeModes: z.array(z.enum(['demo', 'contest', 'real'])).default(['demo']),
+  /** The separate second step before a real MT5 account may be touched at all. */
+  mt5AllowRealTrading: z.boolean().default(false),
 
   /** OANDA v20 personal access token. Required when broker is `oanda`. */
   oandaToken: z.string().optional(),
@@ -81,6 +108,16 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): DeskConfig {
     dataDir: env.KEEL_DATA_DIR,
     synchronous: env.KEEL_SYNCHRONOUS,
     broker: env.KEEL_BROKER,
+    mt5HostUrl: env.KEEL_MT5_HOST_URL,
+    mt5HostToken: env.KEEL_MT5_HOST_TOKEN,
+    mt5SystemPrefix:
+      env.KEEL_MT5_SYSTEM_PREFIX === undefined ? undefined : Number(env.KEEL_MT5_SYSTEM_PREFIX),
+    mt5SymbolAliases: env.KEEL_MT5_SYMBOL_ALIASES,
+    mt5InstrumentMetadata: env.KEEL_MT5_INSTRUMENT_METADATA,
+    mt5AllowedTradeModes: env.KEEL_MT5_ALLOWED_TRADE_MODES?.split(',')
+      .map((s) => s.trim())
+      .filter(Boolean),
+    mt5AllowRealTrading: env.KEEL_MT5_ALLOW_REAL_TRADING === 'true',
     oandaToken: env.KEEL_OANDA_TOKEN,
     oandaAccountId: env.KEEL_OANDA_ACCOUNT_ID,
     oandaEnvironment: env.KEEL_OANDA_ENVIRONMENT,
@@ -112,6 +149,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): DeskConfig {
   }
   assertSafeExposure(parsed.data);
   assertBrokerCredentials(parsed.data);
+  assertMt5Configuration(parsed.data);
   return parsed.data;
 }
 
@@ -172,6 +210,60 @@ export function assertBrokerCredentials(cfg: DeskConfig): void {
         'against the practice environment only — see docs/VERIFICATION.md for exactly what that ' +
         'covers and what it does not. If you have read that and still mean it, set ' +
         'KEEL_OANDA_ALLOW_LIVE=true.',
+    );
+  }
+}
+
+/**
+ * MT5 configuration is validated at boot, not at the first order.
+ *
+ * Every field here is something the desk cannot invent: the host it talks to,
+ * the secret it authenticates with, which venue symbol means which instrument,
+ * and what those instruments actually are. A missing value is a startup failure
+ * because the alternative -- discovering it when an order is being sized -- is
+ * the worst possible moment.
+ */
+export function assertMt5Configuration(cfg: DeskConfig): void {
+  if (cfg.broker !== 'mt5') return;
+
+  const missing: string[] = [];
+  if (cfg.mt5HostUrl === undefined || cfg.mt5HostUrl === '') missing.push('KEEL_MT5_HOST_URL');
+  if (cfg.mt5HostToken === undefined || cfg.mt5HostToken === '') {
+    missing.push('KEEL_MT5_HOST_TOKEN');
+  }
+  if (cfg.mt5InstrumentMetadata === undefined || cfg.mt5InstrumentMetadata === '') {
+    missing.push('KEEL_MT5_INSTRUMENT_METADATA');
+  }
+  if (missing.length > 0) {
+    throw new ConfigError(
+      `KEEL_BROKER=mt5 needs ${missing.join(', ')}. The desk cannot infer the execution host, ` +
+        'its credential, or what an instrument means; see docs/RUNBOOK.md.',
+    );
+  }
+
+  for (const [key, raw] of [
+    ['KEEL_MT5_SYMBOL_ALIASES', cfg.mt5SymbolAliases],
+    ['KEEL_MT5_INSTRUMENT_METADATA', cfg.mt5InstrumentMetadata],
+  ] as const) {
+    if (raw === undefined || raw === '') continue;
+    try {
+      const parsed: unknown = JSON.parse(raw);
+      if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
+        throw new Error('must be a JSON object');
+      }
+    } catch (error) {
+      throw new ConfigError(
+        `${key} is not a valid JSON object: ${error instanceof Error ? error.message : String(error)}`,
+      );
+    }
+  }
+
+  if (cfg.mt5AllowedTradeModes.includes('real') && !cfg.mt5AllowRealTrading) {
+    throw new ConfigError(
+      'KEEL_MT5_ALLOWED_TRADE_MODES includes "real", which would attach this desk to a ' +
+        'real-money MT5 account. Nothing in this build has been validated against a real ' +
+        'terminal -- see docs/VERIFICATION.md. If you have read that and still mean it, set ' +
+        'KEEL_MT5_ALLOW_REAL_TRADING=true as a separate, deliberate step.',
     );
   }
 }

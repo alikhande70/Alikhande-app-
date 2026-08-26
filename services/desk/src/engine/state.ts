@@ -433,7 +433,7 @@ export function specToJson(spec: InstrumentSpec): Record<string, unknown> {
     volumeStep: D.Decimal.toString(spec.volumeStep),
     stopsLevel: D.Decimal.toString(spec.stopsLevel),
     freezeLevel: D.Decimal.toString(spec.freezeLevel),
-    marginRate: D.Decimal.toString(spec.marginRate),
+    ...(spec.marginRate === undefined ? {} : { marginRate: D.Decimal.toString(spec.marginRate) }),
     positionModel: spec.positionModel,
     venueTimeZone: spec.venueTimeZone,
     asOf: spec.asOf,

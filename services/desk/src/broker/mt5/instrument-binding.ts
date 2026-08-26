@@ -1,6 +1,6 @@
 import type { AssetClass, InstrumentSpec, PositionModel } from '@keel/core';
 import * as D from '@keel/core';
-import type { Mt5HostInstrument } from './host-types.js';
+import type { Mt5HostInstrumentFacts } from './host-types.js';
 import type { Mt5SymbolMap } from './symbol-map.js';
 
 export class Mt5InstrumentBindingError extends Error {
@@ -85,7 +85,7 @@ export class Mt5InstrumentBinding {
    * operator must resolve, not something to pick a winner for.
    */
   toInstrumentSpecs(
-    raws: readonly Mt5HostInstrument[],
+    raws: readonly Mt5HostInstrumentFacts[],
     positionModel: PositionModel,
   ): readonly InstrumentSpec[] {
     const specs = raws.map((raw) => this.toInstrumentSpec(raw, positionModel));
@@ -104,8 +104,8 @@ export class Mt5InstrumentBinding {
     return specs;
   }
 
-  toInstrumentSpec(raw: Mt5HostInstrument, positionModel: PositionModel): InstrumentSpec {
-    const canonical = this.canonicalFor(raw.symbol, raw.canonical);
+  toInstrumentSpec(raw: Mt5HostInstrumentFacts, positionModel: PositionModel): InstrumentSpec {
+    const canonical = this.canonicalFor(raw.symbol);
     const metadata = this.metadata.get(canonical);
     if (metadata === undefined) {
       throw new Mt5InstrumentBindingError(
@@ -113,9 +113,10 @@ export class Mt5InstrumentBinding {
       );
     }
 
-    // Host-provided semantic fields are deliberately ignored here. Older host
-    // protocol versions carried them, but trusting them would re-introduce the
-    // symbol-name guessing that this binding is intended to eliminate.
+    // The host sends only what MT5 can prove numerically. Semantic fields --
+    // asset class, base/quote, venue timezone -- come from explicit
+    // configuration, because trusting a host-declared value would re-introduce
+    // exactly the symbol-name guessing this binding exists to eliminate.
     return {
       symbol: raw.symbol,
       canonical,
@@ -133,7 +134,11 @@ export class Mt5InstrumentBinding {
         : { tickValueAccount: D.dec(raw.tickValueAccount) }),
       stopsLevel: D.dec(raw.stopsLevel),
       freezeLevel: D.dec(raw.freezeLevel),
-      marginRate: D.dec(raw.marginRate),
+      // No marginRate. MT5 does not publish one in a usable form: required
+      // margin depends on the specific proposed order and the account's state
+      // at that moment, and is obtained per request via OrderCalcMargin. A
+      // scalar here would be a number the venue never asserted, and the risk
+      // governor now blocks on unknown margin rather than assuming zero.
       positionModel,
       venueTimeZone: metadata.venueTimeZone,
       asOf: raw.asOf,

@@ -1,3 +1,50 @@
+## Consolidation and foundation session (`claude/integration-mt5-foundation`)
+
+### Branch consolidation
+
+`claude/audit-2026-08` already contained every commit of
+`gpt/trading-brain-build`, so it is the integration base.
+`claude/mt5-execution-hardening` held one piece of safety work that existed
+nowhere else — a duplicate-execution guard in `evidence.ts`. Rather than copy it
+into a second classifier, the two classifiers were merged into one.
+
+This branch is now the single source of truth. Safety work must not be left on
+side branches again.
+
+### Fixed
+
+| Severity | Issue |
+| --- | --- |
+| **P0** | Two id spaces collided in the evidence group key: a candidate with `positionId: "4"` and a `position` candidate with `ticket: "4"` both produced `position:4`, so two distinct executions collapsed into one and a duplicate execution was reported as a clean fill. Found by an invariant property test after 371 cases; no fixture contained the shape. |
+| **P0** | `marginRequiredAccount: marginAccount ?? D.dec('0.00')` — an unavailable margin became zero, so the free-margin rule computed `marginFree - 0` and passed for any funded account. A stale FX rate silently disabled the margin check. |
+| **P1** | Two classifiers encoded the same absence rules with subtle differences; only one was reachable from the adapter, so they could drift while both stayed green. |
+| **P1** | `instrumentFacts` was parsed, validated and consumed by nothing while `instruments` — the field the runtime reads — was emitted empty. The binding layer was binding an always-empty source. |
+| **P1** | Instrument discovery walked only open positions and orders, so a flat account published an empty universe and nothing could be sized until a position already existed. |
+| **P1** | Undelivered spooled events were never replayed after a disconnect, silently losing the prompt-notification channel. |
+| **P1** | The adapter advertised `atomicStopLoss`, `partialFills` and `supportsPartialClose` as true. None are achievable in a build with no `OrderSend`, and the engine uses these to decide what is safe. |
+| **P1** | `KEEL_BROKER` had no `mt5` value: the adapter was tested but unreachable from the runtime. |
+
+### Corrected claim
+
+An earlier draft of this session asserted that the desk went permanently deaf to
+a restarted agent because post-restart sequences lost to a stale watermark. That
+was **wrong** — `agent-server` builds a new session per socket, so a reconnect
+already starts from a clean watermark. The claim was removed rather than shipped.
+The agent epoch is retained on its actual merit: ordering agent *runs* so a stale
+agent can be refused.
+
+### Truth boundaries this build now enforces
+
+- Unknown margin blocks and cannot be overridden (`margin-unknown`, ADR-0009).
+- `InstrumentSpec.marginRate` is optional and absent on MT5; `marginQuote`
+  returns undefined rather than a default, and every consumer handles it.
+- Semantic instrument metadata is configured or the instrument is refused.
+- Real MT5 accounts require two separate deliberate opt-ins.
+- Capabilities describe what the agent implements — snapshot and reconcile — and
+  nothing more.
+
+---
+
 # Build report — GPT implementation branch
 
 This report records work actually implemented on `gpt/trading-brain-build`. Architecture documents describe intent; this file describes delivery state. The preserved Claude branch is not modified by this work.

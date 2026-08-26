@@ -102,7 +102,15 @@ export interface RiskRequest {
   readonly riskAccount?: Dec;
   /** Requested risk budget, before any cap. */
   readonly requestedRiskBudget: Dec;
-  readonly marginRequiredAccount: Dec;
+  /**
+   * Margin this order will consume, in account currency.
+   *
+   * Optional, and **undefined means unknown, never zero**. The desk previously
+   * coerced an unavailable value to `0.00`, which made `marginFree - 0` pass the
+   * free-margin rule trivially: a stale FX rate silently disabled the margin
+   * check entirely. Unknown margin now blocks.
+   */
+  readonly marginRequiredAccount?: Dec;
   /** Current spread in price units, and the instrument's typical spread. */
   readonly spread?: Dec;
   readonly typicalSpread?: Dec;
@@ -555,9 +563,26 @@ export function evaluate(req: RiskRequest, ctx: RiskContext): RiskDecision {
 
   // --- Margin ---------------------------------------------------------------
 
-  const marginAfter = D.sub(account.marginFree, req.marginRequiredAccount);
+  if (req.marginRequiredAccount === undefined) {
+    // Refuse rather than assume. This order's margin could not be established --
+    // no entry price, no conversion path, a stale rate, or the venue could not
+    // be asked -- and an order whose cost is unknown cannot be checked against
+    // free margin at all.
+    checks.push(
+      check(
+        'margin-unknown',
+        'block',
+        'unavailable',
+        'a determined value',
+        'Margin required by this order could not be determined, so it cannot be checked ' +
+          'against free margin.',
+      ),
+    );
+  }
+
+  const marginAfter = D.sub(account.marginFree, req.marginRequiredAccount ?? D.ZERO);
   const marginAfterPct = fractionOfEquity(marginAfter, account.equity);
-  if (D.lt(marginAfterPct, policy.minFreeMarginPct)) {
+  if (req.marginRequiredAccount !== undefined && D.lt(marginAfterPct, policy.minFreeMarginPct)) {
     checks.push(
       check(
         'free-margin',
@@ -605,6 +630,9 @@ export const UNWAIVABLE_RULES: ReadonlySet<string> = new Set([
   'drawdown-headroom',
   'daily-loss-limit',
   'duplicate-intent',
+  // Unknown margin is not a judgement call the operator can override: there is
+  // no number to weigh, so "break glass" would be waiving a check that never ran.
+  'margin-unknown',
 ]);
 
 function finalise(

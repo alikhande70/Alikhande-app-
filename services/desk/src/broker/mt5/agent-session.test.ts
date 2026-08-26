@@ -61,7 +61,7 @@ function snapshotMessage(requestId: string, eventSeq: string, observedAt: number
           marginFree: '10000.00',
           asOf: observedAt,
         },
-        instruments: [],
+        instrumentFacts: [],
         positions: [],
         orders: [],
         quotes: [],
@@ -383,5 +383,112 @@ describe('MT5 agent liveness and clock domain', () => {
     const session = authenticated();
     session.receive(heartbeat('1', Date.now() + 3 * 3_600_000));
     await expect(session.command('snapshot', {})).rejects.toThrow();
+  });
+});
+
+describe('agent epoch and spool replay', () => {
+  const TOKEN = '0123456789abcdef';
+
+  function hello(epoch?: string, at = Date.now()) {
+    return decodeAgentMessage(
+      JSON.stringify({
+        type: 'hello',
+        protocolVersion: 1,
+        token: TOKEN,
+        agentId: 'a',
+        terminalBuild: 4000,
+        accountLogin: '123',
+        server: 'LiteFinance-Demo',
+        tradeMode: 'demo',
+        positionModel: 'netting',
+        ...(epoch === undefined ? {} : { agentEpoch: epoch }),
+        at,
+      }),
+    );
+  }
+
+  function freshSession() {
+    return new Mt5AgentSession({ write: vi.fn(), close: vi.fn() }, { token: TOKEN });
+  }
+
+  it('accepts a restarted agent whose sequence begins again', () => {
+    // Note on scope: the desk builds a new session per socket, so a reconnect
+    // already starts from a clean watermark. The epoch is not what rescues that
+    // case -- it makes the restart *explicit* rather than implicit, so a stale
+    // agent reconnecting can be ordered against the current one instead of
+    // being indistinguishable from a fresh start.
+    const session = freshSession();
+    session.receive(hello('1'));
+    session.receive(heartbeat('500', Date.now()));
+    expect(session.isLive()).toBe(true);
+
+    const restarted = freshSession();
+    restarted.receive(hello('2'));
+    restarted.receive(heartbeat('1', Date.now()));
+    expect(restarted.isLive()).toBe(true);
+    expect(restarted.epoch()).toBe('2');
+  });
+
+  it('resets the watermark only on a new epoch, not within one', () => {
+    const session = freshSession();
+    session.receive(hello('7'));
+    session.receive(heartbeat('10', Date.now()));
+    // A replayed lower sequence inside the same epoch is still ignored.
+    session.receive(heartbeat('4', Date.now() + 1));
+    expect(session.watermark()).toBe('10');
+  });
+
+  it('drops replayed duplicates so a spool replay is harmless', () => {
+    // The agent re-sends anything it is unsure the desk received. Everything
+    // already seen must be ignored rather than double-counted.
+    const seen: string[] = [];
+    const session = new Mt5AgentSession(
+      { write: vi.fn(), close: vi.fn() },
+      { token: TOKEN, onTransaction: (m) => seen.push(m.eventSeq) },
+    );
+    session.receive(hello('1'));
+    const tx = (seq: string) =>
+      decodeAgentMessage(
+        JSON.stringify({
+          type: 'transaction',
+          eventSeq: seq,
+          validTime: Date.now(),
+          transactionType: 'TRADE_TRANSACTION_DEAL_ADD',
+          orderTicket: '1',
+          dealTicket: '2',
+          positionId: '3',
+          symbol: 'XAUUSD',
+          magic: '77',
+          volume: '0.10',
+          price: '2500.00',
+        }),
+      );
+    session.receive(tx('1'));
+    session.receive(tx('2'));
+    session.receive(tx('1')); // replay
+    session.receive(tx('2')); // replay
+    session.receive(tx('3'));
+    expect(seen).toEqual(['1', '2', '3']);
+  });
+
+  it('refuses an epoch that goes backwards', () => {
+    // A stale agent reconnecting, or a lost epoch store. Its sequence numbers
+    // cannot be ordered against ours, so ambiguity is refused rather than
+    // accepted.
+    const session = freshSession();
+    session.receive(hello('5'));
+    const stale = freshSession();
+    stale.receive(hello('5'));
+    expect(() => {
+      stale.receive(hello('4'));
+    }).toThrow();
+  });
+
+  it('treats an agent with no epoch as epoch zero rather than resetting', () => {
+    // Backwards compatibility: an older agent still connects, and its watermark
+    // behaves exactly as before rather than silently resetting on every hello.
+    const session = freshSession();
+    session.receive(hello(undefined));
+    expect(session.epoch()).toBe('0');
   });
 });

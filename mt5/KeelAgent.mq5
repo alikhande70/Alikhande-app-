@@ -11,6 +11,11 @@ input uint   InpDeskPort = 28761;
 input string InpAgentToken = "";
 input string InpAgentId = "keel-mt5-agent";
 input uint   InpHeartbeatSeconds = 1;
+// Explicit tradable universe, comma separated, exactly as the broker spells the
+// symbols (suffixes included). Instrument discovery must not depend on what
+// happens to be open: a flat account would otherwise publish no instruments at
+// all, and nothing could be sized until a position already existed.
+input string InpSymbols = "XAUUSD,EURUSD";
 
 int    g_socket = INVALID_HANDLE;
 bool   g_hello_sent = false;
@@ -18,6 +23,9 @@ ulong  g_event_seq = 0;
 string g_rx_buffer = "";
 string g_spool_file = "Keel\\agent-events.ndjson";
 string g_command_spool_file = "Keel\\agent-commands.ndjson";
+string g_epoch_file          = "Keel\\agent-epoch.txt";
+ulong  g_agent_epoch         = 0;
+ulong  g_acked_event_seq     = 0;
 string g_seen_request_ids[];
 
 #define KEEL_PROTOCOL_VERSION 1
@@ -141,12 +149,17 @@ bool SendHello()
       return(false);
      }
    string line=StringFormat(
-      "{\"type\":\"hello\",\"protocolVersion\":1,\"token\":\"%s\",\"agentId\":\"%s\",\"terminalBuild\":%d,\"accountLogin\":\"%s\",\"server\":\"%s\",\"tradeMode\":\"%s\",\"positionModel\":\"%s\",\"at\":%I64d}",
+      "{\"type\":\"hello\",\"protocolVersion\":1,\"token\":\"%s\",\"agentId\":\"%s\",\"terminalBuild\":%d,"
+      "\"accountLogin\":\"%s\",\"server\":\"%s\",\"tradeMode\":\"%s\",\"positionModel\":\"%s\","
+      "\"agentEpoch\":\"%s\",\"at\":%I64d}",
       JsonEscape(InpAgentToken),JsonEscape(InpAgentId),(int)TerminalInfoInteger(TERMINAL_BUILD),
       LongText(AccountInfoInteger(ACCOUNT_LOGIN)),JsonEscape(AccountInfoString(ACCOUNT_SERVER)),
-      TradeModeText(),PositionModelText(),UtcMillis());
+      TradeModeText(),PositionModelText(),ULongText(g_agent_epoch),UtcMillis());
    if(!SendLine(line)) return(false);
    g_hello_sent=true;
+   // Anything durably written but not acknowledged goes out now, before new
+   // events, so ordering within the epoch is preserved across the gap.
+   KeelReplayUndelivered();
    return(true);
   }
 
@@ -401,6 +414,82 @@ void EmitTransaction(const MqlTradeTransaction &trans,const MqlTradeRequest &req
      }
   }
 
+//--- Epoch and undelivered-event replay ---------------------------------------
+// Event sequence numbers restart with each run of the EA, so the desk needs to
+// know which run it is talking to. Without that it compared a fresh sequence
+// against the previous run's watermark, rejected everything, and went deaf --
+// heartbeats included.
+//
+// The epoch is persisted and incremented at startup. It only ever moves forward.
+ulong KeelLoadEpoch()
+  {
+   int handle=FileOpen(g_epoch_file,FILE_READ|FILE_TXT|FILE_ANSI|FILE_SHARE_READ,0,CP_UTF8);
+   if(handle==INVALID_HANDLE) return(0);
+   string text=FileIsEnding(handle)?"":FileReadString(handle);
+   FileClose(handle);
+   return((ulong)StringToInteger(text));
+  }
+
+bool KeelStoreEpoch(const ulong epoch)
+  {
+   int handle=FileOpen(g_epoch_file,FILE_WRITE|FILE_TXT|FILE_ANSI,0,CP_UTF8);
+   if(handle==INVALID_HANDLE)
+     {
+      PrintFormat("KeelAgent: cannot persist epoch, error=%d",GetLastError());
+      return(false);
+     }
+   FileWriteString(handle,ULongText(epoch));
+   FileFlush(handle);
+   FileClose(handle);
+   return(true);
+  }
+
+// Restore the highest sequence already written, so a restart continues the
+// numbering within the new epoch rather than colliding with spooled lines.
+ulong KeelHighestSpooledSeq()
+  {
+   int handle=FileOpen(g_spool_file,FILE_READ|FILE_TXT|FILE_ANSI|FILE_SHARE_READ,0,CP_UTF8);
+   if(handle==INVALID_HANDLE) return(0);
+   ulong highest=0;
+   while(!FileIsEnding(handle))
+     {
+      string line=FileReadString(handle);
+      string seq="";
+      if(JsonStringField(line,"eventSeq",seq))
+        {
+         ulong value=(ulong)StringToInteger(seq);
+         if(value>highest) highest=value;
+        }
+     }
+   FileClose(handle);
+   return(highest);
+  }
+
+// Re-send spooled events the desk has not acknowledged.
+//
+// Replay cannot fabricate broker truth: these lines were written from real
+// MqlTradeTransaction callbacks before transmission was attempted. Duplicates
+// are harmless because the desk drops any sequence it has already seen, and
+// reconciliation -- not this stream -- remains authoritative.
+void KeelReplayUndelivered()
+  {
+   int handle=FileOpen(g_spool_file,FILE_READ|FILE_TXT|FILE_ANSI|FILE_SHARE_READ,0,CP_UTF8);
+   if(handle==INVALID_HANDLE) return;
+   int replayed=0;
+   while(!FileIsEnding(handle))
+     {
+      string line=FileReadString(handle);
+      if(StringLen(line)<=0) continue;
+      string seq="";
+      if(!JsonStringField(line,"eventSeq",seq)) continue;
+      if((ulong)StringToInteger(seq)<=g_acked_event_seq) continue;
+      if(!SendLine(line)) { CloseSocket(); break; }
+      replayed++;
+     }
+   FileClose(handle);
+   if(replayed>0) PrintFormat("KeelAgent: replayed %d undelivered event(s)",replayed);
+  }
+
 int OnInit()
   {
    if(StringLen(InpAgentToken)<16)
@@ -409,6 +498,17 @@ int OnInit()
       return(INIT_PARAMETERS_INCORRECT);
      }
    LoadSeenRequestIds();
+   // A new run of the agent. The epoch moves forward so the desk knows the
+   // sequence numbering below has restarted, and the sequence resumes above
+   // anything already spooled so a replayed line cannot collide with a new one.
+   g_agent_epoch=KeelLoadEpoch()+1;
+   if(!KeelStoreEpoch(g_agent_epoch))
+     {
+      Print("KeelAgent: refusing to start without a durable epoch; the desk could not tell "
+            "this run's events apart from the previous run's");
+      return(INIT_FAILED);
+     }
+   g_event_seq=KeelHighestSpooledSeq();
    EventSetTimer((int)MathMax(1,InpHeartbeatSeconds));
    SendHeartbeat();
    return(INIT_SUCCEEDED);

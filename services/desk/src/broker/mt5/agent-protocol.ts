@@ -14,6 +14,20 @@ export interface Mt5AgentHello {
   readonly server: string;
   readonly tradeMode: 'demo' | 'contest' | 'real';
   readonly positionModel: 'netting' | 'hedging';
+  /**
+   * Which run of the agent this is. Increases every time the EA starts.
+   *
+   * Event sequence numbers are only monotonic *within* one epoch: an EA restart
+   * begins again near 1. The desk builds a new session per socket, so a
+   * reconnect already starts from a clean watermark -- the epoch does not
+   * rescue that. What it provides is the ability to *order agent runs*: a stale
+   * agent reconnecting, or one whose epoch store was lost, can be identified
+   * and refused instead of being indistinguishable from a fresh start, and a
+   * replayed spool can be attributed to the run that wrote it.
+   *
+   * Optional so an older agent still connects; absent is treated as epoch 0.
+   */
+  readonly agentEpoch?: string;
   readonly at: number;
 }
 
@@ -157,6 +171,9 @@ export function decodeAgentMessage(line: string): Mt5AgentMessage {
         tradeMode,
         positionModel,
         at: requiredNumber(parsed, 'at'),
+        ...(typeof parsed.agentEpoch === 'string' && /^[0-9]+$/.test(parsed.agentEpoch)
+          ? { agentEpoch: parsed.agentEpoch }
+          : {}),
       };
     }
     case 'heartbeat':

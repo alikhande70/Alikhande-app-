@@ -10,10 +10,50 @@ bool KeelAppendUniqueSymbol(string &symbols[],int &count,const string symbol)
    return(true);
   }
 
-bool KeelCollectSnapshotSymbols(string &symbols[],int &count)
+//--- Explicit symbol universe -------------------------------------------------
+// The tradable set comes from configuration, not from whatever happens to be
+// open. Deriving it from positions and orders alone meant a flat account
+// published an empty instrument list, so nothing could be sized and no order
+// could be placed until a position already existed.
+//
+// Configured names are resolved against the terminal: a symbol the broker does
+// not offer is reported and skipped rather than silently assumed. Symbols
+// carrying open positions or orders are still included even when unconfigured,
+// because the desk must be able to describe exposure it did not create.
+bool KeelResolveConfiguredSymbol(const string symbol)
+  {
+   if(symbol=="") return(false);
+   // SymbolSelect pulls the symbol into Market Watch; without it SymbolInfo*
+   // can return stale or zeroed values for an unwatched symbol.
+   if(!SymbolSelect(symbol,true))
+     {
+      PrintFormat("KeelAgent: configured symbol '%s' is not available on this account",symbol);
+      return(false);
+     }
+   return(true);
+  }
+
+bool KeelCollectConfiguredSymbols(const string csv,string &symbols[],int &count)
+  {
+   string parts[];
+   int n=StringSplit(csv,',',parts);
+   for(int i=0;i<n;i++)
+     {
+      string symbol=parts[i];
+      StringTrimLeft(symbol);
+      StringTrimRight(symbol);
+      if(symbol=="") continue;
+      if(!KeelResolveConfiguredSymbol(symbol)) continue;
+      if(!KeelAppendUniqueSymbol(symbols,count,symbol)) return(false);
+     }
+   return(true);
+  }
+
+bool KeelCollectSnapshotSymbols(const string configured_csv,string &symbols[],int &count)
   {
    count=0;
    ArrayResize(symbols,0);
+   if(!KeelCollectConfiguredSymbols(configured_csv,symbols,count)) return(false);
    for(int i=0;i<PositionsTotal();i++)
      {
       ResetLastError();
@@ -37,11 +77,11 @@ bool KeelCollectSnapshotSymbols(string &symbols[],int &count)
    return(true);
   }
 
-bool KeelBuildInstrumentFactsJson(string &json)
+bool KeelBuildInstrumentFactsJson(const string configured_csv,string &json)
   {
    string symbols[];
    int count=0;
-   if(!KeelCollectSnapshotSymbols(symbols,count)) return(false);
+   if(!KeelCollectSnapshotSymbols(configured_csv,symbols,count)) return(false);
 
    json="[";
    for(int i=0;i<count;i++)

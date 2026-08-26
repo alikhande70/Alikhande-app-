@@ -444,7 +444,9 @@ export function sizingToWire(s: D.SizingResult | undefined): Record<string, unkn
     riskAtStop: D.Decimal.toString(s.riskAtStop),
     budgetUtilisation: D.Decimal.toString(s.budgetUtilisation),
     notionalQuote: D.Decimal.toString(s.notionalQuote),
-    marginQuote: D.Decimal.toString(s.marginQuote),
+    // Absent when the venue publishes no margin rate. The client shows
+    // "unavailable" rather than a zero it would read as free.
+    ...(s.marginQuote === undefined ? {} : { marginQuote: D.Decimal.toString(s.marginQuote) }),
     valuationMethod: s.trace.valuationMethod,
     conversionPath: s.trace.conversionPath,
     ...(s.rewardToRisk !== undefined ? { rewardToRisk: D.Decimal.toString(s.rewardToRisk) } : {}),
@@ -469,7 +471,7 @@ export function specToWire(s: D.InstrumentSpec): Record<string, unknown> {
     volumeStep: D.Decimal.toString(s.volumeStep),
     stopsLevel: D.Decimal.toString(s.stopsLevel),
     freezeLevel: D.Decimal.toString(s.freezeLevel),
-    marginRate: D.Decimal.toString(s.marginRate),
+    ...(s.marginRate === undefined ? {} : { marginRate: D.Decimal.toString(s.marginRate) }),
     positionModel: s.positionModel,
     venueTimeZone: s.venueTimeZone,
     asOf: s.asOf,

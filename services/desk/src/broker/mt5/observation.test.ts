@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { Mt5EvidenceCandidate, Mt5ReconcileObservation } from './evidence.js';
-import { inspectMt5Observation } from './observation.js';
+import { classifyMt5Evidence } from './observation.js';
 
 const MAGIC = '281474976710777';
 const fingerprint = {
@@ -55,11 +55,11 @@ function deal(): Mt5EvidenceCandidate {
   };
 }
 
-describe('inspectMt5Observation', () => {
+describe('classifyMt5Evidence', () => {
   it.each(['REJECTED', 'CANCELLED', 'EXPIRED'] as const)(
     'positively resolves %s order-only history without claiming execution',
     (state) => {
-      const verdict = inspectMt5Observation(MAGIC, fingerprint, observation([order(state)]));
+      const verdict = classifyMt5Evidence(MAGIC, fingerprint, observation([order(state)]));
       expect(verdict).toMatchObject({ outcome: 'terminal', venueState: state });
       if (verdict.outcome === 'terminal') {
         expect(verdict.order.ticket).toBe('8001');
@@ -69,12 +69,12 @@ describe('inspectMt5Observation', () => {
   );
 
   it('keeps a FILLED historical order without deal/position evidence indeterminate', () => {
-    const verdict = inspectMt5Observation(MAGIC, fingerprint, observation([order('FILLED')]));
+    const verdict = classifyMt5Evidence(MAGIC, fingerprint, observation([order('FILLED')]));
     expect(verdict).toMatchObject({ outcome: 'indeterminate' });
   });
 
   it('keeps conflicting terminal order evidence indeterminate', () => {
-    const verdict = inspectMt5Observation(
+    const verdict = classifyMt5Evidence(
       MAGIC,
       fingerprint,
       observation([order('REJECTED', '8001'), order('CANCELLED', '8002')]),
@@ -93,17 +93,13 @@ describe('inspectMt5Observation', () => {
       serverTime: 1_700_000_000_500,
     } as Mt5EvidenceCandidate;
 
-    expect(() => inspectMt5Observation(MAGIC, fingerprint, observation([invalid]))).toThrow(
+    expect(() => classifyMt5Evidence(MAGIC, fingerprint, observation([invalid]))).toThrow(
       'orderState',
     );
   });
 
   it('confirms execution when an actual deal carries the expected magic', () => {
-    const verdict = inspectMt5Observation(
-      MAGIC,
-      fingerprint,
-      observation([order('FILLED'), deal()]),
-    );
+    const verdict = classifyMt5Evidence(MAGIC, fingerprint, observation([order('FILLED'), deal()]));
     expect(verdict.outcome).toBe('confirmed');
     if (verdict.outcome === 'confirmed') {
       expect(verdict.matches.some((candidate) => candidate.kind === 'deal')).toBe(true);
@@ -148,7 +144,7 @@ describe('duplicate execution detection', () => {
 
   it('confirms when one execution carries the magic, however many objects', () => {
     // A deal and the position it opened share the magic. Normal, not a duplicate.
-    const verdict = inspectMt5Observation(
+    const verdict = classifyMt5Evidence(
       '77',
       fp,
       obs([
@@ -162,7 +158,7 @@ describe('duplicate execution detection', () => {
   it('refuses to confirm when the magic spans two distinct executions', () => {
     // The same intent reached the venue twice. Reporting `confirmed` would
     // attribute one execution and silently strand the other.
-    const verdict = inspectMt5Observation(
+    const verdict = classifyMt5Evidence(
       '77',
       fp,
       obs([
@@ -176,7 +172,7 @@ describe('duplicate execution detection', () => {
   });
 
   it('never reports absence or a clean fill for a duplicate', () => {
-    const verdict = inspectMt5Observation(
+    const verdict = classifyMt5Evidence(
       '77',
       fp,
       obs([

@@ -90,3 +90,67 @@ describe('broker credentials', () => {
     expect(() => assertBrokerCredentials(cfg)).not.toThrow();
   });
 });
+
+describe('MT5 configuration', () => {
+  const metadata = JSON.stringify({
+    XAUUSD: { assetClass: 'metal', base: 'XAU', quote: 'USD', venueTimeZone: 'Europe/Riga' },
+  });
+
+  const complete = {
+    KEEL_BROKER: 'mt5',
+    KEEL_MT5_HOST_URL: 'http://127.0.0.1:28762',
+    KEEL_MT5_HOST_TOKEN: 'host-token-0123456789',
+    KEEL_MT5_INSTRUMENT_METADATA: metadata,
+  };
+
+  it('refuses KEEL_BROKER=mt5 with nothing configured', () => {
+    // The desk cannot infer the execution host, its credential, or what an
+    // instrument means. Failing at boot beats failing while sizing an order.
+    expect(() => base({ KEEL_BROKER: 'mt5' })).toThrow(/KEEL_MT5_HOST_URL/);
+  });
+
+  it('names each missing field', () => {
+    expect(() => base({ KEEL_BROKER: 'mt5', KEEL_MT5_HOST_URL: 'http://x' })).toThrow(
+      /KEEL_MT5_HOST_TOKEN/,
+    );
+  });
+
+  it('requires instrument metadata rather than inferring it from symbol names', () => {
+    expect(() =>
+      base({ ...complete, KEEL_MT5_INSTRUMENT_METADATA: undefined as unknown as string }),
+    ).toThrow(/KEEL_MT5_INSTRUMENT_METADATA/);
+  });
+
+  it('accepts a complete demo configuration', () => {
+    const cfg = base(complete);
+    expect(cfg.broker).toBe('mt5');
+    expect(cfg.mt5AllowedTradeModes).toEqual(['demo']);
+    expect(cfg.mt5AllowRealTrading).toBe(false);
+  });
+
+  it('rejects malformed alias or metadata JSON instead of starting blind', () => {
+    expect(() => base({ ...complete, KEEL_MT5_SYMBOL_ALIASES: '{oops' })).toThrow(/valid JSON/);
+    expect(() => base({ ...complete, KEEL_MT5_INSTRUMENT_METADATA: '[]' })).toThrow(/JSON object/);
+  });
+
+  it('hard-blocks a real account behind a second deliberate step', () => {
+    expect(() => base({ ...complete, KEEL_MT5_ALLOWED_TRADE_MODES: 'demo,real' })).toThrow(
+      /KEEL_MT5_ALLOW_REAL_TRADING=true/,
+    );
+  });
+
+  it('still requires the operator to opt in twice for real', () => {
+    const cfg = base({
+      ...complete,
+      KEEL_MT5_ALLOWED_TRADE_MODES: 'demo,real',
+      KEEL_MT5_ALLOW_REAL_TRADING: 'true',
+    });
+    expect(cfg.mt5AllowedTradeModes).toContain('real');
+  });
+
+  it('no longer offers the rejected metaapi bridge', () => {
+    // ADR-0016 rejected third-party MT5 cloud on credential custody; offering
+    // the value implied a path that will not exist.
+    expect(() => base({ KEEL_BROKER: 'metaapi' })).toThrow();
+  });
+});

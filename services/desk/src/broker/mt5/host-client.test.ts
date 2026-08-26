@@ -26,7 +26,7 @@ function validSnapshot(): Record<string, unknown> {
       marginFree: '10000.00',
       asOf: 1_700_000_000_000,
     },
-    instruments: [],
+    instrumentFacts: [],
     positions: [],
     orders: [],
     quotes: [],

@@ -231,7 +231,14 @@ export class PaperBroker implements BrokerPort {
       [...this.positions.values()].map((p) => {
         const spec = this.specs.get(p.canonical);
         if (spec === undefined) return D.Decimal.ZERO;
-        return D.marginQuote(spec, p.volume, p.entryPrice);
+        // The paper venue's own fixtures always publish a margin rate. If one
+        // is missing that is a fixture error, not a zero-margin position, and
+        // silently summing zero would understate margin used.
+        const quoteMargin = D.marginQuote(spec, p.volume, p.entryPrice);
+        if (quoteMargin === undefined) {
+          throw new Error(`paper venue fixture for ${p.canonical} has no margin rate`);
+        }
+        return quoteMargin;
       }),
     );
     return {
@@ -348,6 +355,16 @@ export class PaperBroker implements BrokerPort {
     }
 
     const margin = D.marginQuote(spec, volumeCheck.volume, market);
+    if (margin === undefined) {
+      // Refuse rather than assume. A simulated venue that cannot price margin
+      // must behave like a real one and decline, not wave the order through.
+      return {
+        outcome: 'rejected',
+        reason: 'margin for this order could not be determined',
+        code: 'NO_MONEY',
+        at,
+      };
+    }
     const account = this.accountNow();
     if (D.Decimal.gt(margin, account.marginFree)) {
       return { outcome: 'rejected', reason: 'not enough free margin', code: 'NO_MONEY', at };

@@ -430,9 +430,45 @@ describe('break-glass override', () => {
           'drawdown-headroom',
           'daily-loss-limit',
           'duplicate-intent',
+          'margin-unknown',
         ],
         `${rule} must be justified in the ADR before becoming unwaivable`,
       ).toContain(rule);
     }
+  });
+});
+
+describe('unknown margin', () => {
+  it('blocks when margin required could not be determined', () => {
+    // Found in audit. The desk coerced an unavailable margin to 0.00, so
+    // `marginFree - 0` always cleared the free-margin rule: a stale FX rate
+    // silently disabled the margin check rather than stopping the order.
+    const request = req({});
+    const { marginRequiredAccount: _omitted, ...withoutMargin } = request;
+    const decision = evaluate(withoutMargin as typeof request, ctx());
+    expect(decision.verdict).toBe('block');
+    const blocked = decision.checks.find((c) => c.rule === 'margin-unknown');
+    expect(blocked?.verdict).toBe('block');
+  });
+
+  it('does not let an override waive unknown margin', () => {
+    // There is no number to weigh, so breaking glass would waive a check that
+    // never ran.
+    const request = req({});
+    const { marginRequiredAccount: _omitted, ...withoutMargin } = request;
+    const decision = evaluate(
+      {
+        ...(withoutMargin as typeof request),
+        override: { reason: 'operator insists', authorisedAt: Date.now() },
+      },
+      ctx(),
+    );
+    expect(decision.verdict).toBe('block');
+    expect(decision.checks.find((c) => c.rule === 'margin-unknown')?.verdict).toBe('block');
+  });
+
+  it('still evaluates free margin normally when the value is known', () => {
+    const decision = evaluate(req({}), ctx());
+    expect(decision.checks.find((c) => c.rule === 'margin-unknown')).toBeUndefined();
   });
 });

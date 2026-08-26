@@ -43,26 +43,6 @@ export interface Mt5HostInstrumentFacts {
   readonly asOf: number;
 }
 
-export interface Mt5HostInstrument {
-  readonly symbol: string;
-  readonly canonical: string;
-  readonly assetClass: 'fx' | 'metal' | 'index' | 'commodity' | 'crypto' | 'equity' | 'future';
-  readonly base: string;
-  readonly quote: string;
-  readonly digits: number;
-  readonly tickSize: string;
-  readonly contractSize: string;
-  readonly minVolume: string;
-  readonly maxVolume: string;
-  readonly volumeStep: string;
-  readonly tickValueAccount?: string;
-  readonly stopsLevel: string;
-  readonly freezeLevel: string;
-  readonly marginRate: string;
-  readonly venueTimeZone: string;
-  readonly asOf: number;
-}
-
 export interface Mt5HostPosition {
   readonly ticket: string;
   /** POSITION_IDENTIFIER as decimal string, stable across server-side lifecycle changes. */
@@ -116,9 +96,16 @@ export interface Mt5HostSnapshot {
   readonly tradeAllowed: boolean;
   readonly account: Mt5HostAccount;
   /** Transitional semantic specs; do not populate from guessed MT5 metadata. */
-  readonly instruments: readonly Mt5HostInstrument[];
   /** Raw, broker-observed numerical instrument facts suitable for later explicit binding. */
-  readonly instrumentFacts?: readonly Mt5HostInstrumentFacts[];
+  /**
+   * Numerical instrument truth read from MT5. Required.
+   *
+   * This replaced a richer `instruments` array that also carried asset class,
+   * timezone and a margin rate -- none of which MT5 can actually prove. That
+   * array was emitted empty by the agent while this one was parsed and consumed
+   * by nothing, so the binding layer was binding an always-empty source.
+   */
+  readonly instrumentFacts: readonly Mt5HostInstrumentFacts[];
   readonly positions: readonly Mt5HostPosition[];
   readonly orders: readonly Mt5HostOrder[];
   readonly quotes: readonly Mt5HostQuote[];

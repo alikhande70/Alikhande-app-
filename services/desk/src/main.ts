@@ -4,6 +4,13 @@ import type { Logger } from 'pino';
 import pino from 'pino';
 import { AlertEngine, NullPushSender } from './alerts/engine.js';
 import { ExpoPushSender } from './alerts/push.js';
+import { Mt5BrokerAdapter } from './broker/mt5/adapter.js';
+import { Mt5HostClient } from './broker/mt5/host-client.js';
+import {
+  Mt5InstrumentBinding,
+  type Mt5InstrumentMetadataByCanonical,
+} from './broker/mt5/instrument-binding.js';
+import { Mt5SymbolMap } from './broker/mt5/symbol-map.js';
 import { OandaBroker } from './broker/oanda/adapter.js';
 import { OandaClient } from './broker/oanda/client.js';
 import { PaperBroker, REALISTIC_FAULTS } from './broker/paper.js';
@@ -498,6 +505,36 @@ export async function startDesk(config: DeskConfig = loadConfig()): Promise<Desk
 
 function buildBroker(config: DeskConfig, clock: typeof systemClock, log: Logger): BrokerPort {
   switch (config.broker) {
+    case 'mt5': {
+      // loadConfig has already refused to reach here without a host, a token
+      // and instrument metadata, so these narrowings are not checks.
+      const client = new Mt5HostClient({
+        baseUrl: config.mt5HostUrl as string,
+        token: config.mt5HostToken as string,
+      });
+      const symbolMap = new Mt5SymbolMap(
+        config.mt5SymbolAliases === undefined
+          ? {}
+          : (JSON.parse(config.mt5SymbolAliases) as Record<string, string>),
+      );
+      const binding = new Mt5InstrumentBinding(
+        symbolMap,
+        JSON.parse(config.mt5InstrumentMetadata as string) as Mt5InstrumentMetadataByCanonical,
+      );
+      const adapter = new Mt5BrokerAdapter({
+        client,
+        systemPrefix: config.mt5SystemPrefix,
+        instrumentBinding: binding,
+        allowedTradeModes: config.mt5AllowedTradeModes,
+        allowRealTrading: config.mt5AllowRealTrading,
+      });
+      log.warn(
+        { executionEnabled: adapter.executionEnabled },
+        'MT5 adapter selected; OrderSend is deliberately absent from the agent in this build, ' +
+          'so orders are preflighted and never transmitted',
+      );
+      return adapter;
+    }
     case 'oanda': {
       // loadConfig has already refused to get here without both credentials,
       // so the assertions below are a type narrowing rather than a check.
