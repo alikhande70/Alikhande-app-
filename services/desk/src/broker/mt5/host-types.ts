@@ -63,7 +63,15 @@ export interface Mt5HostOrder {
   readonly symbol: string;
   readonly canonical: string;
   readonly side: 'buy' | 'sell';
-  readonly state: 'PENDING_SUBMIT' | 'WORKING' | 'PARTIAL' | 'FILLED' | 'CANCEL_PENDING' | 'CANCELLED' | 'REJECTED' | 'UNKNOWN';
+  readonly state:
+    | 'PENDING_SUBMIT'
+    | 'WORKING'
+    | 'PARTIAL'
+    | 'FILLED'
+    | 'CANCEL_PENDING'
+    | 'CANCELLED'
+    | 'REJECTED'
+    | 'UNKNOWN';
   readonly requestedQty: string;
   readonly filledQty: string;
   readonly limitPrice?: string;
