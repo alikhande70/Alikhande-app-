@@ -1,6 +1,6 @@
-import { describe, expect, it, vi } from 'vitest';
 import * as D from '@keel/core';
-import { Mt5BrokerAdapter, Mt5AdapterError } from './adapter.js';
+import { describe, expect, it, vi } from 'vitest';
+import { Mt5AdapterError, Mt5BrokerAdapter } from './adapter.js';
 import { Mt5HostClient, type Mt5HostRequest } from './host-client.js';
 import type { Mt5HostSnapshot } from './host-types.js';
 import { magicForClientOrderId, magicToWire } from './identity.js';
@@ -142,9 +142,7 @@ describe('Mt5BrokerAdapter', () => {
     const body = JSON.parse(place?.body ?? '{}');
     expect(body.volume).toBe('0.01');
     expect(body.stopLoss).toBe('2490.10');
-    expect(body.magic).toBe(
-      magicToWire(magicForClientOrderId('keel-intent-1', PREFIX)),
-    );
+    expect(body.magic).toBe(magicToWire(magicForClientOrderId('keel-intent-1', PREFIX)));
   });
 
   it('turns host transport loss during send into ambiguous, never rejected', async () => {
