@@ -212,3 +212,82 @@ describe('MT5 agent session', () => {
     await expect(pending).rejects.toThrow('socket dropped after send');
   });
 });
+
+describe('MT5 agent liveness and clock domain', () => {
+  const TOKEN = '0123456789abcdef';
+
+  function authenticated() {
+    const write = vi.fn();
+    const close = vi.fn();
+    const session = new Mt5AgentSession({ write, close }, { token: TOKEN });
+    session.receive(
+      decodeAgentMessage(
+        JSON.stringify({
+          type: 'hello',
+          protocolVersion: 1,
+          token: TOKEN,
+          agentId: 'a',
+          terminalBuild: 4000,
+          accountLogin: '123',
+          server: 'LiteFinance-Demo',
+          tradeMode: 'demo',
+          positionModel: 'netting',
+          at: Date.now(),
+        }),
+      ),
+    );
+    return { session, write, close };
+  }
+
+  it('is live on a fresh UTC heartbeat', () => {
+    const { session } = authenticated();
+    session.receive(heartbeat('1', Date.now()));
+    expect(session.isLive()).toBe(true);
+    expect(session.clockFaultReason()).toBeUndefined();
+  });
+
+  it('refuses to be live when the agent sends broker-local time', () => {
+    // The defect: a GMT+3 server sending TimeTradeServer() stamps heartbeats
+    // three hours in the future.
+    const { session } = authenticated();
+    session.receive(heartbeat('1', Date.now() + 3 * 3_600_000));
+    expect(session.isLive()).toBe(false);
+    expect(session.clockFaultReason()).toContain('broker-local time');
+  });
+
+  it('does not report a dead agent as live for the length of the timezone offset', () => {
+    // The consequence that made this severe rather than cosmetic. The old check
+    // was `now - at <= staleMs`, so a heartbeat stamped 3h ahead produced a
+    // negative age that passed trivially. The agent could be dead for three
+    // hours and still read as live -- exactly the condition ADR-0016 requires
+    // to be detected, silently defeated.
+    const { session } = authenticated();
+    const stampedAhead = Date.now() + 3 * 3_600_000;
+    session.receive(heartbeat('1', stampedAhead));
+    // Even evaluated an hour later, with the raw arithmetic still "fresh".
+    expect(session.isLive(Date.now() + 3_600_000)).toBe(false);
+  });
+
+  it('goes not-live once a good heartbeat becomes stale', () => {
+    const now = Date.now();
+    const { session } = authenticated();
+    session.receive(heartbeat('1', now));
+    expect(session.isLive(now)).toBe(true);
+    expect(session.isLive(now + 60_000)).toBe(false);
+  });
+
+  it('recovers when the agent starts sending UTC again', () => {
+    const { session } = authenticated();
+    session.receive(heartbeat('1', Date.now() + 3 * 3_600_000));
+    expect(session.isLive()).toBe(false);
+    session.receive(heartbeat('2', Date.now()));
+    expect(session.isLive()).toBe(true);
+    expect(session.clockFaultReason()).toBeUndefined();
+  });
+
+  it('refuses commands while the clock cannot be trusted', async () => {
+    const { session } = authenticated();
+    session.receive(heartbeat('1', Date.now() + 3 * 3_600_000));
+    await expect(session.command('snapshot', {})).rejects.toThrow();
+  });
+});

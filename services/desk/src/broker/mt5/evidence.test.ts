@@ -129,3 +129,78 @@ describe('resolveMt5Evidence', () => {
     if (result.outcome === 'found') expect(result.matches).toHaveLength(1);
   });
 });
+
+describe('duplicate execution detection', () => {
+  const dupFingerprint = {
+    symbol: 'XAUUSD',
+    side: 'buy' as const,
+    volume: '0.10',
+    sentNotBefore: 1_000,
+    sentNotAfter: 2_000,
+  };
+
+  function candidate(over: Partial<Mt5EvidenceCandidate>): Mt5EvidenceCandidate {
+    return {
+      kind: 'deal',
+      ticket: '1',
+      magic: '77',
+      symbol: 'XAUUSD',
+      side: 'buy',
+      volume: '0.10',
+      serverTime: 1_500,
+      ...over,
+    };
+  }
+
+  function observation(candidates: readonly Mt5EvidenceCandidate[]): Mt5ReconcileObservation {
+    return {
+      observedAt: 3_000,
+      connected: true,
+      positionsScanned: true,
+      ordersScanned: true,
+      historySelected: true,
+      historyFrom: -100_000,
+      historyTo: 100_000,
+      candidates,
+    };
+  }
+
+  it('confirms when one execution carries the magic, however many objects', () => {
+    // An order, its deal and its position all share the magic. That is normal
+    // and must not be mistaken for two executions.
+    const verdict = resolveMt5Evidence('77', dupFingerprint, [
+      observation([
+        candidate({ kind: 'order', ticket: '10', positionId: '900' }),
+        candidate({ kind: 'deal', ticket: '11', positionId: '900' }),
+        candidate({ kind: 'position', ticket: '900', positionId: '900' }),
+      ]),
+    ]);
+    expect(verdict.outcome).toBe('found');
+  });
+
+  it('refuses to confirm when the magic spans two distinct executions', () => {
+    // Found in audit. The fingerprint path always grouped before deciding; the
+    // exact-magic path did not, so the same intent reaching the venue twice was
+    // reported as one clean fill and the second position was stranded.
+    const verdict = resolveMt5Evidence('77', dupFingerprint, [
+      observation([
+        candidate({ kind: 'deal', ticket: '11', positionId: '900' }),
+        candidate({ kind: 'deal', ticket: '12', positionId: '901' }),
+      ]),
+    ]);
+    expect(verdict.outcome).toBe('duplicate');
+    if (verdict.outcome !== 'duplicate') return;
+    expect(verdict.reason).toContain('2 distinct executions');
+  });
+
+  it('never reports absence or a clean fill when a duplicate is present', () => {
+    const verdict = resolveMt5Evidence('77', dupFingerprint, [
+      observation([
+        candidate({ kind: 'position', ticket: '900', positionId: '900' }),
+        candidate({ kind: 'position', ticket: '901', positionId: '901' }),
+      ]),
+    ]);
+    expect(verdict.outcome).not.toBe('absent');
+    expect(verdict.outcome).not.toBe('found');
+  });
+});

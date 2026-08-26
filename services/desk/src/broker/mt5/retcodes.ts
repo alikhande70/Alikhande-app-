@@ -40,6 +40,13 @@ export const MT5_RETCODE = {
   POSITION_CLOSED: 10036,
   INVALID_CLOSE_VOLUME: 10038,
   CLOSE_ORDER_EXIST: 10039,
+  LIMIT_POSITIONS: 10040,
+  REJECT_CANCEL: 10041,
+  LONG_ONLY: 10042,
+  SHORT_ONLY: 10043,
+  CLOSE_ONLY: 10044,
+  FIFO_CLOSE: 10045,
+  HEDGE_PROHIBITED: 10046,
 } as const;
 
 export type Mt5SubmitClassification =
@@ -87,6 +94,17 @@ const DEFINITE_REJECTIONS = new Map<number, string>([
   [MT5_RETCODE.POSITION_CLOSED, 'position is already closed'],
   [MT5_RETCODE.INVALID_CLOSE_VOLUME, 'close volume exceeds position volume'],
   [MT5_RETCODE.CLOSE_ORDER_EXIST, 'a close order already exists for the position'],
+  // 10040-10046 are account- or symbol-level rules the server evaluates before
+  // the request can execute. They were previously absent, so each one fell to
+  // the ambiguous default: safe, but it meant a permanently unresolvable UNKNOWN
+  // for a request the server had definitively declined.
+  [MT5_RETCODE.LIMIT_POSITIONS, 'account position limit reached'],
+  [MT5_RETCODE.REJECT_CANCEL, 'pending-order activation was rejected and the order was cancelled'],
+  [MT5_RETCODE.LONG_ONLY, 'only long positions are allowed on this symbol'],
+  [MT5_RETCODE.SHORT_ONLY, 'only short positions are allowed on this symbol'],
+  [MT5_RETCODE.CLOSE_ONLY, 'only position closing is allowed on this symbol'],
+  [MT5_RETCODE.FIFO_CLOSE, 'positions on this symbol may only be closed in FIFO order'],
+  [MT5_RETCODE.HEDGE_PROHIBITED, 'opposite positions on a single symbol are disabled'],
 ]);
 
 /**

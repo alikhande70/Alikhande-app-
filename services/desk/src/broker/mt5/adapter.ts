@@ -13,6 +13,7 @@ import type {
   BrokerSubmitResult,
   LookupResult,
 } from '../port.js';
+import type { Mt5EvidenceCandidate } from './evidence.js';
 import { type Mt5HostClient, Mt5HostError } from './host-client.js';
 import type {
   Mt5HostAccount,
@@ -142,6 +143,79 @@ function mapQuote(raw: Mt5HostSnapshot['quotes'][number]): BrokerQuote {
     bid: D.dec(raw.bid),
     ask: D.dec(raw.ask),
     asOf: raw.asOf,
+  };
+}
+
+/**
+ * Derive the filled quantity from confirmed reconciliation evidence.
+ *
+ * Taking the first candidate is wrong whenever a position filled in more than
+ * one deal: the deals are separate objects carrying the same magic, so the
+ * first one reports only part of the size, and the operator would be shown a
+ * smaller position than they actually hold.
+ *
+ * A `position` candidate already carries the aggregate, so it wins outright.
+ * Otherwise the deals are summed. The volume-weighted average price is computed
+ * over whichever deals carry one, because a single deal's price is not the
+ * average fill of several.
+ */
+function filledFromEvidence(
+  matches: readonly Mt5EvidenceCandidate[],
+): { ticket: string; volume: Dec; avgFillPrice?: Dec; serverTime: number } | undefined {
+  if (matches.length === 0) return undefined;
+
+  const position = matches.find((m) => m.kind === 'position');
+  const deals = matches.filter((m) => m.kind === 'deal');
+  const anchorCandidate = position ?? deals[0] ?? matches[0];
+  if (anchorCandidate === undefined) return undefined;
+
+  if (position !== undefined) {
+    return {
+      ticket: position.ticket,
+      volume: D.dec(position.volume),
+      ...(position.price === undefined ? {} : { avgFillPrice: D.dec(position.price) }),
+      serverTime: position.serverTime,
+    };
+  }
+
+  if (deals.length === 0) {
+    return {
+      ticket: anchorCandidate.ticket,
+      volume: D.dec(anchorCandidate.volume),
+      ...(anchorCandidate.price === undefined
+        ? {}
+        : { avgFillPrice: D.dec(anchorCandidate.price) }),
+      serverTime: anchorCandidate.serverTime,
+    };
+  }
+
+  let volume = D.Decimal.ZERO;
+  let notional = D.Decimal.ZERO;
+  let pricedVolume = D.Decimal.ZERO;
+  for (const deal of deals) {
+    const dealVolume = D.dec(deal.volume);
+    volume = D.Decimal.add(volume, dealVolume);
+    if (deal.price !== undefined) {
+      notional = D.Decimal.add(notional, D.Decimal.mul(D.dec(deal.price), dealVolume));
+      pricedVolume = D.Decimal.add(pricedVolume, dealVolume);
+    }
+  }
+
+  const first = deals[0] as Mt5EvidenceCandidate;
+  const avg = D.Decimal.isZero(pricedVolume)
+    ? undefined
+    : D.Decimal.div(
+        notional,
+        pricedVolume,
+        D.Decimal.normalize(D.dec(first.price ?? '0')).s + 4,
+        'half-even',
+      );
+
+  return {
+    ticket: first.ticket,
+    volume,
+    ...(avg === undefined ? {} : { avgFillPrice: avg }),
+    serverTime: Math.min(...deals.map((d) => d.serverTime)),
   };
 }
 
@@ -411,6 +485,17 @@ export class Mt5BrokerAdapter implements BrokerPort {
     if (verdict.outcome === 'negative') {
       return { found: false, evidence: verdict.evidence };
     }
+    if (verdict.outcome === 'duplicate') {
+      // The venue holds more than one execution for this intent. Returning
+      // `found` would attribute one of them and silently strand the rest, so
+      // this stays unresolved until the operator acts on it. `indeterminate`
+      // is the honest transport here: the resolver will not conclude absence
+      // from it, and the reason carries the tickets involved.
+      return {
+        found: 'indeterminate',
+        reason: `${verdict.reason} Tickets: ${verdict.matches.map((m) => `${m.kind}#${m.ticket}`).join(', ')}.`,
+      };
+    }
     if (verdict.outcome === 'probable') {
       return { found: 'indeterminate', reason: verdict.reason };
     }
@@ -435,23 +520,23 @@ export class Mt5BrokerAdapter implements BrokerPort {
     // A market order may already have disappeared from active orders. If the
     // authoritative reconciliation saw our magic in a deal/position, return a
     // conservative FILLED representation rather than pretending it is absent.
-    const candidate = verdict.matches[0];
-    if (candidate === undefined) {
+    const filled = filledFromEvidence(verdict.matches);
+    if (filled === undefined) {
       return { found: 'indeterminate', reason: 'confirmed MT5 evidence had no candidate object' };
     }
     return {
       found: true,
       order: {
-        venueOrderId: candidate.ticket,
+        venueOrderId: filled.ticket,
         clientOrderId,
         canonical: context.canonical,
         symbol: context.symbol,
         side: context.side,
         state: 'FILLED',
         requestedQty: context.volume,
-        filledQty: D.dec(candidate.volume),
-        ...(candidate.price === undefined ? {} : { avgFillPrice: D.dec(candidate.price) }),
-        createdAt: candidate.serverTime,
+        filledQty: filled.volume,
+        ...(filled.avgFillPrice === undefined ? {} : { avgFillPrice: filled.avgFillPrice }),
+        createdAt: filled.serverTime,
       },
     };
   }

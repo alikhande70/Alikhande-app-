@@ -55,6 +55,12 @@ export type Mt5EvidenceResolution =
       readonly matches: readonly Mt5EvidenceCandidate[];
       readonly reason: string;
     }
+  | {
+      /** The magic was found on more than one execution: a duplicate send. */
+      readonly outcome: 'duplicate';
+      readonly matches: readonly Mt5EvidenceCandidate[];
+      readonly reason: string;
+    }
   | { readonly outcome: 'absent'; readonly evidence: string }
   | { readonly outcome: 'indeterminate'; readonly reason: string };
 
@@ -150,6 +156,19 @@ export function resolveMt5Evidence(
   );
   const exact = allCandidates.filter((candidate) => candidate.magic === expectedMagic);
   if (exact.length > 0) {
+    // Group before concluding, for the same reason the fingerprint path does:
+    // an order, its deals and its position all share one magic, so only the
+    // number of distinct executions is meaningful. More than one is a duplicate
+    // execution, not a confirmation.
+    if (candidateGroups(exact) > 1) {
+      return {
+        outcome: 'duplicate',
+        matches: exact,
+        reason:
+          `the expected magic appears on ${candidateGroups(exact)} distinct executions; ` +
+          'the same intent reached the venue more than once',
+      };
+    }
     return {
       outcome: 'found',
       certainty: 'confirmed',

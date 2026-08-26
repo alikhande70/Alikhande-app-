@@ -201,6 +201,205 @@ describe('Mt5BrokerAdapter', () => {
     expect(result.found).toBe(false);
   });
 
+  it('sums partial fills instead of reporting only the first deal', async () => {
+    // A position filled by two deals yields two candidates carrying the same
+    // magic. Taking matches[0] reported 0.01 of a 0.03 position, so the
+    // operator would have been shown a third of the risk they actually held.
+    const expectedMagic = magicToWire(magicForClientOrderId('partial-1', PREFIX));
+    const request: Mt5HostRequest = async (url) => {
+      if (url.endsWith('/v1/snapshot')) return { status: 200, body: snapshot() };
+      if (url.endsWith('/v1/reconcile')) {
+        return {
+          status: 200,
+          body: {
+            observation: {
+              observedAt: 1_700_000_002_000,
+              connected: true,
+              positionsScanned: true,
+              ordersScanned: true,
+              historySelected: true,
+              historyFrom: 1_699_999_990_000,
+              historyTo: 1_700_000_020_000,
+              candidates: [
+                {
+                  kind: 'deal',
+                  ticket: '11',
+                  positionId: '900',
+                  magic: expectedMagic,
+                  symbol: 'XAUUSD',
+                  side: 'buy',
+                  volume: '0.01',
+                  price: '2500.00',
+                  serverTime: 1_700_000_000_400,
+                },
+                {
+                  kind: 'deal',
+                  ticket: '12',
+                  positionId: '900',
+                  magic: expectedMagic,
+                  symbol: 'XAUUSD',
+                  side: 'buy',
+                  volume: '0.02',
+                  price: '2501.00',
+                  serverTime: 1_700_000_000_600,
+                },
+              ],
+            },
+          },
+        };
+      }
+      throw new Error(`unexpected ${url}`);
+    };
+    const adapter = adapterWith(request);
+    await adapter.connect();
+
+    const result = await adapter.findByClientOrderId('partial-1', {
+      canonical: 'XAUUSD',
+      symbol: 'XAUUSD',
+      side: 'buy',
+      volume: D.dec('0.03'),
+      sentNotBefore: 1_700_000_000_000,
+      sentNotAfter: 1_700_000_001_000,
+    });
+
+    expect(result.found).toBe(true);
+    if (result.found !== true) return;
+    expect(D.Decimal.toString(result.order.filledQty)).toBe('0.03');
+    // Volume-weighted, not the first deal's price.
+    const avg = result.order.avgFillPrice;
+    expect(avg).toBeDefined();
+    if (avg === undefined) return;
+    expect(D.Decimal.toString(avg).startsWith('2500.66')).toBe(true);
+  });
+
+  it('prefers the position aggregate over individual deals', async () => {
+    const expectedMagic = magicToWire(magicForClientOrderId('agg-1', PREFIX));
+    const request: Mt5HostRequest = async (url) => {
+      if (url.endsWith('/v1/snapshot')) return { status: 200, body: snapshot() };
+      if (url.endsWith('/v1/reconcile')) {
+        return {
+          status: 200,
+          body: {
+            observation: {
+              observedAt: 1_700_000_002_000,
+              connected: true,
+              positionsScanned: true,
+              ordersScanned: true,
+              historySelected: true,
+              historyFrom: 1_699_999_990_000,
+              historyTo: 1_700_000_020_000,
+              candidates: [
+                {
+                  kind: 'deal',
+                  ticket: '11',
+                  positionId: '900',
+                  magic: expectedMagic,
+                  symbol: 'XAUUSD',
+                  side: 'buy',
+                  volume: '0.01',
+                  price: '2500.00',
+                  serverTime: 1_700_000_000_400,
+                },
+                {
+                  kind: 'position',
+                  ticket: '900',
+                  positionId: '900',
+                  magic: expectedMagic,
+                  symbol: 'XAUUSD',
+                  side: 'buy',
+                  volume: '0.03',
+                  price: '2500.66',
+                  serverTime: 1_700_000_000_600,
+                },
+              ],
+            },
+          },
+        };
+      }
+      throw new Error(`unexpected ${url}`);
+    };
+    const adapter = adapterWith(request);
+    await adapter.connect();
+
+    const result = await adapter.findByClientOrderId('agg-1', {
+      canonical: 'XAUUSD',
+      symbol: 'XAUUSD',
+      side: 'buy',
+      volume: D.dec('0.03'),
+      sentNotBefore: 1_700_000_000_000,
+      sentNotAfter: 1_700_000_001_000,
+    });
+    expect(result.found).toBe(true);
+    if (result.found !== true) return;
+    expect(D.Decimal.toString(result.order.filledQty)).toBe('0.03');
+  });
+
+  it('refuses to attribute a duplicate execution as one clean fill', async () => {
+    // Two positions carrying our magic means the intent reached the venue
+    // twice. Reporting `found` would attribute one and strand the other.
+    const expectedMagic = magicToWire(magicForClientOrderId('dup-1', PREFIX));
+    const request: Mt5HostRequest = async (url) => {
+      if (url.endsWith('/v1/snapshot')) return { status: 200, body: snapshot() };
+      if (url.endsWith('/v1/reconcile')) {
+        return {
+          status: 200,
+          body: {
+            observation: {
+              observedAt: 1_700_000_002_000,
+              connected: true,
+              positionsScanned: true,
+              ordersScanned: true,
+              historySelected: true,
+              historyFrom: 1_699_999_990_000,
+              historyTo: 1_700_000_020_000,
+              candidates: [
+                {
+                  kind: 'position',
+                  ticket: '900',
+                  positionId: '900',
+                  magic: expectedMagic,
+                  symbol: 'XAUUSD',
+                  side: 'buy',
+                  volume: '0.01',
+                  price: '2500.00',
+                  serverTime: 1_700_000_000_400,
+                },
+                {
+                  kind: 'position',
+                  ticket: '901',
+                  positionId: '901',
+                  magic: expectedMagic,
+                  symbol: 'XAUUSD',
+                  side: 'buy',
+                  volume: '0.01',
+                  price: '2500.10',
+                  serverTime: 1_700_000_000_600,
+                },
+              ],
+            },
+          },
+        };
+      }
+      throw new Error(`unexpected ${url}`);
+    };
+    const adapter = adapterWith(request);
+    await adapter.connect();
+
+    const result = await adapter.findByClientOrderId('dup-1', {
+      canonical: 'XAUUSD',
+      symbol: 'XAUUSD',
+      side: 'buy',
+      volume: D.dec('0.01'),
+      sentNotBefore: 1_700_000_000_000,
+      sentNotAfter: 1_700_000_001_000,
+    });
+    expect(result.found).toBe('indeterminate');
+    if (result.found !== 'indeterminate') return;
+    expect(result.reason).toContain('more than once');
+    expect(result.reason).toContain('position#900');
+    expect(result.reason).toContain('position#901');
+  });
+
   it('does not attribute a fingerprint-only match to the brain/order id', async () => {
     const expectedMagic = magicToWire(magicForClientOrderId('lost-magic', PREFIX));
     const request: Mt5HostRequest = async (url) => {

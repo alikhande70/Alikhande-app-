@@ -19,6 +19,10 @@ export interface Mt5AgentHello {
 
 export interface Mt5AgentHeartbeat {
   readonly type: 'heartbeat';
+  /** Broker-local epoch ms, for session reasoning only. Never compared to desk time. */
+  readonly serverMillis?: number;
+  /** serverMillis - at, in seconds. Observed from the agent, never configured. */
+  readonly serverUtcOffsetSec?: number;
   readonly eventSeq: string;
   readonly terminalConnected: boolean;
   readonly tradeAllowed: boolean;
@@ -168,6 +172,10 @@ export function decodeAgentMessage(line: string): Mt5AgentMessage {
         tradeAllowed: parsed.tradeAllowed,
         serverTime: requiredNumber(parsed, 'serverTime'),
         at: requiredNumber(parsed, 'at'),
+        ...(typeof parsed.serverMillis === 'number' ? { serverMillis: parsed.serverMillis } : {}),
+        ...(typeof parsed.serverUtcOffsetSec === 'number'
+          ? { serverUtcOffsetSec: parsed.serverUtcOffsetSec }
+          : {}),
       };
     case 'snapshot':
       if (!isRecord(parsed.snapshot)) {

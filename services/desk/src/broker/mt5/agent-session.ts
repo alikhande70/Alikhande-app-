@@ -9,6 +9,7 @@ import {
   type Mt5AgentTransactionMessage,
   type Mt5DeskCommandMessage,
 } from './agent-protocol.js';
+import { assertUtcClockDomain } from './clock-domain.js';
 import { validateMt5Command } from './command-validation.js';
 import type { Mt5HostSubmitResult } from './host-types.js';
 
@@ -51,6 +52,8 @@ export class Mt5AgentSession {
   private readonly pending = new Map<string, PendingCommand>();
   private helloMessage: Mt5AgentHello | undefined;
   private heartbeatMessage: Mt5AgentHeartbeat | undefined;
+  private clockFault: string | undefined;
+  private clockWarnings: readonly string[] = [];
   private lastEventSeq = -1n;
   private disconnected = false;
 
@@ -87,10 +90,30 @@ export class Mt5AgentSession {
     }
 
     switch (message.type) {
-      case 'heartbeat':
+      case 'heartbeat': {
         if (!this.acceptSequence(message.eventSeq)) return;
+        // Validate the clock domain on every heartbeat, not once at hello. The
+        // agent could be restarted, upgraded or reconfigured mid-session, and a
+        // reading in broker-local time must never be silently accepted.
+        try {
+          const verdict = assertUtcClockDomain(
+            {
+              utcMillis: message.at,
+              ...(message.serverMillis === undefined ? {} : { serverMillis: message.serverMillis }),
+              ...(message.serverUtcOffsetSec === undefined
+                ? {}
+                : { serverUtcOffsetSec: message.serverUtcOffsetSec }),
+            },
+            Date.now(),
+          );
+          this.clockFault = undefined;
+          this.clockWarnings = verdict.warnings;
+        } catch (error) {
+          this.clockFault = error instanceof Error ? error.message : String(error);
+        }
         this.heartbeatMessage = message;
         return;
+      }
       case 'snapshot':
         if (!this.acceptSequence(message.eventSeq)) return;
         this.options.onSnapshot?.(message);
@@ -126,13 +149,30 @@ export class Mt5AgentSession {
     return this.lastEventSeq < 0n ? undefined : this.lastEventSeq.toString();
   }
 
+  /** Why the agent is not usable, or undefined when it is. */
+  clockFaultReason(): string | undefined {
+    return this.clockFault;
+  }
+
+  clockDomainWarnings(): readonly string[] {
+    return this.clockWarnings;
+  }
+
   isLive(now = Date.now()): boolean {
     const heartbeat = this.heartbeatMessage;
-    return (
-      this.isAuthenticated() &&
-      heartbeat?.terminalConnected === true &&
-      now - heartbeat.at <= this.heartbeatStaleMs
-    );
+    if (heartbeat === undefined) return false;
+    if (!this.isAuthenticated()) return false;
+    if (heartbeat.terminalConnected !== true) return false;
+    // A clock the desk cannot trust makes every downstream time comparison
+    // meaningless, so it disables the agent rather than degrading quietly.
+    if (this.clockFault !== undefined) return false;
+
+    const age = now - heartbeat.at;
+    // Math.abs, not a one-sided check. A heartbeat stamped in the future -- which
+    // is exactly what broker-local time on a GMT+3 server looks like -- produced
+    // a negative age that passed the staleness test trivially, so a dead agent
+    // read as live until real time caught up with the offset. Hours, not seconds.
+    return Math.abs(age) <= this.heartbeatStaleMs;
   }
 
   async command(

@@ -11,6 +11,16 @@ export type Mt5ObservationVerdict =
       readonly matches: readonly Mt5EvidenceCandidate[];
       readonly reason: string;
     }
+  | {
+      /**
+       * The expected magic was found on more than one distinct execution.
+       * Deliberately not `confirmed` and not `indeterminate`: the facts are
+       * known and they are bad, which is a different thing from not knowing.
+       */
+      readonly outcome: 'duplicate';
+      readonly matches: readonly Mt5EvidenceCandidate[];
+      readonly reason: string;
+    }
   | { readonly outcome: 'negative'; readonly evidence: string }
   | { readonly outcome: 'indeterminate'; readonly reason: string };
 
@@ -65,6 +75,25 @@ export function inspectMt5Observation(
 
   const exact = candidates.filter((candidate) => candidate.magic === expectedMagic);
   if (exact.length > 0) {
+    // One intent legitimately produces an order, one or more deals, and a
+    // position, all carrying the same magic — so a raw count proves nothing.
+    // What matters is how many *distinct executions* carry it. More than one
+    // means the same intent reached the venue twice, which is the single worst
+    // outcome this system can produce, and it must never be reported as a clean
+    // confirmation. The fingerprint path below has always grouped before
+    // deciding; this path did not, so the weaker evidence was the better
+    // guarded.
+    const executions = new Set(exact.map(groupKey));
+    if (executions.size > 1) {
+      return {
+        outcome: 'duplicate',
+        matches: exact,
+        reason:
+          `MT5 state/history contains ${executions.size} distinct executions carrying the expected ` +
+          'magic. The same intent reached the venue more than once; this requires operator ' +
+          'resolution and must not be attributed as a single fill.',
+      };
+    }
     return {
       outcome: 'confirmed',
       matches: exact,
