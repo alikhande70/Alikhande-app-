@@ -86,8 +86,49 @@ separate, because they need the network: `pnpm --filter @keel/desk test:live`.
 | Adapter | Status | Why |
 | --- | --- | --- |
 | `PaperBroker` | Chaos tested | The default, and the substrate for every other test. |
-| OANDA v20 | **Integration tested, not yet live verified** | 86 tests against a scripted v20, covering every outcome branch. No request has ever reached `api-fxpractice.oanda.com`. |
-| MetaApi / MT5 | **Not implemented** | `main.ts` refuses to start with `KEEL_BROKER=metaapi` rather than pretending. |
+| **LiteFinance / MT5** | **Level 1 of 9 — architecture reviewed only** | The production target. Designed in ADR-0015/0016 and adversarially reviewed; **no code exists yet**. See the ladder below. |
+| OANDA v20 | **Integration tested, not live verified** · *reference adapter* | 86 tests against a scripted v20. No request has ever reached `api-fxpractice.oanda.com`. No longer the production venue — retained as the independent FX/metals price plane and as the control case for `BrokerPort`. |
+| MetaApi / MT5 cloud | **Rejected, not planned** | Rejected in ADR-0016 on credential custody: it requires handing a third party the keys to the account. |
+
+### The MT5 verification ladder
+
+The MT5 path does not use the honesty levels above. Mocks are not sufficient for a
+venue whose documented behaviour includes dropping events, so it progresses through
+nine explicit stages, and **nothing may be described as broker-verified before stage 7**.
+
+| # | Stage | Status |
+| --- | --- | --- |
+| 1 | Architecture reviewed | **Done** — ADR-0015/0016/0017, adversarially reviewed in `DESIGN-REVIEW-mt5.md` |
+| 2 | Implementation complete | Not started |
+| 3 | Unit tested | Not started |
+| 4 | Integration tested | Not started |
+| 5 | Failure / chaos tested | Not started |
+| 6 | Real MT5 terminal tested | Not started |
+| 7 | LiteFinance **demo** account tested | Not started |
+| 8 | Restart / reconnect recovery tested | Not started |
+| 9 | End-to-end Android + Desktop → core → MT5 → broker → reconciliation | Not started |
+
+Two constraints on this environment, stated because they bound what can ever be
+claimed from here:
+
+- **MQL5 cannot be compiled in this environment.** The agent will be written
+  conservatively against well-established APIs, and it must be compiled in MetaEditor
+  by the operator. It may not be called working until it has been.
+- **There is no MT5 terminal and no LiteFinance account here.** Stages 6 through 9 are
+  the operator's, on demo, and no amount of local testing substitutes for them.
+
+Assumptions that only stage 7 can settle, recorded now so they are not quietly
+forgotten:
+
+- Whether LiteFinance preserves `magic` through pending-order activation. Field reports
+  say some brokers zero it. The fingerprint fallback in ADR-0015 exists because of this
+  and is itself unverified.
+- The exact symbol names and suffixes on the account (`XAUUSD` vs `XAUUSD.m` vs other).
+- The broker's server/UTC offset and its DST rule.
+- Which filling modes the account's symbols actually permit.
+- Whether the account is netting or hedging.
+
+---
 
 ### What the OANDA adapter has actually been tested against
 
@@ -203,6 +244,7 @@ of testing were actually earning their keep.
 | Self-review | An OANDA order that was found but could not be mapped fell through and was reported absent | Severe |
 | Self-review | The OANDA stream announced "reconnected" before it had reopened, and caught up before subscribing | Moderate |
 | Self-review | `test:live` and `test:chaos` used an unquoted `src/**/*` glob, which the shell expands to a single directory level — so the OANDA live suite existed but the documented command never ran it | Moderate |
+| Architecture review | The reference price plane was Crypto.com, which cannot price XAUUSD or EURUSD — so the divergence monitor could never have fired for any instrument actually being traded. Latent since ADR-0013, independent of the venue change | Severe |
 
 The pattern worth noting: **example-based tests found almost nothing.** Property
 tests, randomized chaos, and reading the code adversarially found everything
@@ -218,11 +260,13 @@ and which was still easy to get wrong twice in one function.
 
 ## Known gaps, stated without hedging
 
-1. **Still no order has reached a real venue.** The OANDA adapter is written
-   and thoroughly tested against a scripted v20, but a stub written from the
-   same documentation as the adapter cannot disprove a misreading of that
-   documentation. This remains the single largest gap, and it closes the moment
-   `pnpm --filter @keel/desk test:live` is run with a practice token.
+1. **The production venue has no adapter at all.** LiteFinance/MT5 is stage 1 of
+   9 — designed and reviewed, not written. The OANDA adapter is thoroughly
+   tested but is no longer the production target, and a stub written from the
+   same documentation as its adapter could not have disproved a misreading of
+   that documentation anyway. This is the single largest gap and it is now
+   larger than it was before the pivot, which the score in `BENCHMARK.md`
+   reflects honestly (36 of 100 delivered against a design that targets 85).
 2. **The mobile UI has never been rendered.** Every screen is unproven as a
    visual and interactive artefact. The logic beneath them is tested; the
    pixels are not.

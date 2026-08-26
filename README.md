@@ -4,9 +4,13 @@ A risk-governed personal trading command center for a single operator.
 
 > **Broker truth is the only truth. Risk is enforced, not suggested.**
 
-Keel is two things: an always-on **desk** service that owns broker connectivity,
-a durable ledger and the risk governor, and a **mobile** client that is a fast,
-honest view and command surface over it.
+Keel is an always-on **execution host** — a Windows machine running the MetaTrader 5
+terminal, a terminal-side execution agent, and a desk service that owns the durable
+ledger and the risk governor — plus two first-class clients, **Android** and
+**Windows desktop**, that are fast, honest views and command surfaces over it.
+
+Execution authority lives on the host, never in a client. Closing a window is not a
+trading decision.
 
 It is built for one person. It has no sign-up, no subscriptions, no social
 features and no multi-tenancy, and it will refuse to send an order that breaks a
@@ -40,14 +44,19 @@ proves it continuously.
 | [`docs/PRODUCT.md`](docs/PRODUCT.md) | What this is, why it exists, what it deliberately is not |
 | [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) | How it fits together, and the failure model it is built around |
 | [`docs/VERIFICATION.md`](docs/VERIFICATION.md) | **Honest** status of every component, and every defect found so far |
-| [`docs/adr/`](docs/adr/) | 14 decision records, including the options that were rejected |
+| [`docs/adr/`](docs/adr/) | 17 decision records, including the options that were rejected |
+| [`docs/AUDIT-mt5-pivot.md`](docs/AUDIT-mt5-pivot.md) | What survived the move from OANDA to LiteFinance/MT5, and why |
+| [`docs/BENCHMARK.md`](docs/BENCHMARK.md) | Scored against MT5, cTrader, TradingView, TradeLocker, Quantower and the journals |
+| [`docs/DESIGN-REVIEW-mt5.md`](docs/DESIGN-REVIEW-mt5.md) | Twelve attacks on the MT5 architecture; seven changed it |
 | [`docs/RUNBOOK.md`](docs/RUNBOOK.md) | Deploying, pairing, and what to do at 2am |
 | [`docs/THREAT-MODEL.md`](docs/THREAT-MODEL.md) | Security assumptions, including where they are weaker than they sound |
 
 **Read `VERIFICATION.md` before trusting anything here with money.** In
-particular: the OANDA adapter is written and heavily tested, but no order has
-yet reached a real venue — running the live suite against a free practice
-account is the next step, and it is one command.
+particular: the production venue is **LiteFinance via MetaTrader 5**, and that
+adapter is at stage 1 of a 9-stage verification ladder — designed and
+adversarially reviewed, not yet written. The OANDA adapter is heavily tested but
+is now a reference adapter and the independent price plane, not the production
+path.
 
 ---
 
