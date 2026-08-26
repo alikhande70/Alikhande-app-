@@ -16,12 +16,22 @@ export interface Mt5HostHttpResponse {
 
 export type Mt5HostRequest = (
   url: string,
-  init: { readonly method: 'GET' | 'POST'; readonly headers: Record<string, string>; readonly body?: string; readonly signal?: AbortSignal },
+  init: {
+    readonly method: 'GET' | 'POST';
+    readonly headers: Record<string, string>;
+    readonly body?: string;
+    readonly signal?: AbortSignal;
+  },
 ) => Promise<Mt5HostHttpResponse>;
 
 async function defaultRequest(
   url: string,
-  init: { readonly method: 'GET' | 'POST'; readonly headers: Record<string, string>; readonly body?: string; readonly signal?: AbortSignal },
+  init: {
+    readonly method: 'GET' | 'POST';
+    readonly headers: Record<string, string>;
+    readonly body?: string;
+    readonly signal?: AbortSignal;
+  },
 ): Promise<Mt5HostHttpResponse> {
   const res = await fetch(url, init);
   let body: unknown;
@@ -133,8 +143,16 @@ export class Mt5HostClient {
         response.body,
       );
     }
-    if (response.body === undefined || response.body === null || typeof response.body !== 'object') {
-      throw new Mt5HostError('MT5 execution host returned an invalid JSON body', response.status, response.body);
+    if (
+      response.body === undefined ||
+      response.body === null ||
+      typeof response.body !== 'object'
+    ) {
+      throw new Mt5HostError(
+        'MT5 execution host returned an invalid JSON body',
+        response.status,
+        response.body,
+      );
     }
     return response.body as T;
   }
