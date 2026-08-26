@@ -22,7 +22,7 @@ import type {
   Mt5HostSubmitResult,
 } from './host-types.js';
 import { magicForClientOrderId, magicToWire } from './identity.js';
-import { Mt5InstrumentBinding } from './instrument-binding.js';
+import type { Mt5InstrumentBinding } from './instrument-binding.js';
 import { inspectMt5Observation } from './observation.js';
 
 export class Mt5AdapterError extends Error {
