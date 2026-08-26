@@ -8,6 +8,7 @@ import type {
   Mt5HostSnapshot,
   Mt5HostSubmitResult,
 } from './host-types.js';
+import { validateMt5HostReconcileResponse } from './reconcile-validation.js';
 
 export interface Mt5HostHttpResponse {
   readonly status: number;
@@ -107,8 +108,19 @@ export class Mt5HostClient {
     return this.call<Mt5HostSubmitResult>('POST', '/v1/positions/close', request);
   }
 
-  reconcile(request: Mt5HostReconcileRequest): Promise<Mt5HostReconcileResponse> {
-    return this.call<Mt5HostReconcileResponse>('POST', '/v1/reconcile', request);
+  async reconcile(request: Mt5HostReconcileRequest): Promise<Mt5HostReconcileResponse> {
+    const raw = await this.call<unknown>('POST', '/v1/reconcile', request);
+    try {
+      return validateMt5HostReconcileResponse(raw);
+    } catch (error) {
+      throw new Mt5HostError(
+        `MT5 execution host returned invalid reconcile evidence: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+        200,
+        raw,
+      );
+    }
   }
 
   private async call<T>(method: 'GET' | 'POST', path: string, body?: unknown): Promise<T> {
