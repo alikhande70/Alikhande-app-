@@ -7,6 +7,12 @@ export type Mt5ObservationVerdict =
       readonly evidence: string;
     }
   | {
+      readonly outcome: 'terminal';
+      readonly order: Mt5EvidenceCandidate;
+      readonly venueState: 'REJECTED' | 'CANCELLED' | 'EXPIRED';
+      readonly evidence: string;
+    }
+  | {
       readonly outcome: 'probable';
       readonly matches: readonly Mt5EvidenceCandidate[];
       readonly reason: string;
@@ -26,6 +32,7 @@ const ORDER_STATES = new Set([
   'EXPIRED',
   'UNKNOWN',
 ]);
+const NON_EXECUTED_TERMINAL_STATES = new Set(['REJECTED', 'CANCELLED', 'EXPIRED'] as const);
 
 function sameFingerprint(candidate: Mt5EvidenceCandidate, expected: Mt5Fingerprint): boolean {
   return (
@@ -100,9 +107,38 @@ export function inspectMt5Observation(
       };
     }
 
-    const orderStates = exact
-      .filter((candidate) => candidate.kind === 'order')
-      .map((candidate) => candidate.orderState ?? 'UNKNOWN');
+    const orders = exact.filter((candidate) => candidate.kind === 'order');
+    const terminalOrders = orders.filter(
+      (candidate) =>
+        candidate.orderState !== undefined &&
+        NON_EXECUTED_TERMINAL_STATES.has(
+          candidate.orderState as 'REJECTED' | 'CANCELLED' | 'EXPIRED',
+        ),
+    );
+    if (terminalOrders.length === orders.length && terminalOrders.length > 0) {
+      const states = new Set(terminalOrders.map((candidate) => candidate.orderState));
+      const tickets = new Set(terminalOrders.map((candidate) => candidate.ticket));
+      const terminal = terminalOrders[0];
+      if (states.size === 1 && tickets.size === 1 && terminal?.orderState !== undefined) {
+        const venueState = terminal.orderState as 'REJECTED' | 'CANCELLED' | 'EXPIRED';
+        return {
+          outcome: 'terminal',
+          order: terminal,
+          venueState,
+          evidence:
+            `MT5 history contains the expected magic on order ${terminal.ticket} ` +
+            `with terminal non-executed state ${venueState}`,
+        };
+      }
+      return {
+        outcome: 'indeterminate',
+        reason:
+          'MT5 history contains conflicting terminal order evidence for the expected magic; ' +
+          'manual/repeated reconciliation is required',
+      };
+    }
+
+    const orderStates = orders.map((candidate) => candidate.orderState ?? 'UNKNOWN');
     return {
       outcome: 'indeterminate',
       reason:
