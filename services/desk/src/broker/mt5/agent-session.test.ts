@@ -37,6 +37,40 @@ function heartbeat(eventSeq = '1', at = Date.now()) {
   );
 }
 
+function snapshotMessage(requestId: string, eventSeq: string, observedAt: number) {
+  return decodeAgentMessage(
+    JSON.stringify({
+      type: 'snapshot',
+      requestId,
+      eventSeq,
+      snapshot: {
+        protocolVersion: 1,
+        hostId: 'agent-1',
+        terminalConnected: true,
+        tradeAllowed: true,
+        account: {
+          login: '123456',
+          server: 'LiteFinance-Demo',
+          company: 'LiteFinance',
+          currency: 'USD',
+          tradeMode: 'demo',
+          positionModel: 'hedging',
+          balance: '10000.00',
+          equity: '10000.00',
+          marginUsed: '0.00',
+          marginFree: '10000.00',
+          asOf: observedAt,
+        },
+        instruments: [],
+        positions: [],
+        orders: [],
+        quotes: [],
+        observedAt,
+      },
+    }),
+  );
+}
+
 function validMarketOrder() {
   return {
     clientOrderId: 'intent-123',
@@ -95,6 +129,18 @@ describe('MT5 agent protocol', () => {
       ),
     ).toThrow(Mt5AgentProtocolError);
   });
+
+  it('requires a request id on authoritative snapshot responses', () => {
+    expect(() =>
+      decodeAgentMessage(
+        JSON.stringify({
+          type: 'snapshot',
+          eventSeq: '2',
+          snapshot: {},
+        }),
+      ),
+    ).toThrow(Mt5AgentProtocolError);
+  });
 });
 
 describe('MT5 agent session', () => {
@@ -148,7 +194,31 @@ describe('MT5 agent session', () => {
     );
   });
 
-  it('resolves a command only from the matching request id', async () => {
+  it('resolves a snapshot only from the matching request id', async () => {
+    let written = '';
+    const onSnapshot = vi.fn();
+    const session = new Mt5AgentSession(
+      {
+        write: (data) => {
+          written = data;
+        },
+        close: vi.fn(),
+      },
+      { token: '0123456789abcdef', commandTimeoutMs: 100, onSnapshot },
+    );
+    session.receive(hello());
+    session.receive(heartbeat());
+
+    const pending = session.snapshot();
+    const requestId = (JSON.parse(written) as { requestId: string }).requestId;
+    session.receive(snapshotMessage('different', '2', 2_000));
+    session.receive(snapshotMessage(requestId, '3', 3_000));
+
+    await expect(pending).resolves.toMatchObject({ observedAt: 3_000 });
+    expect(onSnapshot).toHaveBeenCalledTimes(2);
+  });
+
+  it('rejects a snapshot request when the EA reports that truth is unavailable', async () => {
     let written = '';
     const session = new Mt5AgentSession(
       {
@@ -162,7 +232,35 @@ describe('MT5 agent session', () => {
     session.receive(hello());
     session.receive(heartbeat());
 
-    const pending = session.command('snapshot', {});
+    const pending = session.snapshot();
+    const requestId = (JSON.parse(written) as { requestId: string }).requestId;
+    session.receive(
+      decodeAgentMessage(
+        JSON.stringify({
+          type: 'result',
+          requestId,
+          result: { outcome: 'ambiguous', reason: 'state scan failed', serverTime: 2 },
+        }),
+      ),
+    );
+    await expect(pending).rejects.toThrow('did not return authoritative snapshot');
+  });
+
+  it('resolves a normal command only from the matching request id', async () => {
+    let written = '';
+    const session = new Mt5AgentSession(
+      {
+        write: (data) => {
+          written = data;
+        },
+        close: vi.fn(),
+      },
+      { token: '0123456789abcdef', commandTimeoutMs: 100 },
+    );
+    session.receive(hello());
+    session.receive(heartbeat());
+
+    const pending = session.command('place_order', validMarketOrder());
     const requestId = (JSON.parse(written) as { requestId: string }).requestId;
     session.receive(
       decodeAgentMessage(
@@ -178,7 +276,7 @@ describe('MT5 agent session', () => {
         JSON.stringify({
           type: 'result',
           requestId,
-          result: { outcome: 'ambiguous', reason: 'snapshot not implemented', serverTime: 2 },
+          result: { outcome: 'ambiguous', reason: 'execution disabled', serverTime: 2 },
         }),
       ),
     );
@@ -200,15 +298,19 @@ describe('MT5 agent session', () => {
     expect(write).not.toHaveBeenCalled();
   });
 
-  it('rejects outstanding commands on disconnect instead of pretending they failed at venue', async () => {
+  it('rejects outstanding commands and snapshots on disconnect', async () => {
+    const writes: string[] = [];
     const session = new Mt5AgentSession(
-      { write: vi.fn(), close: vi.fn() },
+      { write: (data) => writes.push(data), close: vi.fn() },
       { token: '0123456789abcdef', commandTimeoutMs: 500 },
     );
     session.receive(hello());
     session.receive(heartbeat());
-    const pending = session.command('place_order', validMarketOrder());
+    const commandPending = session.command('place_order', validMarketOrder());
+    const snapshotPending = session.snapshot();
+    expect(writes).toHaveLength(2);
     session.disconnect('socket dropped after send');
-    await expect(pending).rejects.toThrow('socket dropped after send');
+    await expect(commandPending).rejects.toThrow('socket dropped after send');
+    await expect(snapshotPending).rejects.toThrow('socket dropped after send');
   });
 });
