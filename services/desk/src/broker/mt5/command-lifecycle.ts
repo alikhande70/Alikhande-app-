@@ -121,7 +121,7 @@ export function validateMt5CommandLifecycle(records: readonly Mt5CommandLifecycl
 
 /**
  * Determines what a restart is allowed to infer from durable command records.
- * It never treats a missing RESULT after SENT as rejection or success.
+ * It never treats a missing or ambiguous RESULT after SENT as rejection or success.
  */
 export function classifyMt5CommandRecovery(
   records: readonly Mt5CommandLifecycleRecord[],
@@ -143,6 +143,15 @@ export function classifyMt5CommandRecovery(
       if (outcome === undefined) {
         throw new Error('MT5 RESULT lifecycle record requires outcome');
       }
+
+      // RESULT is not synonymous with certainty. Once the irreversible SENT
+      // boundary was crossed, an ambiguous result still means the broker may
+      // have acted. Restart recovery must therefore consult authoritative MT5
+      // orders/deals/positions/history before any retry or terminal conclusion.
+      if (outcome === 'ambiguous' && records.some((record) => record.stage === 'SENT')) {
+        return { kind: 'must_reconcile', lastStage: 'SENT' };
+      }
+
       return {
         kind: 'resolved',
         outcome,
