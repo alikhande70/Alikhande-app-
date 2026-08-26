@@ -3,6 +3,44 @@
 This report records only work actually implemented on `gpt/trading-brain-build`.
 Architecture documents describe intent; this file describes delivery state.
 
+## 2026-08-26 — MT5 command lifecycle recovery contract
+
+### Implemented
+
+- Added a typed, testable reference lifecycle for MT5 commands: `RECEIVED → CHECKED → SENT → RESULT`.
+- The lifecycle is append-only and monotonic per request id and command. Duplicate/backwards stages, mixed request ids and command changes are rejected.
+- `SENT` is the irreversible boundary. A restart after `SENT` without a terminal `RESULT` is classified as `must_reconcile`; it is never inferred as either success or rejection.
+- A restart at `RECEIVED` or `CHECKED` is classified as safe-before-send because no broker side effect has been proven.
+- Deterministic rejection before send is supported, including the future `OrderCheck` failure path.
+- A mutating command cannot have an `accepted` result unless a durable `SENT` record exists first. This closes a self-audit finding where the original reference model could have represented an impossible successful trade lifecycle.
+- Read-only `snapshot` and `reconcile` commands are explicitly prevented from crossing the trade `SENT` side-effect boundary.
+- Added tests for normal completion, crash after send, safe pre-send recovery, pre-send rejection, illegal transitions, identity mixing, result shape, read-only commands and the accepted-result send invariant.
+
+### Verification performed
+
+- The first lifecycle CI run failed only on lint/format constraints; those findings were repaired rather than bypassed.
+- Final lifecycle CI completed successfully at `b3cc3c512222f760cd7e996cf14e8f3e77c16eb2` (workflow `verify`, run 52). Lint, TypeScript verification and the test suite passed.
+- This lifecycle is currently the **reference recovery contract on the desk side**. It is not yet fully wired into the EA's durable command spool.
+- `KeelAgent.mq5` still durably records the initial received command only. It does not yet persist structured `CHECKED`, `SENT`, and `RESULT` lifecycle records.
+- There is still no `OrderSend`/`OrderSendAsync` path in the EA, and no real-money execution has been enabled.
+- MQL5 source has **not** been compiled in MetaEditor in this environment.
+
+### Verification ladder impact
+
+- MT5 stage 1 — architecture reviewed: **done**.
+- MT5 stage 2 — implementation complete: **in progress**. The recovery semantics are now executable and tested on the TypeScript side; EA-side lifecycle persistence, `OrderCheck`, demo send, authoritative snapshot/reconcile and spool replay remain.
+- MT5 stage 3 — unit tested: **in progress**. The lifecycle/recovery contract is unit-tested; MQL5 compile/runtime verification remains external.
+- Stages 4–9: **not claimed**.
+
+### Next highest-priority work
+
+1. Implement the same structured lifecycle journal inside `KeelAgent.mq5`, preserving flush-before-side-effect ordering.
+2. Parse and independently validate the exact order payload in MQL5, then perform demo-only `OrderCheck` and persist `CHECKED` or a deterministic rejection.
+3. Only after `SENT` can be durably persisted immediately before the broker call, add a demo-only `OrderSend` boundary; never infer fill from the immediate return.
+4. Build authoritative snapshot/reconcile responses from active orders, positions, order history and deal history.
+5. Implement event-spool replay/watermark acknowledgement after reconnect.
+6. Run simulated crash tests at every lifecycle boundary, then compile/run in MetaEditor and validate against a LiteFinance demo account.
+
 ## 2026-08-26 — MT5 agent bridge stage B
 
 ### Implemented
