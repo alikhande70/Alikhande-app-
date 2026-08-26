@@ -1,9 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { Mt5HostInstrument } from './host-types.js';
-import {
-  Mt5InstrumentBinding,
-  Mt5InstrumentBindingError,
-} from './instrument-binding.js';
+import { Mt5InstrumentBinding, Mt5InstrumentBindingError } from './instrument-binding.js';
 import { Mt5SymbolMap } from './symbol-map.js';
 
 const RAW: Mt5HostInstrument = {
@@ -28,17 +25,14 @@ const RAW: Mt5HostInstrument = {
 
 describe('Mt5InstrumentBinding', () => {
   it('uses explicit symbol aliases and semantic metadata while preserving MT5 numeric facts', () => {
-    const binding = new Mt5InstrumentBinding(
-      new Mt5SymbolMap({ 'XAUUSD.x': 'XAUUSD' }),
-      {
-        XAUUSD: {
-          assetClass: 'metal',
-          base: 'XAU',
-          quote: 'USD',
-          venueTimeZone: 'Etc/UTC',
-        },
+    const binding = new Mt5InstrumentBinding(new Mt5SymbolMap({ 'XAUUSD.x': 'XAUUSD' }), {
+      XAUUSD: {
+        assetClass: 'metal',
+        base: 'XAU',
+        quote: 'USD',
+        venueTimeZone: 'Etc/UTC',
       },
-    );
+    });
 
     const spec = binding.toInstrumentSpec(RAW, 'hedging');
     expect(spec.symbol).toBe('XAUUSD.x');
@@ -57,17 +51,14 @@ describe('Mt5InstrumentBinding', () => {
   });
 
   it('does not trust semantic fields supplied by the host when explicit metadata disagrees', () => {
-    const binding = new Mt5InstrumentBinding(
-      new Mt5SymbolMap({ 'XAUUSD.x': 'XAUUSD' }),
-      {
-        XAUUSD: {
-          assetClass: 'commodity',
-          base: 'GOLD',
-          quote: 'USD',
-          venueTimeZone: 'Europe/Berlin',
-        },
+    const binding = new Mt5InstrumentBinding(new Mt5SymbolMap({ 'XAUUSD.x': 'XAUUSD' }), {
+      XAUUSD: {
+        assetClass: 'commodity',
+        base: 'GOLD',
+        quote: 'USD',
+        venueTimeZone: 'Europe/Berlin',
       },
-    );
+    });
 
     const spec = binding.toInstrumentSpec(RAW, 'netting');
     expect(spec.assetClass).toBe('commodity');
