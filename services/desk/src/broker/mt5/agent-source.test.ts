@@ -93,11 +93,11 @@ describe('KeelAgent source safety contract', () => {
     expect(reconcile).toContain('HistoryOrderGetTicket(i)');
     expect(reconcile).toContain('HistoryDealsTotal()');
     expect(reconcile).toContain('HistoryDealGetTicket(i)');
-    expect(reconcile).toContain('positionsScanned\\\":true');
-    expect(reconcile).toContain('ordersScanned\\\":true');
-    expect(reconcile).toContain('historySelected\\\":true');
-    expect(reconcile).toContain('historyFrom\\\"');
-    expect(reconcile).toContain('historyTo\\\"');
+    expect(reconcile).toContain('positionsScanned\\":true');
+    expect(reconcile).toContain('ordersScanned\\":true');
+    expect(reconcile).toContain('historySelected\\":true');
+    expect(reconcile).toContain('historyFrom\\"');
+    expect(reconcile).toContain('historyTo\\"');
     expect(reconcile).toContain('authoritative_reconcile_scan_failed');
     expect(reconcile).toContain('reconcile_exceeds_transport_limit');
   });
@@ -108,7 +108,7 @@ describe('KeelAgent source safety contract', () => {
     expect(reconcile).toContain('ORDER_STATE_CANCELED');
     expect(reconcile).toContain('ORDER_STATE_EXPIRED');
     expect(reconcile).toContain('HistoryOrderGetInteger(ticket,ORDER_STATE)');
-    expect(reconcile).toContain('orderState\\\"');
+    expect(reconcile).toContain('orderState\\"');
   });
 
   it('keeps duplicate command delivery fail-closed', async () => {
