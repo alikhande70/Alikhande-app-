@@ -67,14 +67,14 @@ describe('Mt5HostClient', () => {
   });
 
   it('refuses short host secrets', () => {
-    expect(
-      () => new Mt5HostClient({ baseUrl: 'http://127.0.0.1:8790', token: 'short' }),
-    ).toThrow(Mt5HostError);
+    expect(() => new Mt5HostClient({ baseUrl: 'http://127.0.0.1:8790', token: 'short' })).toThrow(
+      Mt5HostError,
+    );
   });
 
   it('refuses non-http host URLs', () => {
-    expect(
-      () => new Mt5HostClient({ baseUrl: 'file:///tmp/mt5', token: TOKEN }),
-    ).toThrow('must use http or https');
+    expect(() => new Mt5HostClient({ baseUrl: 'file:///tmp/mt5', token: TOKEN })).toThrow(
+      'must use http or https',
+    );
   });
 });
