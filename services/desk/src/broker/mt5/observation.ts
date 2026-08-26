@@ -87,10 +87,27 @@ export function inspectMt5Observation(
 
   const exact = candidates.filter((candidate) => candidate.magic === expectedMagic);
   if (exact.length > 0) {
+    const executionEvidence = exact.filter(
+      (candidate) => candidate.kind === 'deal' || candidate.kind === 'position',
+    );
+    if (executionEvidence.length > 0) {
+      return {
+        outcome: 'confirmed',
+        matches: exact,
+        evidence:
+          `MT5 state/history contains ${executionEvidence.length} execution object(s) ` +
+          'carrying the expected magic',
+      };
+    }
+
+    const orderStates = exact
+      .filter((candidate) => candidate.kind === 'order')
+      .map((candidate) => candidate.orderState ?? 'UNKNOWN');
     return {
-      outcome: 'confirmed',
-      matches: exact,
-      evidence: `MT5 state/history contains ${exact.length} object(s) carrying the expected magic`,
+      outcome: 'indeterminate',
+      reason:
+        `MT5 history contains the expected magic only on order evidence ` +
+        `[${orderStates.join(',')}]; an order proves venue receipt but does not by itself prove execution`,
     };
   }
 
