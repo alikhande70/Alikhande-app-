@@ -94,7 +94,9 @@ function optionalDecimal(value: RecordLike, key: string, path: string): string |
   const field = optionalString(value, key, path);
   if (field === undefined) return undefined;
   if (!/^-?(?:0|[1-9]\d*)(?:\.\d+)?$/.test(field)) {
-    throw new Mt5SnapshotValidationError(`${path}.${key} must be a plain decimal string when present`);
+    throw new Mt5SnapshotValidationError(
+      `${path}.${key} must be a plain decimal string when present`,
+    );
   }
   return field;
 }
