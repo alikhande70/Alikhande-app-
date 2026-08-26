@@ -1,4 +1,4 @@
-import type { Dec, InstrumentSpec, OrderState } from '@keel/core';
+import type { Dec, OrderState } from '@keel/core';
 import * as D from '@keel/core';
 import type {
   BrokerAccount,
@@ -16,13 +16,13 @@ import type {
 import { type Mt5HostClient, Mt5HostError } from './host-client.js';
 import type {
   Mt5HostAccount,
-  Mt5HostInstrument,
   Mt5HostOrder,
   Mt5HostPosition,
   Mt5HostSnapshot,
   Mt5HostSubmitResult,
 } from './host-types.js';
 import { magicForClientOrderId, magicToWire } from './identity.js';
+import { Mt5InstrumentBinding } from './instrument-binding.js';
 import { inspectMt5Observation } from './observation.js';
 
 export class Mt5AdapterError extends Error {
@@ -36,6 +36,12 @@ export interface Mt5AdapterOptions {
   readonly client: Mt5HostClient;
   /** Installation-specific high bits reserved by ADR-0015. */
   readonly systemPrefix: number;
+  /**
+   * One installation-wide binding for venue symbol -> canonical identity and
+   * semantic metadata. Every broker-facing object must flow through the same
+   * binding so a broker suffix cannot split one instrument into two identities.
+   */
+  readonly instrumentBinding: Mt5InstrumentBinding;
   /**
    * Demo is the only mode enabled by default. Contest/real must be named
    * explicitly, and real additionally requires allowRealTrading=true.
@@ -65,34 +71,6 @@ function mapOrderState(state: Mt5HostOrder['state']): OrderState {
   }
 }
 
-function mapInstrument(
-  raw: Mt5HostInstrument,
-  positionModel: 'netting' | 'hedging',
-): InstrumentSpec {
-  return {
-    symbol: raw.symbol,
-    canonical: raw.canonical,
-    assetClass: raw.assetClass,
-    base: raw.base,
-    quote: raw.quote,
-    digits: raw.digits,
-    tickSize: D.dec(raw.tickSize),
-    contractSize: D.dec(raw.contractSize),
-    minVolume: D.dec(raw.minVolume),
-    maxVolume: D.dec(raw.maxVolume),
-    volumeStep: D.dec(raw.volumeStep),
-    ...(raw.tickValueAccount === undefined
-      ? {}
-      : { tickValueAccount: D.dec(raw.tickValueAccount) }),
-    stopsLevel: D.dec(raw.stopsLevel),
-    freezeLevel: D.dec(raw.freezeLevel),
-    marginRate: D.dec(raw.marginRate),
-    positionModel,
-    venueTimeZone: raw.venueTimeZone,
-    asOf: raw.asOf,
-  };
-}
-
 function mapAccount(raw: Mt5HostAccount): BrokerAccount {
   return {
     currency: raw.currency,
@@ -104,10 +82,10 @@ function mapAccount(raw: Mt5HostAccount): BrokerAccount {
   };
 }
 
-function mapPosition(raw: Mt5HostPosition): BrokerPosition {
+function mapPosition(raw: Mt5HostPosition, binding: Mt5InstrumentBinding): BrokerPosition {
   return {
     positionId: raw.positionId,
-    canonical: raw.canonical,
+    canonical: binding.canonicalFor(raw.symbol, raw.canonical),
     symbol: raw.symbol,
     side: raw.side,
     volume: D.dec(raw.volume),
@@ -119,11 +97,15 @@ function mapPosition(raw: Mt5HostPosition): BrokerPosition {
   };
 }
 
-function mapOrder(raw: Mt5HostOrder, clientOrderId?: string): BrokerOrder {
+function mapOrder(
+  raw: Mt5HostOrder,
+  binding: Mt5InstrumentBinding,
+  clientOrderId?: string,
+): BrokerOrder {
   return {
     venueOrderId: raw.ticket,
     ...(clientOrderId === undefined ? {} : { clientOrderId }),
-    canonical: raw.canonical,
+    canonical: binding.canonicalFor(raw.symbol, raw.canonical),
     symbol: raw.symbol,
     side: raw.side,
     state: mapOrderState(raw.state),
@@ -136,9 +118,15 @@ function mapOrder(raw: Mt5HostOrder, clientOrderId?: string): BrokerOrder {
   };
 }
 
-function mapQuote(raw: Mt5HostSnapshot['quotes'][number]): BrokerQuote {
+function mapQuote(
+  raw: Mt5HostSnapshot['quotes'][number],
+  binding: Mt5InstrumentBinding,
+): BrokerQuote {
   return {
-    canonical: raw.canonical,
+    // Current agent protocol names this field `canonical`, but until aliases are
+    // applied it is the venue symbol. Running it through the same binding is the
+    // fail-closed way to avoid suffix drift across quote/position/order paths.
+    canonical: binding.canonicalFor(raw.canonical, raw.canonical),
     bid: D.dec(raw.bid),
     ask: D.dec(raw.ask),
     asOf: raw.asOf,
@@ -194,6 +182,7 @@ export class Mt5BrokerAdapter implements BrokerPort {
   readonly name = 'mt5';
   private readonly client: Mt5HostClient;
   private readonly systemPrefix: number;
+  private readonly instrumentBinding: Mt5InstrumentBinding;
   private readonly allowedTradeModes: ReadonlySet<Mt5HostAccount['tradeMode']>;
   private readonly allowRealTrading: boolean;
   private snapshotCache: Mt5HostSnapshot | undefined;
@@ -203,6 +192,7 @@ export class Mt5BrokerAdapter implements BrokerPort {
   constructor(options: Mt5AdapterOptions) {
     this.client = options.client;
     this.systemPrefix = options.systemPrefix;
+    this.instrumentBinding = options.instrumentBinding;
     this.allowedTradeModes = new Set(options.allowedTradeModes ?? ['demo']);
     this.allowRealTrading = options.allowRealTrading ?? false;
     if (this.allowedTradeModes.has('real') && !this.allowRealTrading) {
@@ -253,10 +243,10 @@ export class Mt5BrokerAdapter implements BrokerPort {
     return this.connected;
   }
 
-  async getInstruments(): Promise<readonly InstrumentSpec[]> {
+  async getInstruments() {
     const snapshot = await this.refreshConnected();
     return snapshot.instruments.map((instrument) =>
-      mapInstrument(instrument, snapshot.account.positionModel),
+      this.instrumentBinding.toInstrumentSpec(instrument, snapshot.account.positionModel),
     );
   }
 
@@ -265,22 +255,32 @@ export class Mt5BrokerAdapter implements BrokerPort {
   }
 
   async getPositions(): Promise<readonly BrokerPosition[]> {
-    return (await this.refreshConnected()).positions.map(mapPosition);
+    return (await this.refreshConnected()).positions.map((position) =>
+      mapPosition(position, this.instrumentBinding),
+    );
   }
 
   async getOpenOrders(): Promise<readonly BrokerOrder[]> {
-    return (await this.refreshConnected()).orders.map((order) => mapOrder(order));
+    return (await this.refreshConnected()).orders.map((order) =>
+      mapOrder(order, this.instrumentBinding),
+    );
   }
 
   async getQuote(canonical: string): Promise<BrokerQuote | undefined> {
-    const quote = (await this.refreshConnected()).quotes.find(
-      (candidate) => candidate.canonical === canonical,
+    const quotes = (await this.refreshConnected()).quotes.map((quote) =>
+      mapQuote(quote, this.instrumentBinding),
     );
-    return quote === undefined ? undefined : mapQuote(quote);
+    return quotes.find((candidate) => candidate.canonical === canonical);
   }
 
   async placeOrder(req: BrokerOrderRequest): Promise<BrokerSubmitResult> {
     this.assertCanTrade();
+    const resolvedCanonical = this.instrumentBinding.canonicalFor(req.symbol, req.canonical);
+    if (resolvedCanonical !== req.canonical) {
+      throw new Mt5AdapterError(
+        `order canonical '${req.canonical}' does not match configured MT5 binding '${resolvedCanonical}' for '${req.symbol}'`,
+      );
+    }
     const magic = magicToWire(magicForClientOrderId(req.clientOrderId, this.systemPrefix));
     try {
       return mapSubmit(
@@ -378,6 +378,14 @@ export class Mt5BrokerAdapter implements BrokerPort {
       return { found: 'indeterminate', reason: 'MT5 adapter is not connected' };
     }
 
+    const boundCanonical = this.instrumentBinding.canonicalFor(context.symbol, context.canonical);
+    if (boundCanonical !== context.canonical) {
+      return {
+        found: 'indeterminate',
+        reason: `recovery canonical '${context.canonical}' conflicts with configured MT5 binding '${boundCanonical}'`,
+      };
+    }
+
     const magic = magicToWire(magicForClientOrderId(clientOrderId, this.systemPrefix));
     let response: Awaited<ReturnType<Mt5HostClient['reconcile']>>;
     try {
@@ -445,7 +453,7 @@ export class Mt5BrokerAdapter implements BrokerPort {
     }
     const order = snapshot.orders.find((candidate) => candidate.magic === magic);
     if (order !== undefined) {
-      return { found: true, order: mapOrder(order, clientOrderId) };
+      return { found: true, order: mapOrder(order, this.instrumentBinding, clientOrderId) };
     }
 
     // A market order may already have disappeared from active orders. If the
