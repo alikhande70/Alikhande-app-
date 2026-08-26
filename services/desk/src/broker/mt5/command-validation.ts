@@ -54,7 +54,8 @@ function optionalText(value: Record<string, unknown>, key: string): string | und
 }
 
 const unsignedInteger = /^(0|[1-9][0-9]*)$/;
-const positiveDecimal = /^(?:0|[1-9][0-9]*)(?:\.[0-9]+)?$/;
+const nonNegativeDecimal = /^(?:0|[1-9][0-9]*)(?:\.[0-9]+)?$/;
+const zeroDecimal = /^0(?:\.0+)?$/;
 
 function unsigned(value: Record<string, unknown>, key: string): string {
   const field = text(value, key);
@@ -66,10 +67,10 @@ function unsigned(value: Record<string, unknown>, key: string): string {
 
 function decimal(value: Record<string, unknown>, key: string, allowZero = false): string {
   const field = text(value, key);
-  if (!positiveDecimal.test(field)) {
+  if (!nonNegativeDecimal.test(field)) {
     throw new Mt5CommandValidationError(`${key} must be a plain non-negative decimal string`);
   }
-  if (!allowZero && Number(field) <= 0) {
+  if (!allowZero && zeroDecimal.test(field)) {
     throw new Mt5CommandValidationError(`${key} must be greater than zero`);
   }
   return field;
@@ -78,7 +79,7 @@ function decimal(value: Record<string, unknown>, key: string, allowZero = false)
 function optionalDecimal(value: Record<string, unknown>, key: string): string | undefined {
   const field = optionalText(value, key);
   if (field === undefined) return undefined;
-  if (!positiveDecimal.test(field) || Number(field) <= 0) {
+  if (!nonNegativeDecimal.test(field) || zeroDecimal.test(field)) {
     throw new Mt5CommandValidationError(`${key} must be a positive plain decimal string`);
   }
   return field;
@@ -87,7 +88,9 @@ function optionalDecimal(value: Record<string, unknown>, key: string): string | 
 function finiteTime(value: Record<string, unknown>, key: string): number {
   const field = value[key];
   if (typeof field !== 'number' || !Number.isFinite(field) || field < 0) {
-    throw new Mt5CommandValidationError(`${key} must be a finite non-negative millisecond timestamp`);
+    throw new Mt5CommandValidationError(
+      `${key} must be a finite non-negative millisecond timestamp`,
+    );
   }
   return field;
 }
@@ -128,6 +131,9 @@ function validatePlaceOrder(payload: unknown): Mt5HostOrderRequest {
 
   const limitPrice = optionalDecimal(value, 'limitPrice');
   const stopTriggerPrice = optionalDecimal(value, 'stopTriggerPrice');
+  const stopLoss = optionalDecimal(value, 'stopLoss');
+  const takeProfit = optionalDecimal(value, 'takeProfit');
+  const maxSlippage = optionalDecimal(value, 'maxSlippage');
   if ((kind === 'limit' || kind === 'stop_limit') && limitPrice === undefined) {
     throw new Mt5CommandValidationError(`${kind} order requires limitPrice`);
   }
@@ -144,16 +150,10 @@ function validatePlaceOrder(payload: unknown): Mt5HostOrderRequest {
     volume: decimal(value, 'volume'),
     ...(limitPrice === undefined ? {} : { limitPrice }),
     ...(stopTriggerPrice === undefined ? {} : { stopTriggerPrice }),
-    ...(optionalDecimal(value, 'stopLoss') === undefined
-      ? {}
-      : { stopLoss: optionalDecimal(value, 'stopLoss') }),
-    ...(optionalDecimal(value, 'takeProfit') === undefined
-      ? {}
-      : { takeProfit: optionalDecimal(value, 'takeProfit') }),
+    ...(stopLoss === undefined ? {} : { stopLoss }),
+    ...(takeProfit === undefined ? {} : { takeProfit }),
     timeInForce: text(value, 'timeInForce'),
-    ...(optionalDecimal(value, 'maxSlippage') === undefined
-      ? {}
-      : { maxSlippage: optionalDecimal(value, 'maxSlippage') }),
+    ...(maxSlippage === undefined ? {} : { maxSlippage }),
   };
 }
 
@@ -204,7 +204,9 @@ function validateReconcile(payload: unknown): Mt5HostReconcileRequest {
   const sentNotBefore = finiteTime(value, 'sentNotBefore');
   const sentNotAfter = finiteTime(value, 'sentNotAfter');
   if (sentNotAfter < sentNotBefore) {
-    throw new Mt5CommandValidationError('sentNotAfter must be greater than or equal to sentNotBefore');
+    throw new Mt5CommandValidationError(
+      'sentNotAfter must be greater than or equal to sentNotBefore',
+    );
   }
   return {
     magic: unsigned(value, 'magic'),
