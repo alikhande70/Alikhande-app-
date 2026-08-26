@@ -269,18 +269,52 @@ export class Mt5BrokerAdapter implements BrokerPort {
     }
   }
 
+  /**
+   * What this build can actually do — not what MT5 could do in principle.
+   *
+   * The engine consults these to decide whether a behaviour is safe, so an
+   * aspirational value here is a lie that changes execution decisions. Today the
+   * agent implements snapshot and reconcile; `place_order` performs an
+   * OrderCheck preflight and deliberately never sends; cancel, modify and close
+   * answer "not enabled". The flags below say exactly that.
+   *
+   * They widen when the corresponding agent handlers exist, and not before.
+   */
   get capabilities(): BrokerCapabilities {
     return {
-      clientOrderId: 'emulated',
+      // Native, not emulated: the intent id lives in `magic`, a durable 64-bit
+      // field preserved into deals, positions and history. Calling it emulated
+      // would attach the comment-field truncation warning, which does not apply.
+      clientOrderId: 'native',
+      // Implemented on both sides: the desk searches by magic and the agent's
+      // reconcile handler answers.
       findByClientOrderId: true,
+      // OnTradeTransaction is an unordered, lossy hint queue (ADR-0015), and the
+      // agent does not forward fills as a stream.
       streamsFills: false,
-      atomicStopLoss: true,
-      partialFills: true,
-      supportsPartialClose: true,
+      // No OrderSend exists, so no stop is ever attached on fill. False is also
+      // the safe assumption: the engine will treat a new position as unprotected
+      // until it observes otherwise.
+      atomicStopLoss: false,
+      // Nothing can fill in this build.
+      partialFills: false,
+      // close_position is not implemented in the agent.
+      supportsPartialClose: false,
       serverTimeSource: 'broker',
       positionModel: this.snapshotCache?.account.positionModel ?? 'netting',
       maxOrdersPerSecond: 5,
     };
+  }
+
+  /**
+   * Whether this build can place an order at all.
+   *
+   * Deliberately false: `OrderSend` is absent from the agent by design until the
+   * foundation is validated against a real terminal. Exposed so callers can say
+   * so plainly rather than discovering it from an ambiguous result.
+   */
+  get executionEnabled(): boolean {
+    return false;
   }
 
   async connect(): Promise<void> {
