@@ -4,8 +4,8 @@ import {
   Mt5AgentLineDecoder,
   Mt5AgentProtocolError,
 } from './agent-protocol.js';
-import { Mt5CommandValidationError } from './command-validation.js';
 import { Mt5AgentDisconnectedError, Mt5AgentSession } from './agent-session.js';
+import { Mt5CommandValidationError } from './command-validation.js';
 
 function hello(token = '0123456789abcdef') {
   return decodeAgentMessage(
