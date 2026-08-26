@@ -47,12 +47,22 @@ function assertResultShape(record: Mt5CommandLifecycleRecord): void {
   }
 }
 
+function isMutatingCommand(command: Mt5CommandLifecycleRecord['command']): boolean {
+  return (
+    command === 'place_order' ||
+    command === 'cancel_order' ||
+    command === 'modify_position' ||
+    command === 'close_position'
+  );
+}
+
 /**
  * Validates an append-only lifecycle for one request id.
  *
- * The sequence intentionally permits RECEIVED -> RESULT and CHECKED -> RESULT because a
- * command may be rejected before any broker side effect. SENT is the irreversible boundary:
- * after it exists, loss of the final result is ambiguous and requires broker reconciliation.
+ * The sequence intentionally permits RECEIVED -> RESULT and CHECKED -> RESULT for rejection or
+ * ambiguity before any broker side effect. A successful mutating RESULT is only valid after SENT.
+ * SENT is the irreversible boundary: after it exists, loss of the final result is ambiguous and
+ * requires broker reconciliation.
  */
 export function validateMt5CommandLifecycle(records: readonly Mt5CommandLifecycleRecord[]): void {
   const first = records[0];
@@ -86,6 +96,11 @@ export function validateMt5CommandLifecycle(records: readonly Mt5CommandLifecycl
     }
     if (record.stage === 'RESULT' && previousRank < stageRank.RECEIVED) {
       throw new Error('MT5 RESULT cannot exist before RECEIVED');
+    }
+    if (record.stage === 'RESULT' && record.outcome === 'accepted' && isMutatingCommand(command)) {
+      if (!sawSent) {
+        throw new Error('MT5 accepted mutating RESULT requires a durable SENT record');
+      }
     }
     if (sawResult) {
       throw new Error('MT5 command lifecycle cannot advance after RESULT');
