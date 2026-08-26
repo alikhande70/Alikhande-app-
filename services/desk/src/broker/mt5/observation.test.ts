@@ -24,10 +24,10 @@ function observation(candidates: readonly Mt5EvidenceCandidate[]): Mt5ReconcileO
   };
 }
 
-function order(orderState: Mt5EvidenceCandidate['orderState']): Mt5EvidenceCandidate {
+function order(orderState: Mt5EvidenceCandidate['orderState'], ticket = '8001'): Mt5EvidenceCandidate {
   return {
     kind: 'order',
-    ticket: '8001',
+    ticket,
     magic: MAGIC,
     symbol: 'XAUUSD',
     side: 'buy',
@@ -54,16 +54,30 @@ function deal(): Mt5EvidenceCandidate {
 
 describe('inspectMt5Observation', () => {
   it.each(['REJECTED', 'CANCELLED', 'EXPIRED'] as const)(
-    'does not turn %s order-only history into execution evidence',
+    'positively resolves %s order-only history without claiming execution',
     (state) => {
       const verdict = inspectMt5Observation(MAGIC, fingerprint, observation([order(state)]));
-      expect(verdict).toMatchObject({ outcome: 'indeterminate' });
-      if (verdict.outcome === 'indeterminate') {
-        expect(verdict.reason).toContain(state);
-        expect(verdict.reason).toContain('does not by itself prove execution');
+      expect(verdict).toMatchObject({ outcome: 'terminal', venueState: state });
+      if (verdict.outcome === 'terminal') {
+        expect(verdict.order.ticket).toBe('8001');
+        expect(verdict.evidence).toContain(state);
       }
     },
   );
+
+  it('keeps a FILLED historical order without deal/position evidence indeterminate', () => {
+    const verdict = inspectMt5Observation(MAGIC, fingerprint, observation([order('FILLED')]));
+    expect(verdict).toMatchObject({ outcome: 'indeterminate' });
+  });
+
+  it('keeps conflicting terminal order evidence indeterminate', () => {
+    const verdict = inspectMt5Observation(
+      MAGIC,
+      fingerprint,
+      observation([order('REJECTED', '8001'), order('CANCELLED', '8002')]),
+    );
+    expect(verdict).toMatchObject({ outcome: 'indeterminate' });
+  });
 
   it('requires orderState on order evidence', () => {
     const invalid = {
