@@ -4,6 +4,7 @@ import { describe, expect, it } from 'vitest';
 const sourceUrl = new URL('../../../../../mt5/KeelAgent.mq5', import.meta.url);
 const orderCheckUrl = new URL('../../../../../mt5/KeelOrderCheck.mqh', import.meta.url);
 const snapshotUrl = new URL('../../../../../mt5/KeelSnapshot.mqh', import.meta.url);
+const reconcileUrl = new URL('../../../../../mt5/KeelReconcile.mqh', import.meta.url);
 
 async function agentSource(): Promise<string> {
   return readFile(sourceUrl, 'utf8');
@@ -15,6 +16,10 @@ async function orderCheckSource(): Promise<string> {
 
 async function snapshotSource(): Promise<string> {
   return readFile(snapshotUrl, 'utf8');
+}
+
+async function reconcileSource(): Promise<string> {
+  return readFile(reconcileUrl, 'utf8');
 }
 
 describe('KeelAgent source safety contract', () => {
@@ -47,11 +52,12 @@ describe('KeelAgent source safety contract', () => {
     expect(precheck).toContain('order_check_passed_execution_not_enabled');
   });
 
-  it('preserves the no-send boundary after adding preflight', async () => {
+  it('preserves the no-send boundary after adding preflight and reconciliation', async () => {
     const source = await agentSource();
     const precheck = await orderCheckSource();
     const snapshot = await snapshotSource();
-    const combined = `${source}\n${precheck}\n${snapshot}`;
+    const reconcile = await reconcileSource();
+    const combined = `${source}\n${precheck}\n${snapshot}\n${reconcile}`;
     expect(combined).toContain('execution_is_demo_only');
     expect(combined).not.toContain('OrderSend(');
     expect(combined).not.toContain('OrderSendAsync(');
@@ -77,9 +83,27 @@ describe('KeelAgent source safety contract', () => {
     expect(snapshot).not.toContain('HistorySelect(');
   });
 
-  it('keeps reconciliation disabled until bounded history coverage is implemented', async () => {
+  it('reconciles from current positions/orders plus explicitly bounded order and deal history', async () => {
     const source = await agentSource();
-    expect(source).toContain('authoritative_reconcile_history_not_enabled_yet');
+    const reconcile = await reconcileSource();
+    expect(source).toContain('#include "KeelReconcile.mqh"');
+    expect(source).toContain('KeelHandleReconcile(line,request_id)');
+    expect(reconcile).toContain('HistorySelect(history_from,history_to)');
+    expect(reconcile).toContain('HistoryOrdersTotal()');
+    expect(reconcile).toContain('HistoryOrderGetTicket(i)');
+    expect(reconcile).toContain('HistoryDealsTotal()');
+    expect(reconcile).toContain('HistoryDealGetTicket(i)');
+    expect(reconcile).toContain('positionsScanned\\\":true');
+    expect(reconcile).toContain('ordersScanned\\\":true');
+    expect(reconcile).toContain('historySelected\\\":true');
+    expect(reconcile).toContain('historyFrom\\\"');
+    expect(reconcile).toContain('historyTo\\\"');
+    expect(reconcile).toContain('authoritative_reconcile_scan_failed');
+    expect(reconcile).toContain('reconcile_exceeds_transport_limit');
+  });
+
+  it('keeps duplicate command delivery fail-closed', async () => {
+    const source = await agentSource();
     expect(source).toContain('request_already_received_requires_reconciliation');
   });
 });
