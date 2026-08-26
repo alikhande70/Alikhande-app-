@@ -67,6 +67,28 @@ describe('MT5 command lifecycle', () => {
     });
   });
 
+  it('forbids accepted mutating results before the durable SENT boundary', () => {
+    expect(() =>
+      validateMt5CommandLifecycle([
+        record('RECEIVED', 10),
+        record('CHECKED', 20),
+        record('RESULT', 30, { outcome: 'accepted' }),
+      ]),
+    ).toThrow(/accepted mutating RESULT requires a durable SENT/);
+  });
+
+  it('allows read-only commands to resolve without crossing the SENT boundary', () => {
+    for (const command of ['snapshot', 'reconcile'] as const) {
+      expect(() =>
+        validateMt5CommandLifecycle([
+          record('RECEIVED', 10, { command }),
+          record('CHECKED', 20, { command }),
+          record('RESULT', 30, { command, outcome: 'accepted' }),
+        ]),
+      ).not.toThrow();
+    }
+  });
+
   it('rejects duplicate and backwards lifecycle records', () => {
     expect(() =>
       validateMt5CommandLifecycle([
