@@ -9,6 +9,7 @@ import {
   type Mt5AgentTransactionMessage,
   type Mt5DeskCommandMessage,
 } from './agent-protocol.js';
+import { validateMt5Command } from './command-validation.js';
 import type { Mt5HostSubmitResult } from './host-types.js';
 
 export interface Mt5AgentTransport {
@@ -145,13 +146,14 @@ export class Mt5AgentSession {
       throw new Mt5AgentDisconnectedError('MT5 agent heartbeat is stale or terminal disconnected');
     }
 
+    const validated = validateMt5Command(command, payload);
     const requestId = randomUUID();
     const message: Mt5DeskCommandMessage = {
       type: 'command',
       protocolVersion: 1,
       requestId,
-      command,
-      payload,
+      command: validated.command,
+      payload: validated.payload,
     };
 
     return new Promise<Mt5HostSubmitResult>((resolve, reject) => {
