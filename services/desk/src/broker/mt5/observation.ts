@@ -98,11 +98,7 @@ export function inspectMt5Observation(
       reason: 'MT5 terminal was disconnected during reconciliation',
     };
   }
-  if (
-    !observation.positionsScanned ||
-    !observation.ordersScanned ||
-    !observation.historySelected
-  ) {
+  if (!observation.positionsScanned || !observation.ordersScanned || !observation.historySelected) {
     return {
       outcome: 'indeterminate',
       reason: 'MT5 reconciliation did not successfully scan positions, orders, and history',
