@@ -4,6 +4,7 @@ import {
   Mt5AgentLineDecoder,
   Mt5AgentProtocolError,
 } from './agent-protocol.js';
+import { Mt5CommandValidationError } from './command-validation.js';
 import { Mt5AgentDisconnectedError, Mt5AgentSession } from './agent-session.js';
 
 function hello(token = '0123456789abcdef') {
@@ -34,6 +35,21 @@ function heartbeat(eventSeq = '1', at = Date.now()) {
       at,
     }),
   );
+}
+
+function validMarketOrder() {
+  return {
+    clientOrderId: 'intent-123',
+    magic: '700000000001',
+    symbol: 'XAUUSD',
+    side: 'buy' as const,
+    kind: 'market' as const,
+    volume: '0.10',
+    stopLoss: '2310.50',
+    takeProfit: '2350.50',
+    timeInForce: 'GTC',
+    maxSlippage: '0.50',
+  };
 }
 
 describe('MT5 agent protocol', () => {
@@ -169,6 +185,21 @@ describe('MT5 agent session', () => {
     await expect(pending).resolves.toMatchObject({ outcome: 'ambiguous', serverTime: 2 });
   });
 
+  it('rejects malformed commands before transport write', async () => {
+    const write = vi.fn();
+    const session = new Mt5AgentSession(
+      { write, close: vi.fn() },
+      { token: '0123456789abcdef', commandTimeoutMs: 100 },
+    );
+    session.receive(hello());
+    session.receive(heartbeat());
+
+    await expect(session.command('place_order', { symbol: 'XAUUSD' })).rejects.toBeInstanceOf(
+      Mt5CommandValidationError,
+    );
+    expect(write).not.toHaveBeenCalled();
+  });
+
   it('rejects outstanding commands on disconnect instead of pretending they failed at venue', async () => {
     const session = new Mt5AgentSession(
       { write: vi.fn(), close: vi.fn() },
@@ -176,7 +207,7 @@ describe('MT5 agent session', () => {
     );
     session.receive(hello());
     session.receive(heartbeat());
-    const pending = session.command('place_order', { symbol: 'XAUUSD' });
+    const pending = session.command('place_order', validMarketOrder());
     session.disconnect('socket dropped after send');
     await expect(pending).rejects.toThrow('socket dropped after send');
   });
