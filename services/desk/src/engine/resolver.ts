@@ -1,7 +1,9 @@
 import type { OrderState } from '@keel/core';
+import * as D from '@keel/core';
 import type { Database as Db } from 'better-sqlite3';
 import type { Logger } from 'pino';
-import type { BrokerPort } from '../broker/port.js';
+import type { BrokerLookupContext, BrokerPort } from '../broker/port.js';
+import type { OrderIntent } from '../ledger/events.js';
 import type { Ledger } from '../ledger/ledger.js';
 import type { Projector } from '../ledger/projections.js';
 import type { Clock } from '../sim/clock.js';
@@ -145,7 +147,13 @@ export class UnknownResolver {
 
     let lookup: Awaited<ReturnType<BrokerPort['findByClientOrderId']>>;
     try {
-      lookup = await broker.findByClientOrderId(job.clientOrderId);
+      // Native-id venues can ignore the second argument. Emulated-id venues
+      // such as MT5 need it to recover from a restart without relying on an
+      // adapter cache that died with the old process.
+      lookup = await broker.findByClientOrderId(
+        job.clientOrderId,
+        lookupContextForIntent(this.deps.ledger, job.intentId),
+      );
     } catch (err) {
       lookup = {
         found: 'indeterminate',
@@ -211,6 +219,57 @@ export class UnknownResolver {
 
     this.schedule(job);
   }
+}
+
+/**
+ * Rebuild the evidence an emulated-id venue needs from durable facts only.
+ *
+ * The interval begins at `submit.started` (immediately before transport) and
+ * ends at the latest persisted order event. For an ambiguous send that is the
+ * timeout/socket-failure observation. A wider interval can create more fallback
+ * candidates, which safely degrades to INDETERMINATE; a narrower interval could
+ * exclude the actual execution and is therefore forbidden.
+ */
+export function lookupContextForIntent(
+  ledger: Ledger,
+  intentId: string,
+): BrokerLookupContext | undefined {
+  const intentRow = ledger.db
+    .prepare("SELECT payload FROM ledger WHERE stream = ? AND kind = 'intent.created' LIMIT 1")
+    .get(intentId) as { payload: string } | undefined;
+  if (intentRow === undefined) return undefined;
+
+  const parsed = JSON.parse(intentRow.payload) as { kind?: string; intent?: OrderIntent };
+  const intent = parsed.intent;
+  if (parsed.kind !== 'intent.created' || intent === undefined) return undefined;
+
+  const eventRows = ledger.db
+    .prepare("SELECT payload FROM ledger WHERE stream = ? AND kind = 'order.event' ORDER BY seq ASC")
+    .all(intentId) as Array<{ payload: string }>;
+
+  let sentNotBefore: number | undefined;
+  let sentNotAfter: number | undefined;
+  for (const row of eventRows) {
+    const event = JSON.parse(row.payload) as { event?: { type?: string; at?: number } };
+    const orderEvent = event.event;
+    if (orderEvent === undefined || typeof orderEvent.at !== 'number') continue;
+    if (orderEvent.type === 'submit.started' && sentNotBefore === undefined) {
+      sentNotBefore = orderEvent.at;
+    }
+    if (sentNotBefore !== undefined && orderEvent.at >= sentNotBefore) {
+      sentNotAfter = Math.max(sentNotAfter ?? sentNotBefore, orderEvent.at);
+    }
+  }
+
+  if (sentNotBefore === undefined) return undefined;
+  return {
+    canonical: intent.canonical,
+    symbol: intent.symbol,
+    side: intent.side,
+    volume: D.dec(intent.volume),
+    sentNotBefore,
+    sentNotAfter: sentNotAfter ?? sentNotBefore,
+  };
 }
 
 /** Find every order that needs resolution after a restart. */
