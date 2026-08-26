@@ -3,7 +3,7 @@
 //|  Loopback-only MT5 bridge for the Keel personal trading system. |
 //+------------------------------------------------------------------+
 #property strict
-#property version   "0.4.0"
+#property version   "0.5.0"
 #property description "Keel MT5 bridge. Add 127.0.0.1 to Tools > Options > Expert Advisors > allowed addresses before use."
 
 input string InpDeskHost = "127.0.0.1";
@@ -267,6 +267,7 @@ void SendRejectedResult(const string request_id,const string reason)
 
 #include "KeelOrderCheck.mqh"
 #include "KeelSnapshot.mqh"
+#include "KeelReconcile.mqh"
 
 void HandleCommandLine(const string line)
   {
@@ -295,7 +296,6 @@ void HandleCommandLine(const string line)
       return;
      }
 
-   // RECEIVED is flushed before any check or broker-facing action.
    if(!AppendCommandReceipt(line))
      {
       SendAmbiguousResult(request_id,"command_receipt_not_durable");
@@ -305,17 +305,19 @@ void HandleCommandLine(const string line)
 
    if(command=="place_order")
      {
-      // Demo-only preflight. This performs OrderCheck and persists CHECKED/RESULT,
-      // but deliberately has no OrderSend path yet.
       HandlePlaceOrderPrecheck(line,request_id);
       return;
      }
 
    if(command=="snapshot")
      {
-      // Snapshot is read-only and may run on any account mode. It fails closed if
-      // terminal/account/current-state reads are incomplete.
       KeelSendAuthoritativeSnapshot(request_id);
+      return;
+     }
+
+   if(command=="reconcile")
+     {
+      KeelHandleReconcile(line,request_id);
       return;
      }
 
@@ -329,10 +331,6 @@ void HandleCommandLine(const string line)
       SendAmbiguousResult(request_id,"execution_stage_not_enabled_yet");
       return;
      }
-
-   // Reconciliation is intentionally not faked with current-state-only data. It
-   // needs a bounded HistorySelect window that proves coverage of the send time.
-   SendAmbiguousResult(request_id,"authoritative_reconcile_history_not_enabled_yet");
   }
 
 void ReceiveCommands()
