@@ -3,6 +3,40 @@
 This report records only work actually implemented on `gpt/trading-brain-build`.
 Architecture documents describe intent; this file describes delivery state.
 
+## 2026-08-26 — MT5 agent bridge stage B
+
+### Implemented
+
+- `KeelAgent.mq5` now receives newline-delimited desk commands over the authenticated loopback socket using `SocketIsReadable`/`SocketRead`.
+- Added a bounded receive buffer and allowlisted command envelope parsing for protocol version, request id and command name.
+- Every accepted command is written and `FileFlush`ed to `Keel\\agent-commands.ndjson` **before** it can advance toward any broker side effect.
+- Request ids are restored from that journal on EA restart. A replayed request is never executed again; it is reported as ambiguous and requires authoritative reconciliation.
+- Trading commands remain hard-gated to demo accounts, and execution is still intentionally disabled in this stage. There is no `OrderSend` or `OrderSendAsync` call in the EA.
+- Snapshot/reconcile commands deliberately return ambiguity instead of fabricating an empty account snapshot. A false "no orders/no positions" response would be more dangerous than an unavailable response.
+- Added a repository test that locks the EA safety contract: bounded socket receive exists, durable receipt precedes the execution gate, the demo-only guard exists, and no order-send call can appear unnoticed.
+
+### Verification performed
+
+- Previous CI at `c715206e8ae952356ac850bf9c37a0213c52da83` was green.
+- Repository CI was triggered for the stage-B source and safety-contract test. The final conclusion must be checked before this stage is treated as green.
+- MQL5 source has **not** been compiled in MetaEditor in this environment. Source-level verification is not a substitute for a real MetaEditor compile.
+
+### Verification ladder impact
+
+- MT5 stage 1 — architecture reviewed: **done**.
+- MT5 stage 2 — implementation complete: **in progress**. Adapter + authenticated bridge + durable command receipt now exist; broker preflight/send, authoritative snapshot/reconcile, spool replay acknowledgements and terminal validation remain.
+- MT5 stage 3 — unit tested: **in progress**. TypeScript and source-safety tests exist; MQL5 compile/runtime verification remains external.
+- Stages 4–9: **not claimed**.
+
+### Next highest-priority work
+
+1. Add a durable command state machine (`RECEIVED → CHECKED → SENT → RESULT`) so a crash at every boundary has an explicit recovery meaning.
+2. Parse and independently validate the exact order payload in MQL5, then run `OrderCheck` on demo only.
+3. Only after the pre-send journal state is flushed, add the demo-only `OrderSend` boundary and classify the immediate return without inferring a fill.
+4. Build authoritative snapshot/reconcile responses from active orders, positions, order history and deal history.
+5. Implement event-spool replay/watermark acknowledgement after reconnect.
+6. After simulated chaos tests pass, compile/run against a real MT5 terminal and then a LiteFinance demo account.
+
 ## 2026-08-26 — MT5 agent bridge stage A
 
 ### Implemented
