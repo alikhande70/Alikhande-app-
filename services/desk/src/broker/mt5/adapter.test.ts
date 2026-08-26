@@ -97,7 +97,8 @@ describe('Mt5BrokerAdapter', () => {
       XAUUSD: { assetClass: 'metal', base: 'XAU', quote: 'USD', venueTimeZone: 'Etc/UTC' },
     });
     const baseInstrument = snapshot().instruments[0];
-    if (baseInstrument === undefined) throw new Error('test fixture must contain XAUUSD instrument');
+    if (baseInstrument === undefined)
+      throw new Error('test fixture must contain XAUUSD instrument');
     const aliased = snapshot({
       instruments: [{ ...baseInstrument, symbol: 'XAUUSD.x', canonical: 'XAUUSD.x' }],
       positions: [
