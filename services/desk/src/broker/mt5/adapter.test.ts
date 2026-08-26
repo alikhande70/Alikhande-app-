@@ -96,8 +96,10 @@ describe('Mt5BrokerAdapter', () => {
     const binding = new Mt5InstrumentBinding(new Mt5SymbolMap({ 'XAUUSD.x': 'XAUUSD' }), {
       XAUUSD: { assetClass: 'metal', base: 'XAU', quote: 'USD', venueTimeZone: 'Etc/UTC' },
     });
+    const baseInstrument = snapshot().instruments[0];
+    if (baseInstrument === undefined) throw new Error('test fixture must contain XAUUSD instrument');
     const aliased = snapshot({
-      instruments: [{ ...snapshot().instruments[0]!, symbol: 'XAUUSD.x', canonical: 'XAUUSD.x' }],
+      instruments: [{ ...baseInstrument, symbol: 'XAUUSD.x', canonical: 'XAUUSD.x' }],
       positions: [
         {
           ticket: '10',
@@ -124,9 +126,7 @@ describe('Mt5BrokerAdapter', () => {
           createdAt: 1_700_000_000_000,
         },
       ],
-      quotes: [
-        { canonical: 'XAUUSD.x', bid: '2500.10', ask: '2500.30', asOf: 1_700_000_000_000 },
-      ],
+      quotes: [{ canonical: 'XAUUSD.x', bid: '2500.10', ask: '2500.30', asOf: 1_700_000_000_000 }],
     });
     const adapter = adapterWith(async () => ({ status: 200, body: aliased }), binding);
     await adapter.connect();
