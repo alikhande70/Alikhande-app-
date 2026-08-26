@@ -411,6 +411,22 @@ export class Mt5BrokerAdapter implements BrokerPort {
     if (verdict.outcome === 'negative') {
       return { found: false, evidence: verdict.evidence };
     }
+    if (verdict.outcome === 'terminal') {
+      return {
+        found: true,
+        order: {
+          venueOrderId: verdict.order.ticket,
+          clientOrderId,
+          canonical: context.canonical,
+          symbol: context.symbol,
+          side: context.side,
+          state: verdict.venueState,
+          requestedQty: context.volume,
+          filledQty: D.rescale(D.ZERO, context.volume.s),
+          createdAt: verdict.order.serverTime,
+        },
+      };
+    }
     if (verdict.outcome === 'probable') {
       return { found: 'indeterminate', reason: verdict.reason };
     }
