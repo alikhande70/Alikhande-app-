@@ -24,7 +24,10 @@ function observation(candidates: readonly Mt5EvidenceCandidate[]): Mt5ReconcileO
   };
 }
 
-function order(orderState: Mt5EvidenceCandidate['orderState'], ticket = '8001'): Mt5EvidenceCandidate {
+function order(
+  orderState: Mt5EvidenceCandidate['orderState'],
+  ticket = '8001',
+): Mt5EvidenceCandidate {
   return {
     kind: 'order',
     ticket,
