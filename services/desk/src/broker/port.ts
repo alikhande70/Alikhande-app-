@@ -102,6 +102,24 @@ export interface BrokerOrderRequest {
 }
 
 /**
+ * Durable evidence the resolver can reconstruct after a process restart.
+ *
+ * Native-id venues can ignore this. MT5 cannot: its `magic` is emulated and a
+ * broker may fail to preserve it through every lifecycle transition, so safe
+ * recovery also needs the original symbol/side/volume and the complete send
+ * window. The context comes from the append-only ledger, never from adapter
+ * memory, because adapter memory is exactly what a restart destroys.
+ */
+export interface BrokerLookupContext {
+  readonly canonical: string;
+  readonly symbol: string;
+  readonly side: 'buy' | 'sell';
+  readonly volume: Dec;
+  readonly sentNotBefore: number;
+  readonly sentNotAfter: number;
+}
+
+/**
  * The result of a submission.
  *
  * `ambiguous` is the whole point of this type existing. An adapter must return
@@ -193,8 +211,12 @@ export interface BrokerPort {
    * Locate an order by our id. Required for safe recovery from an ambiguous
    * send; adapters that cannot do this declare `findByClientOrderId: false`
    * and the engine disables automatic retry for them.
+   *
+   * `context` is optional for native-id venues, but allows emulated-id venues
+   * such as MT5 to reconstruct fallback evidence after a restart without any
+   * in-memory dependency.
    */
-  findByClientOrderId(clientOrderId: string): Promise<LookupResult>;
+  findByClientOrderId(clientOrderId: string, context?: BrokerLookupContext): Promise<LookupResult>;
 
   on(handler: BrokerEventHandler): () => void;
 }
