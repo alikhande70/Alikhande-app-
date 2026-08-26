@@ -41,6 +41,23 @@ function validSnapshot(): Record<string, unknown> {
         asOf: 1_777_000_000_000,
       },
     ],
+    instrumentFacts: [
+      {
+        symbol: 'XAUUSD.x',
+        digits: 2,
+        point: '0.01',
+        tickSize: '0.01',
+        contractSize: '100',
+        minVolume: '0.01',
+        maxVolume: '100',
+        volumeStep: '0.01',
+        tickValueAccount: '1.00',
+        stopsLevel: '0.00',
+        freezeLevel: '0.00',
+        tradeMode: 4,
+        asOf: 1_777_000_000_000,
+      },
+    ],
     positions: [
       {
         ticket: '9007199254740993',
@@ -89,12 +106,22 @@ describe('validateMt5HostSnapshot', () => {
     expect(snapshot.positions[0]?.ticket).toBe('9007199254740993');
     expect(snapshot.positions[0]?.magic).toBe('18446744073709551615');
     expect(snapshot.account.tradeMode).toBe('demo');
+    expect(snapshot.instrumentFacts?.[0]?.symbol).toBe('XAUUSD.x');
+    expect(snapshot.instrumentFacts?.[0]?.tickSize).toBe('0.01');
   });
 
   it('rejects an incomplete snapshot instead of treating missing arrays as empty truth', () => {
     const snapshot = validSnapshot();
     delete snapshot.positions;
     expect(() => validateMt5HostSnapshot(snapshot)).toThrow(/snapshot\.positions must be an array/);
+  });
+
+  it('rejects malformed instrument facts instead of inventing a broker spec', () => {
+    const snapshot = validSnapshot();
+    const facts = snapshot.instrumentFacts as Array<Record<string, unknown>>;
+    if (facts[0] === undefined) throw new Error('fixture missing instrument facts');
+    facts[0].tickSize = '1e-2';
+    expect(() => validateMt5HostSnapshot(snapshot)).toThrow(/plain decimal string/);
   });
 
   it('rejects unsafe MT5 identifiers outside uint64 range', () => {
