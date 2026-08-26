@@ -21,6 +21,28 @@ export interface Mt5HostAccount {
   readonly asOf: number;
 }
 
+/**
+ * Numerical facts read directly from MT5 SymbolInfo*. These are deliberately
+ * separate from Mt5HostInstrument because MT5 cannot prove Keel's semantic
+ * asset metadata and because margin is request-specific (OrderCalcMargin), not
+ * a trustworthy single instrument constant.
+ */
+export interface Mt5HostInstrumentFacts {
+  readonly symbol: string;
+  readonly digits: number;
+  readonly point: string;
+  readonly tickSize: string;
+  readonly contractSize: string;
+  readonly minVolume: string;
+  readonly maxVolume: string;
+  readonly volumeStep: string;
+  readonly tickValueAccount?: string;
+  readonly stopsLevel: string;
+  readonly freezeLevel: string;
+  readonly tradeMode: number;
+  readonly asOf: number;
+}
+
 export interface Mt5HostInstrument {
   readonly symbol: string;
   readonly canonical: string;
@@ -93,7 +115,10 @@ export interface Mt5HostSnapshot {
   readonly terminalConnected: boolean;
   readonly tradeAllowed: boolean;
   readonly account: Mt5HostAccount;
+  /** Transitional semantic specs; do not populate from guessed MT5 metadata. */
   readonly instruments: readonly Mt5HostInstrument[];
+  /** Raw, broker-observed numerical instrument facts suitable for later explicit binding. */
+  readonly instrumentFacts?: readonly Mt5HostInstrumentFacts[];
   readonly positions: readonly Mt5HostPosition[];
   readonly orders: readonly Mt5HostOrder[];
   readonly quotes: readonly Mt5HostQuote[];
