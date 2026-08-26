@@ -28,6 +28,7 @@ export interface Mt5AgentHeartbeat {
 
 export interface Mt5AgentSnapshotMessage {
   readonly type: 'snapshot';
+  readonly requestId: string;
   readonly eventSeq: string;
   readonly snapshot: Mt5HostSnapshot;
 }
@@ -175,6 +176,7 @@ export function decodeAgentMessage(line: string): Mt5AgentMessage {
       }
       return {
         type: 'snapshot',
+        requestId: requiredString(parsed, 'requestId'),
         eventSeq: parseSequence(parsed),
         snapshot: parsed.snapshot as unknown as Mt5HostSnapshot,
       };
