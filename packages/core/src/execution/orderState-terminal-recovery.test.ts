@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import * as D from '../money/decimal.js';
-import { applyOrderEvent, CERTAINTY, newOrderRecord } from './orderState.js';
 import type { OrderEvent, OrderRecord } from './orderState.js';
+import { applyOrderEvent, CERTAINTY, newOrderRecord } from './orderState.js';
 
 const T = 1_000_000;
 const d = D.dec;
