@@ -126,7 +126,9 @@ function parseCandidate(value: unknown, index: number): Mt5EvidenceCandidate {
 
   if (kind === 'order') {
     if (rawOrderState === undefined || !ORDER_STATES.has(rawOrderState as Mt5EvidenceOrderState)) {
-      throw new Mt5ReconcileValidationError(`${path}.orderState is required and must be recognised`);
+      throw new Mt5ReconcileValidationError(
+        `${path}.orderState is required and must be recognised`,
+      );
     }
     orderState = rawOrderState as Mt5EvidenceOrderState;
   } else if (rawOrderState !== undefined) {
