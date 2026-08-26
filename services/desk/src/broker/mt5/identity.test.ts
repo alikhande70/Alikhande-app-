@@ -1,10 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import {
   hasSystemPrefix,
+  Mt5IdentityError,
   magicForClientOrderId,
   magicFromWire,
   magicToWire,
-  Mt5IdentityError,
   validateSystemPrefix,
 } from './identity.js';
 
