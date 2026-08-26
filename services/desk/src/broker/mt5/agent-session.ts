@@ -129,7 +129,7 @@ export class Mt5AgentSession {
     const heartbeat = this.heartbeatMessage;
     return (
       this.isAuthenticated() &&
-      heartbeat?.terminalConnected &&
+      heartbeat?.terminalConnected === true &&
       now - heartbeat.at <= this.heartbeatStaleMs
     );
   }
