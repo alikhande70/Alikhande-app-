@@ -156,6 +156,7 @@ function parseInstrument(value: unknown, index: number): Mt5HostInstrument {
   const row = record(value, path);
   const assetClass = oneOf<Mt5HostInstrument['assetClass']>(row, 'assetClass', path, ASSET_CLASSES);
   const digits = numberField(row, 'digits', path);
+  const tickValueAccount = optionalDecimal(row, 'tickValueAccount', path);
   if (!Number.isInteger(digits) || digits > 20) {
     throw new Mt5SnapshotValidationError(`${path}.digits must be an integer between 0 and 20`);
   }
@@ -171,9 +172,7 @@ function parseInstrument(value: unknown, index: number): Mt5HostInstrument {
     minVolume: decimalText(row, 'minVolume', path),
     maxVolume: decimalText(row, 'maxVolume', path),
     volumeStep: decimalText(row, 'volumeStep', path),
-    ...(optionalDecimal(row, 'tickValueAccount', path) === undefined
-      ? {}
-      : { tickValueAccount: optionalDecimal(row, 'tickValueAccount', path) }),
+    ...(tickValueAccount === undefined ? {} : { tickValueAccount }),
     stopsLevel: decimalText(row, 'stopsLevel', path),
     freezeLevel: decimalText(row, 'freezeLevel', path),
     marginRate: decimalText(row, 'marginRate', path),
