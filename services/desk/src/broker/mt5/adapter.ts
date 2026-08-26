@@ -24,7 +24,7 @@ import type {
 } from './host-types.js';
 import { magicForClientOrderId, magicToWire } from './identity.js';
 import type { Mt5InstrumentBinding } from './instrument-binding.js';
-import { inspectMt5Observation } from './observation.js';
+import { classifyMt5Evidence } from './observation.js';
 
 export class Mt5AdapterError extends Error {
   constructor(message: string) {
@@ -472,7 +472,7 @@ export class Mt5BrokerAdapter implements BrokerPort {
       };
     }
 
-    const verdict = inspectMt5Observation(
+    const verdict = classifyMt5Evidence(
       magic,
       {
         symbol: context.symbol,

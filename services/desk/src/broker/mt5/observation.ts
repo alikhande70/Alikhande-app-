@@ -54,10 +54,24 @@ function sameFingerprint(candidate: Mt5EvidenceCandidate, expected: Mt5Fingerpri
   );
 }
 
+/**
+ * Identity of the *execution* a candidate belongs to.
+ *
+ * The two branches draw from different id spaces, so they must be namespaced
+ * apart. They were not: a candidate carrying `positionId: "4"` and a candidate
+ * of kind `position` with `ticket: "4"` both produced `position:4`, collapsing
+ * two distinct executions into one group. The classifier then reported a
+ * duplicate execution as a clean `confirmed` fill -- the exact failure the
+ * grouping exists to prevent.
+ *
+ * Found by the invariant property test, not by any fixture: it needs one
+ * candidate with a position id and another whose ticket happens to equal it,
+ * which no hand-written example contained.
+ */
 function groupKey(candidate: Mt5EvidenceCandidate): string {
   return candidate.positionId === undefined
-    ? `${candidate.kind}:${candidate.ticket}`
-    : `position:${candidate.positionId}`;
+    ? `ticket:${candidate.kind}:${candidate.ticket}`
+    : `positionId:${candidate.positionId}`;
 }
 
 function validateCandidate(candidate: Mt5EvidenceCandidate): void {
@@ -77,6 +91,13 @@ function validateCandidate(candidate: Mt5EvidenceCandidate): void {
 }
 
 /**
+ * The single authoritative classifier for MT5 reconciliation evidence.
+ *
+ * A second implementation used to live in `evidence.ts`. Two copies of one
+ * safety rule drifted -- a duplicate-execution guard existed in one and not the
+ * other -- while both stayed green, because only this one was reachable from the
+ * adapter. That module is now types only.
+ *
  * Classify one authoritative MT5 state/history scan.
  *
  * This intentionally does NOT conclude durable absence. The higher-level
@@ -85,7 +106,7 @@ function validateCandidate(candidate: Mt5EvidenceCandidate): void {
  * demanding their own independent pair of negatives (which would otherwise
  * require four scans to resolve one unknown send).
  */
-export function inspectMt5Observation(
+export function classifyMt5Evidence(
   expectedMagic: string,
   fingerprint: Mt5Fingerprint,
   observation: Mt5ReconcileObservation,
