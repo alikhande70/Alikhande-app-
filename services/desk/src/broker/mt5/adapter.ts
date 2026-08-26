@@ -13,6 +13,7 @@ import type {
   BrokerSubmitResult,
   LookupResult,
 } from '../port.js';
+import type { Mt5EvidenceCandidate } from './evidence.js';
 import { type Mt5HostClient, Mt5HostError } from './host-client.js';
 import type {
   Mt5HostAccount,
@@ -137,6 +138,72 @@ function venueId(result: Extract<Mt5HostSubmitResult, { outcome: 'acked' }>): st
   return result.orderTicket ?? result.dealTicket;
 }
 
+/**
+ * Derive filled quantity from confirmed reconciliation evidence.
+ *
+ * Taking the first candidate is wrong whenever a position filled in more than
+ * one deal: the deals are separate objects carrying the same magic, so the
+ * first reports only part of the size and the operator is shown a smaller
+ * position than they actually hold.
+ *
+ * A `position` candidate already carries the aggregate, so it wins outright.
+ * Otherwise deals are summed, and the average price is volume-weighted across
+ * the deals that carry one -- a single deal's price is not the average fill of
+ * several.
+ */
+function filledFromEvidence(
+  matches: readonly Mt5EvidenceCandidate[],
+): { ticket: string; volume: Dec; avgFillPrice?: Dec; serverTime: number } | undefined {
+  const position = matches.find((match) => match.kind === 'position');
+  if (position !== undefined) {
+    return {
+      ticket: position.ticket,
+      volume: D.dec(position.volume),
+      ...(position.price === undefined ? {} : { avgFillPrice: D.dec(position.price) }),
+      serverTime: position.serverTime,
+    };
+  }
+
+  const deals = matches.filter((match) => match.kind === 'deal');
+  const anchorCandidate = deals[0] ?? matches[0];
+  if (anchorCandidate === undefined) return undefined;
+  if (deals.length === 0) {
+    return {
+      ticket: anchorCandidate.ticket,
+      volume: D.dec(anchorCandidate.volume),
+      ...(anchorCandidate.price === undefined
+        ? {}
+        : { avgFillPrice: D.dec(anchorCandidate.price) }),
+      serverTime: anchorCandidate.serverTime,
+    };
+  }
+
+  let volume = D.ZERO;
+  let notional = D.ZERO;
+  let pricedVolume = D.ZERO;
+  for (const deal of deals) {
+    const dealVolume = D.dec(deal.volume);
+    volume = D.Decimal.add(volume, dealVolume);
+    if (deal.price !== undefined) {
+      notional = D.Decimal.add(notional, D.Decimal.mul(D.dec(deal.price), dealVolume));
+      pricedVolume = D.Decimal.add(pricedVolume, dealVolume);
+    }
+  }
+
+  const first = deals[0] as Mt5EvidenceCandidate;
+  const scale = D.Decimal.normalize(D.dec(first.price ?? '0')).s + 4;
+  const avgFillPrice = D.Decimal.isZero(pricedVolume)
+    ? undefined
+    : D.Decimal.div(notional, pricedVolume, scale, 'half-even');
+
+  return {
+    ticket: first.ticket,
+    volume,
+    ...(avgFillPrice === undefined ? {} : { avgFillPrice }),
+    serverTime: Math.min(...deals.map((deal) => deal.serverTime)),
+  };
+}
+
 function mapSubmit(result: Mt5HostSubmitResult): BrokerSubmitResult {
   switch (result.outcome) {
     case 'rejected':
@@ -245,8 +312,9 @@ export class Mt5BrokerAdapter implements BrokerPort {
 
   async getInstruments() {
     const snapshot = await this.refreshConnected();
-    return snapshot.instruments.map((instrument) =>
-      this.instrumentBinding.toInstrumentSpec(instrument, snapshot.account.positionModel),
+    return this.instrumentBinding.toInstrumentSpecs(
+      snapshot.instruments,
+      snapshot.account.positionModel,
     );
   }
 
@@ -435,6 +503,19 @@ export class Mt5BrokerAdapter implements BrokerPort {
         },
       };
     }
+    if (verdict.outcome === 'duplicate') {
+      // More than one execution carries this intent's magic. Returning `found`
+      // would attribute one of them and silently strand the rest, so this stays
+      // unresolved until the operator acts. `indeterminate` is the honest
+      // transport: the resolver will not conclude absence from it, and the
+      // reason names the tickets involved.
+      return {
+        found: 'indeterminate',
+        reason: `${verdict.reason}. Tickets: ${verdict.matches
+          .map((match) => `${match.kind}#${match.ticket}`)
+          .join(', ')}.`,
+      };
+    }
     if (verdict.outcome === 'probable') {
       return { found: 'indeterminate', reason: verdict.reason };
     }
@@ -459,23 +540,23 @@ export class Mt5BrokerAdapter implements BrokerPort {
     // A market order may already have disappeared from active orders. If the
     // authoritative reconciliation saw our magic in a deal/position, return a
     // conservative FILLED representation rather than pretending it is absent.
-    const candidate = verdict.matches[0];
-    if (candidate === undefined) {
+    const filled = filledFromEvidence(verdict.matches);
+    if (filled === undefined) {
       return { found: 'indeterminate', reason: 'confirmed MT5 evidence had no candidate object' };
     }
     return {
       found: true,
       order: {
-        venueOrderId: candidate.ticket,
+        venueOrderId: filled.ticket,
         clientOrderId,
         canonical: context.canonical,
         symbol: context.symbol,
         side: context.side,
         state: 'FILLED',
         requestedQty: context.volume,
-        filledQty: D.dec(candidate.volume),
-        ...(candidate.price === undefined ? {} : { avgFillPrice: D.dec(candidate.price) }),
-        createdAt: candidate.serverTime,
+        filledQty: filled.volume,
+        ...(filled.avgFillPrice === undefined ? {} : { avgFillPrice: filled.avgFillPrice }),
+        createdAt: filled.serverTime,
       },
     };
   }

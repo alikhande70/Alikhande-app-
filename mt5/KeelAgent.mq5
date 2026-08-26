@@ -52,7 +52,20 @@ string PositionModelText()
    return("netting");
   }
 
-long UnixMillis() { return((long)TimeTradeServer()*1000); }
+//--- Clock domains ------------------------------------------------------------
+// TimeTradeServer() is the *broker's* wall clock; LiteFinance and most FX
+// brokers run GMT+2/+3, not UTC. The desk stamps its ledger in real UTC, so any
+// value compared against desk timestamps -- send windows, history coverage,
+// heartbeat freshness -- must be UTC or the comparison silently measures the
+// broker's timezone offset instead of elapsed time.
+//
+// The sign of that error decides how it fails: a server ahead of UTC makes
+// absence impossible to conclude, and a server behind UTC makes false absence
+// possible. UTC therefore crosses the wire, with the offset reported alongside
+// for session reasoning that genuinely wants server time.
+long UtcMillis()    { return((long)TimeGMT()*1000); }
+long ServerMillis() { return((long)TimeTradeServer()*1000); }
+long ServerUtcOffsetSeconds() { return((long)TimeTradeServer()-(long)TimeGMT()); }
 
 bool AppendLineToFile(const string file_name,const string line)
   {
@@ -131,7 +144,7 @@ bool SendHello()
       "{\"type\":\"hello\",\"protocolVersion\":1,\"token\":\"%s\",\"agentId\":\"%s\",\"terminalBuild\":%d,\"accountLogin\":\"%s\",\"server\":\"%s\",\"tradeMode\":\"%s\",\"positionModel\":\"%s\",\"at\":%I64d}",
       JsonEscape(InpAgentToken),JsonEscape(InpAgentId),(int)TerminalInfoInteger(TERMINAL_BUILD),
       LongText(AccountInfoInteger(ACCOUNT_LOGIN)),JsonEscape(AccountInfoString(ACCOUNT_SERVER)),
-      TradeModeText(),PositionModelText(),UnixMillis());
+      TradeModeText(),PositionModelText(),UtcMillis());
    if(!SendLine(line)) return(false);
    g_hello_sent=true;
    return(true);
@@ -145,10 +158,12 @@ void SendHeartbeat()
    bool terminal_connected=(bool)TerminalInfoInteger(TERMINAL_CONNECTED);
    bool trade_allowed=(bool)AccountInfoInteger(ACCOUNT_TRADE_ALLOWED) &&
                       (bool)AccountInfoInteger(ACCOUNT_TRADE_EXPERT);
-   long now=UnixMillis();
+   long now=UtcMillis();
    string line=StringFormat(
-      "{\"type\":\"heartbeat\",\"eventSeq\":\"%s\",\"terminalConnected\":%s,\"tradeAllowed\":%s,\"serverTime\":%I64d,\"at\":%I64d}",
-      ULongText(g_event_seq),terminal_connected?"true":"false",trade_allowed?"true":"false",now,now);
+      "{\"type\":\"heartbeat\",\"eventSeq\":\"%s\",\"terminalConnected\":%s,\"tradeAllowed\":%s,"
+      "\"serverTime\":%I64d,\"at\":%I64d,\"serverMillis\":%I64d,\"serverUtcOffsetSec\":%I64d}",
+      ULongText(g_event_seq),terminal_connected?"true":"false",trade_allowed?"true":"false",
+      now,now,ServerMillis(),ServerUtcOffsetSeconds());
    if(!SendLine(line)) CloseSocket();
   }
 
@@ -253,7 +268,7 @@ void SendAmbiguousResult(const string request_id,const string reason)
   {
    string line=StringFormat(
       "{\"type\":\"result\",\"requestId\":\"%s\",\"result\":{\"outcome\":\"ambiguous\",\"reason\":\"%s\",\"serverTime\":%I64d}}",
-      JsonEscape(request_id),JsonEscape(reason),UnixMillis());
+      JsonEscape(request_id),JsonEscape(reason),UtcMillis());
    if(!SendLine(line)) CloseSocket();
   }
 
@@ -261,7 +276,7 @@ void SendRejectedResult(const string request_id,const string reason)
   {
    string line=StringFormat(
       "{\"type\":\"result\",\"requestId\":\"%s\",\"result\":{\"outcome\":\"rejected\",\"reason\":\"%s\",\"serverTime\":%I64d}}",
-      JsonEscape(request_id),JsonEscape(reason),UnixMillis());
+      JsonEscape(request_id),JsonEscape(reason),UtcMillis());
    if(!SendLine(line)) CloseSocket();
   }
 
@@ -368,7 +383,7 @@ void ReceiveCommands()
 void EmitTransaction(const MqlTradeTransaction &trans,const MqlTradeRequest &request)
   {
    g_event_seq++;
-   long now=UnixMillis();
+   long now=UtcMillis();
    string line=StringFormat(
       "{\"type\":\"transaction\",\"eventSeq\":\"%s\",\"validTime\":%I64d,\"transactionType\":\"%s\",\"orderTicket\":\"%s\",\"dealTicket\":\"%s\",\"positionId\":\"%s\",\"symbol\":\"%s\",\"magic\":\"%s\",\"volume\":\"%s\",\"price\":\"%s\"}",
       ULongText(g_event_seq),now,JsonEscape(EnumToString(trans.type)),ULongText(trans.order),ULongText(trans.deal),

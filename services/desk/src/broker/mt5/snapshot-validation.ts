@@ -123,7 +123,11 @@ function arrayField(value: RecordLike, key: string, path: string): readonly unkn
   return field;
 }
 
-function optionalArrayField(value: RecordLike, key: string, path: string): readonly unknown[] | undefined {
+function optionalArrayField(
+  value: RecordLike,
+  key: string,
+  path: string,
+): readonly unknown[] | undefined {
   const field = value[key];
   if (field === undefined) return undefined;
   if (!Array.isArray(field)) {

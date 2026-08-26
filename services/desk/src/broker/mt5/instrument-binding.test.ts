@@ -80,3 +80,63 @@ describe('Mt5InstrumentBinding', () => {
     ).toThrow(Mt5InstrumentBindingError);
   });
 });
+
+describe('canonical collision', () => {
+  it('refuses a snapshot where two venue symbols resolve to one canonical', () => {
+    // XAUUSD and XAUUSD.x both declaring canonical XAUUSD produced two specs
+    // with one identity. getQuote resolves by first match, so sizing would
+    // price one instrument off the other's book, decided by array order.
+    const binding = new Mt5InstrumentBinding(new Mt5SymbolMap(), {
+      XAUUSD: {
+        assetClass: 'metal',
+        base: 'XAU',
+        quote: 'USD',
+        venueTimeZone: 'Europe/Riga',
+      },
+    });
+    const raw = (symbol: string) => ({
+      symbol,
+      canonical: 'XAUUSD',
+      digits: 2,
+      tickSize: '0.01',
+      contractSize: '100',
+      minVolume: '0.01',
+      maxVolume: '50',
+      volumeStep: '0.01',
+      stopsLevel: '0',
+      freezeLevel: '0',
+      marginRate: '1',
+      asOf: 1_000,
+    });
+
+    expect(() => binding.toInstrumentSpecs([raw('XAUUSD'), raw('XAUUSD.x')], 'netting')).toThrow(
+      /both resolve to canonical/,
+    );
+  });
+
+  it('accepts distinct canonicals in one snapshot', () => {
+    const binding = new Mt5InstrumentBinding(new Mt5SymbolMap({ 'XAUUSD.x': 'XAUUSDX' }), {
+      XAUUSD: { assetClass: 'metal', base: 'XAU', quote: 'USD', venueTimeZone: 'Europe/Riga' },
+      XAUUSDX: { assetClass: 'metal', base: 'XAU', quote: 'USD', venueTimeZone: 'Europe/Riga' },
+    });
+    const raw = (symbol: string, canonical: string) => ({
+      symbol,
+      canonical,
+      digits: 2,
+      tickSize: '0.01',
+      contractSize: '100',
+      minVolume: '0.01',
+      maxVolume: '50',
+      volumeStep: '0.01',
+      stopsLevel: '0',
+      freezeLevel: '0',
+      marginRate: '1',
+      asOf: 1_000,
+    });
+    const specs = binding.toInstrumentSpecs(
+      [raw('XAUUSD', 'XAUUSD'), raw('XAUUSD.x', 'XAUUSDX')],
+      'netting',
+    );
+    expect(specs.map((spec) => spec.canonical)).toEqual(['XAUUSD', 'XAUUSDX']);
+  });
+});

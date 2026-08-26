@@ -71,6 +71,39 @@ export class Mt5InstrumentBinding {
     return this.symbolMap.canonicalFor(venueSymbol, hostCanonical);
   }
 
+  /**
+   * Bind a whole snapshot, refusing any batch in which two venue symbols resolve
+   * to the same canonical.
+   *
+   * `Mt5SymbolMap` enforces one-to-one only across *configured* aliases. An
+   * unconfigured symbol falls back to the host-declared canonical, so a terminal
+   * carrying both `XAUUSD` and `XAUUSD.x` -- each declaring canonical `XAUUSD` --
+   * produces two specs with one identity. Nothing downstream deduplicates them:
+   * `getQuote` resolves by first match, so sizing would silently price one
+   * instrument off the other's book, and which one won would depend on array
+   * order. Fail the batch instead; a collision is a configuration error the
+   * operator must resolve, not something to pick a winner for.
+   */
+  toInstrumentSpecs(
+    raws: readonly Mt5HostInstrument[],
+    positionModel: PositionModel,
+  ): readonly InstrumentSpec[] {
+    const specs = raws.map((raw) => this.toInstrumentSpec(raw, positionModel));
+    const byCanonical = new Map<string, string>();
+    for (const spec of specs) {
+      const priorSymbol = byCanonical.get(spec.canonical);
+      if (priorSymbol !== undefined && priorSymbol !== spec.symbol) {
+        throw new Mt5InstrumentBindingError(
+          `MT5 symbols '${priorSymbol}' and '${spec.symbol}' both resolve to canonical ` +
+            `'${spec.canonical}'. Configure an explicit alias for each so they cannot be ` +
+            'reconciled or priced against one another.',
+        );
+      }
+      byCanonical.set(spec.canonical, spec.symbol);
+    }
+    return specs;
+  }
+
   toInstrumentSpec(raw: Mt5HostInstrument, positionModel: PositionModel): InstrumentSpec {
     const canonical = this.canonicalFor(raw.symbol, raw.canonical);
     const metadata = this.metadata.get(canonical);
