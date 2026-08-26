@@ -70,7 +70,8 @@ export interface Mt5ResolveOptions {
 const DECIMAL_INTEGER = /^[0-9]+$/;
 
 function validateCandidate(candidate: Mt5EvidenceCandidate): void {
-  if (!DECIMAL_INTEGER.test(candidate.ticket)) throw new Error('MT5 evidence ticket must be decimal');
+  if (!DECIMAL_INTEGER.test(candidate.ticket))
+    throw new Error('MT5 evidence ticket must be decimal');
   if (!DECIMAL_INTEGER.test(candidate.magic)) throw new Error('MT5 evidence magic must be decimal');
   if (!Number.isFinite(candidate.serverTime)) throw new Error('MT5 evidence time must be finite');
 }
