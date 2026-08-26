@@ -2,7 +2,7 @@
 
 This report records work actually implemented on `gpt/trading-brain-build`. Architecture documents describe intent; this file describes delivery state. The preserved Claude branch is not modified by this work.
 
-## Current state — 2026-08-26
+## Current state — 2026-08-27
 
 The project remains in the MT5 execution-truth phase. Trading Mission, Trading Brain, memory, evaluation and intelligence UX remain deliberately sequenced after this foundation.
 
@@ -29,25 +29,24 @@ The project remains in the MT5 execution-truth phase. Trading Mission, Trading B
 - A durable `RESULT` with ambiguous outcome after the irreversible `SENT` boundary remains reconciliation-required after restart.
 - Targeted recovery tests cover host crash while reconcile is outstanding, stale/late responses, duplicate concurrent reconcile isolation and out-of-order snapshot rejection.
 - Explicit MT5 venue-symbol → canonical mapping exists. It performs no suffix stripping or fuzzy matching and rejects ambiguous many-to-one aliases.
-- A new fail-closed **instrument binding layer** separates two kinds of truth:
-  - numerical execution facts such as tick size, contract size and volume constraints remain venue/MT5 supplied;
-  - semantic metadata that cannot safely be inferred from an MT5 symbol name (`assetClass`, `base`, `quote`, `venueTimeZone`) must be configured explicitly per canonical instrument.
-- Missing semantic instrument metadata blocks `InstrumentSpec` construction rather than generating a plausible value. Host-supplied semantic fields are deliberately not trusted by this binding layer.
+- A fail-closed **instrument binding layer** separates numerical execution facts from semantic metadata that cannot safely be inferred from MT5 symbol names.
+- The same binding is now wired through **instruments, positions, orders, quotes, order submission and recovery context**. A broker suffix such as `XAUUSD.x` cannot silently become a second identity on one adapter surface while another surface uses `XAUUSD`.
+- Order submission fails closed if the request's canonical identity conflicts with the configured venue-symbol binding. Recovery returns indeterminate on the same conflict instead of reconciling against the wrong instrument.
+- Missing semantic instrument metadata (`assetClass`, `base`, `quote`, `venueTimeZone`) blocks `InstrumentSpec` construction rather than generating a plausible value. Host-supplied semantic fields are deliberately not trusted by this binding layer.
 
 ### Latest repository verification
 
-- Exact head `193bbd1abd8ef7b885514f85167fda8eade6adf0` completed GitHub Actions workflow `verify` successfully.
+- Exact code/test head `bb0930bc936bf380dd7898bc2ee96cc63e6ccef0` completed GitHub Actions workflow `verify` successfully.
 - The workflow ran Biome lint, TypeScript typecheck and all repository tests.
-- The instrument-binding tests initially exposed two implementation/test hygiene defects (format/type-only import and an incorrect Decimal test shape). Both were repaired before the exact-head success.
-- Repository verification therefore supports the TypeScript/static/test claims above. It does **not** prove MQL compilation or a real MT5 runtime.
+- During this change CI caught three real integration/hygiene issues before success: old adapter tests had not injected the newly required binding, a type-only import was incorrect, and the new alias regression test violated lint/format rules. All were repaired and re-run to exact-head success.
+- Repository verification supports the TypeScript/static/test claims above. It does **not** prove MQL compilation or a real MT5 runtime.
 
 ### Self-audit findings still open
 
-1. **Instrument binding exists but is not yet wired through every adapter surface.** `getInstruments`, positions, orders and quotes must all resolve canonical identity through one binding so aliases cannot diverge between reads and execution.
-2. **EA snapshots still emit `instruments: []`.** The Agent must expose only MT5 properties that can be read authoritatively (digits, tick size, contract size, volume min/max/step, tick value, stops/freeze levels, etc.).
-3. **Margin modelling needs care.** MT5 margin rates can depend on order type/direction and calculation mode; the current single `InstrumentSpec.marginRate` must not be populated by an arbitrary guessed scalar. This requires an explicit design/adapter decision before it is wired.
-4. **Recovery chaos coverage is improved but not complete.** Still required: fuller EA-spool replay, terminal reconnect while an unknown resolver job is active and durable duplicate-command recovery across an actual agent restart boundary.
-5. **No-send boundary remains intentional.** Demo `OrderSend` stays disabled until reconciliation/recovery semantics and chaos tests are strong enough, followed by MetaEditor compilation and real LiteFinance Demo validation.
+1. **EA snapshots still emit `instruments: []`.** The Agent must expose only MT5 properties that can be read authoritatively (digits, tick size, contract size, volume min/max/step, tick value, stops/freeze levels, etc.).
+2. **The current single `InstrumentSpec.marginRate` is not a safe MT5 execution truth.** MetaTrader exposes request-specific margin calculation via `OrderCalcMargin`; required margin depends on the proposed order and current trading environment. Do not populate a guessed universal scalar from the symbol name or a convenient default. The MT5 risk path needs an explicit request-specific margin-calculation boundary before margin-sensitive sizing is trusted.
+3. **Recovery chaos coverage is improved but not complete.** Still required: fuller EA-spool replay, terminal reconnect while an unknown resolver job is active and durable duplicate-command recovery across an actual agent restart boundary.
+4. **No-send boundary remains intentional.** Demo `OrderSend` stays disabled until reconciliation/recovery semantics and chaos tests are strong enough, followed by MetaEditor compilation and real LiteFinance Demo validation.
 
 ### External verification boundary
 
@@ -67,9 +66,9 @@ No real-money execution is enabled or claimed.
 | Stage | Status | Evidence / remaining work |
 | --- | --- | --- |
 | 1. Architecture reviewed | **DONE** | ADR-0015 through ADR-0022 and design reviews accepted. |
-| 2. Implementation | **IN PROGRESS** | Broker adapter, agent bridge, durable preflight, current snapshot, bounded history reconcile, strict validation, non-fill terminal recovery, crash/stale-response hardening and fail-closed symbol/instrument binding built. Instrument extraction/wiring, demo send, cancel/modify/close and final host assembly remain. |
-| 3. Repository unit/static tests | **PASS at exact head** | `193bbd1...` completed `pnpm verify` successfully. MQL compilation is not covered by Linux CI. |
-| 4. Integration simulation | **IN PROGRESS** | Protocol/session/recovery/reconcile components are covered; instrument binding is unit-tested but not yet wired end-to-end. |
+| 2. Implementation | **IN PROGRESS** | Broker adapter, agent bridge, durable preflight, current snapshot, bounded history reconcile, strict validation, non-fill terminal recovery, crash/stale-response hardening and adapter-wide fail-closed symbol/instrument binding built. Instrument extraction, request-specific MT5 margin calculation, demo send, cancel/modify/close and final host assembly remain. |
+| 3. Repository unit/static tests | **PASS at exact code/test head** | `bb0930bc...` completed `pnpm verify` successfully. MQL compilation is not covered by Linux CI. |
+| 4. Integration simulation | **IN PROGRESS** | Protocol/session/recovery/reconcile components plus adapter-wide alias consistency are covered; EA instrument extraction is not yet end-to-end. |
 | 5. Chaos/failure tests | **PARTIAL** | Crash, late/stale response, duplicate concurrent reconcile isolation and out-of-order snapshot rejection covered. EA spool replay/restart and reconnect-during-resolution remain. |
 | 6. MetaEditor compile | **NOT VERIFIED** | Requires Windows + MetaEditor. |
 | 7. Real MT5 terminal | **NOT VERIFIED** | Requires target terminal. |
@@ -78,9 +77,8 @@ No real-money execution is enabled or claimed.
 
 ## Next highest-priority sequence
 
-1. Wire `Mt5InstrumentBinding` into the adapter so instruments, positions, orders and quotes share one explicit canonical identity and missing semantic metadata fails closed.
-2. Add authoritative MT5 numeric instrument extraction in the EA without inventing asset class/timezone or a fake universal margin rate.
-3. Resolve the margin-model mismatch explicitly before allowing the spec to drive risk sizing.
-4. Add remaining restart/spool-replay/reconnect recovery tests and re-audit `RECEIVED → CHECKED → SENT → RESULT → RECONCILED` for duplicate execution and false absence.
-5. Only after those gates pass, introduce a demo-only durable `SENT` + `OrderSend` boundary and classify the immediate MT5 result without inferring fill.
-6. Compile in MetaEditor and validate on LiteFinance Demo before moving the product to the intelligence phase.
+1. Add authoritative MT5 numeric instrument extraction in the EA without inventing asset class/timezone or a fake universal margin rate.
+2. Introduce a request-specific MT5 margin-calculation boundary based on the proposed order rather than forcing one static rate into broker truth; keep existing core assumptions isolated until that contract is proven.
+3. Add remaining restart/spool-replay/reconnect recovery tests and re-audit `RECEIVED → CHECKED → SENT → RESULT → RECONCILED` for duplicate execution and false absence.
+4. Only after those gates pass, introduce a demo-only durable `SENT` + `OrderSend` boundary and classify the immediate MT5 result without inferring fill.
+5. Compile in MetaEditor and validate on LiteFinance Demo before moving the product to the intelligence phase.
