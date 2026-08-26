@@ -111,6 +111,33 @@ Only a real LiteFinance demo environment can settle:
 
 Signing, realtime state, HTTP retry semantics, store safety and chart geometry have automated coverage. The Android UI has not been validated here on a physical device/simulator, and the native secure-enclave bridge remains an external implementation/verification item.
 
+## Defects found by independent audit of the MT5 path
+
+Reviewed as another team's work. The foundation held up — identity derivation,
+the command lifecycle, and the refusal to treat `OrderSend` as proof of fill are
+all correct. Five defects were not, and every fix below has a regression test
+that was verified to fail without it.
+
+| Defect | Consequence had it shipped | Severity |
+| --- | --- | --- |
+| `inspectMt5Observation` returned `confirmed` for any number of exact-magic matches | One intent legitimately produces an order, deals and a position all sharing the magic, so only the count of *distinct executions* is meaningful. The fingerprint path grouped by position before deciding; the exact-magic path did not — so the weaker evidence was the better guarded, and a duplicate execution surfaced as one clean fill with the second position stranded | **Severe** |
+| Agent emitted `TimeTradeServer()*1000` where the desk expected UTC | Broker-local time (GMT+2/+3 for LiteFinance) compared against UTC ledger stamps in fingerprint matching, history coverage and submit timestamps. A server *ahead* of UTC makes history never cover the send window, so no ambiguous send is ever resolvable; a server *behind* UTC makes coverage pass trivially and permits **false absence** for an order that exists | **Severe** |
+| `isLive()` used `now - at <= staleMs` | A heartbeat stamped three hours ahead gives a *negative* age that passes the staleness test trivially, so a dead agent read as live for the length of the broker's timezone offset. ADR-0016 requires agent absence to be actively detected; this silently defeated it | **Severe** |
+| Recovery used `matches[0].volume` as filled quantity | A position filled by two deals reported 0.01 of 0.03 — a third of the risk actually held | High |
+| Retcodes 10040–10046 absent from classification | LIMIT_POSITIONS, REJECT_CANCEL, LONG_ONLY, SHORT_ONLY, CLOSE_ONLY, FIFO_CLOSE and HEDGE_PROHIBITED fell through to ambiguous: safe, but a permanently unresolvable UNKNOWN for a request the server had definitively declined | Medium |
+
+The pattern is worth noting. Three of the five are the same mistake in different
+places: **a value crossing a boundary carried an assumption the other side did
+not share** — that a match count means an execution count, that a timestamp is
+UTC, that a difference is positive. None would have been caught by a test that
+only exercised the happy path, and all five typechecked.
+
+`clock-domain.ts` exists specifically so the second and third cannot return
+quietly: any agent reading that cannot be UTC now fails a test rather than
+corrupting recovery months later.
+
+---
+
 ## Known gaps — current priority order
 
 1. **MQL5 has not been compiled in MetaEditor.** Source inspection and CI cannot close this gap.
