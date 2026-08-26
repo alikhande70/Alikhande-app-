@@ -1,8 +1,4 @@
-import type {
-  Mt5EvidenceCandidate,
-  Mt5Fingerprint,
-  Mt5ReconcileObservation,
-} from './evidence.js';
+import type { Mt5EvidenceCandidate, Mt5Fingerprint, Mt5ReconcileObservation } from './evidence.js';
 
 export type Mt5ObservationVerdict =
   | {
@@ -61,7 +57,9 @@ export function inspectMt5Observation(
     if (!DECIMAL_INTEGER.test(candidate.ticket) || !DECIMAL_INTEGER.test(candidate.magic)) {
       throw new Error('MT5 evidence identifiers must be decimal strings');
     }
-    if (!Number.isFinite(candidate.serverTime)) throw new Error('MT5 evidence time must be finite');
+    if (!Number.isFinite(candidate.serverTime)) {
+      throw new Error('MT5 evidence time must be finite');
+    }
     return true;
   });
 
@@ -95,9 +93,16 @@ export function inspectMt5Observation(
   }
 
   if (!observation.connected) {
-    return { outcome: 'indeterminate', reason: 'MT5 terminal was disconnected during reconciliation' };
+    return {
+      outcome: 'indeterminate',
+      reason: 'MT5 terminal was disconnected during reconciliation',
+    };
   }
-  if (!observation.positionsScanned || !observation.ordersScanned || !observation.historySelected) {
+  if (
+    !observation.positionsScanned ||
+    !observation.ordersScanned ||
+    !observation.historySelected
+  ) {
     return {
       outcome: 'indeterminate',
       reason: 'MT5 reconciliation did not successfully scan positions, orders, and history',
