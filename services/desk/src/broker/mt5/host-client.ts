@@ -9,6 +9,7 @@ import type {
   Mt5HostSubmitResult,
 } from './host-types.js';
 import { validateMt5HostReconcileResponse } from './reconcile-validation.js';
+import { validateMt5HostSnapshot } from './snapshot-validation.js';
 
 export interface Mt5HostHttpResponse {
   readonly status: number;
@@ -88,8 +89,19 @@ export class Mt5HostClient {
     this.requestFn = options.request ?? defaultRequest;
   }
 
-  snapshot(): Promise<Mt5HostSnapshot> {
-    return this.call<Mt5HostSnapshot>('GET', '/v1/snapshot');
+  async snapshot(): Promise<Mt5HostSnapshot> {
+    const raw = await this.call<unknown>('GET', '/v1/snapshot');
+    try {
+      return validateMt5HostSnapshot(raw);
+    } catch (error) {
+      throw new Mt5HostError(
+        `MT5 execution host returned invalid snapshot truth: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+        200,
+        raw,
+      );
+    }
   }
 
   placeOrder(request: Mt5HostOrderRequest): Promise<Mt5HostSubmitResult> {
