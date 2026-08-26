@@ -15,6 +15,17 @@ export type Mt5ObservationVerdict =
   | { readonly outcome: 'indeterminate'; readonly reason: string };
 
 const DECIMAL_INTEGER = /^[0-9]+$/;
+const ORDER_STATES = new Set([
+  'PENDING_SUBMIT',
+  'WORKING',
+  'PARTIAL',
+  'FILLED',
+  'CANCEL_PENDING',
+  'CANCELLED',
+  'REJECTED',
+  'EXPIRED',
+  'UNKNOWN',
+]);
 
 function sameFingerprint(candidate: Mt5EvidenceCandidate, expected: Mt5Fingerprint): boolean {
   return (
@@ -30,6 +41,22 @@ function groupKey(candidate: Mt5EvidenceCandidate): string {
   return candidate.positionId === undefined
     ? `${candidate.kind}:${candidate.ticket}`
     : `position:${candidate.positionId}`;
+}
+
+function validateCandidate(candidate: Mt5EvidenceCandidate): void {
+  if (!DECIMAL_INTEGER.test(candidate.ticket) || !DECIMAL_INTEGER.test(candidate.magic)) {
+    throw new Error('MT5 evidence identifiers must be decimal strings');
+  }
+  if (!Number.isFinite(candidate.serverTime)) {
+    throw new Error('MT5 evidence time must be finite');
+  }
+  if (candidate.kind === 'order') {
+    if (candidate.orderState === undefined || !ORDER_STATES.has(candidate.orderState)) {
+      throw new Error('MT5 order evidence must include a recognised orderState');
+    }
+  } else if (candidate.orderState !== undefined) {
+    throw new Error('MT5 deal/position evidence cannot carry orderState');
+  }
 }
 
 /**
@@ -54,12 +81,7 @@ export function inspectMt5Observation(
   if (historyGuardMs < 0) throw new Error('MT5 history guard must be non-negative');
 
   const candidates = observation.candidates.filter((candidate) => {
-    if (!DECIMAL_INTEGER.test(candidate.ticket) || !DECIMAL_INTEGER.test(candidate.magic)) {
-      throw new Error('MT5 evidence identifiers must be decimal strings');
-    }
-    if (!Number.isFinite(candidate.serverTime)) {
-      throw new Error('MT5 evidence time must be finite');
-    }
+    validateCandidate(candidate);
     return true;
   });
 
