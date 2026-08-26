@@ -2,6 +2,48 @@
 
 This report records work actually implemented on `gpt/trading-brain-build`. Architecture documents describe intent; this file describes delivery state. The preserved Claude branch is not modified by this work.
 
+## 2026-08-26 — MT5 authoritative snapshot trust boundary
+
+### Implemented
+
+- Added runtime validation for MT5 host snapshots before they are admitted into the desk's authoritative broker-truth path.
+- The validator requires complete account, instrument, position, order and quote collections rather than allowing absent broker-state fields to be interpreted as empty state.
+- MT5 ticket, position-id and magic values are validated as unsigned 64-bit decimal strings and remain strings across the JavaScript boundary; identifiers outside the MT5 uint64 domain are rejected.
+- Financial wire values must use explicit plain-decimal text; exponent notation is rejected so precision semantics stay explicit.
+- Snapshot trade mode, position model, side, asset class and order state are restricted to the protocol's declared values rather than silently widened.
+- Snapshot timestamps used for freshness/reconciliation must be finite and non-negative.
+- Optional fields are exact: an optional value is either present with a validated value or absent, never present as `undefined`.
+- `Mt5AgentBridgeServer` now validates every incoming `snapshot` message before `Mt5AgentSession` can publish it. A malformed snapshot causes protocol failure and session disconnect rather than being treated as broker truth.
+
+### Self-audit decisions
+
+- I did **not** implement the EA snapshot producer in the same change. The receiving trust boundary had to fail closed before authoritative state could be enabled.
+- I did **not** treat missing `positions`, `orders` or `quotes` as empty arrays. In a recovery path, incomplete data must mean “truth unavailable”, never “nothing exists”.
+- I did **not** convert MT5 64-bit identifiers to JavaScript `Number` even when values would happen to fit for a particular account.
+- I did **not** enable `OrderSend`; authoritative snapshot/reconcile remains a prerequisite for crossing the irreversible broker boundary.
+
+### Verification performed
+
+- Added tests covering a valid complete snapshot, identifiers beyond JavaScript's safe-integer range, uint64 overflow rejection, missing position collection rejection, exponent-notation rejection, unknown order-state rejection and negative-time rejection.
+- CI first found a formatting defect and then an `exactOptionalPropertyTypes` defect. Both were fixed rather than bypassed.
+- CI `verify` run 65 completed **successfully** for commit `8dc21e6507f1ced8ce251def058b6a4b58e9456e` after lint, TypeScript and the full test suite passed.
+- MQL5 has still **not** been compiled in MetaEditor in this environment. No MT5 terminal or LiteFinance demo account was used in this stage.
+
+### Verification ladder impact
+
+- Stage 1 — architecture reviewed: **done**.
+- Stage 2 — implementation complete: **in progress**. The desk-side snapshot trust boundary is now fail-closed; the EA still needs to produce authoritative snapshot/reconcile evidence.
+- Stage 3 — unit tested: **in progress**. Runtime snapshot validation and repository tests are green; compiled MQL5 tests remain external.
+- Stages 4–9: **not claimed**.
+
+### Next highest-priority work
+
+1. Build the EA-side authoritative snapshot/reconcile producer from current positions, active orders and bounded history rather than guessed broker state.
+2. Include explicit history coverage/freshness so “history unavailable/incomplete” cannot become “no matching order”.
+3. Map MT5 symbols to configured canonical instruments without guessing broker suffix/prefix semantics.
+4. Link reconciliation evidence to durable request/magic identity without assuming `OnTradeTransaction` event order.
+5. Keep `OrderSend` disabled until this recovery truth path is simulation/chaos tested.
+
 ## 2026-08-26 — MT5 EA preflight stage C: durable CHECKED/RESULT + demo-only OrderCheck
 
 ### Implemented
