@@ -1,3 +1,5 @@
+import type { Dec, InstrumentSpec, OrderState } from '@keel/core';
+import * as D from '@keel/core';
 import type {
   BrokerAccount,
   BrokerCapabilities,
@@ -11,9 +13,7 @@ import type {
   BrokerSubmitResult,
   LookupResult,
 } from '../port.js';
-import type { InstrumentSpec, OrderState } from '@keel/core';
-import * as D from '@keel/core';
-import { Mt5HostClient, Mt5HostError } from './host-client.js';
+import { type Mt5HostClient, Mt5HostError } from './host-client.js';
 import type {
   Mt5HostAccount,
   Mt5HostInstrument,
@@ -65,7 +65,10 @@ function mapOrderState(state: Mt5HostOrder['state']): OrderState {
   }
 }
 
-function mapInstrument(raw: Mt5HostInstrument, positionModel: 'netting' | 'hedging'): InstrumentSpec {
+function mapInstrument(
+  raw: Mt5HostInstrument,
+  positionModel: 'netting' | 'hedging',
+): InstrumentSpec {
   return {
     symbol: raw.symbol,
     canonical: raw.canonical,
@@ -78,7 +81,9 @@ function mapInstrument(raw: Mt5HostInstrument, positionModel: 'netting' | 'hedgi
     minVolume: D.dec(raw.minVolume),
     maxVolume: D.dec(raw.maxVolume),
     volumeStep: D.dec(raw.volumeStep),
-    ...(raw.tickValueAccount === undefined ? {} : { tickValueAccount: D.dec(raw.tickValueAccount) }),
+    ...(raw.tickValueAccount === undefined
+      ? {}
+      : { tickValueAccount: D.dec(raw.tickValueAccount) }),
     stopsLevel: D.dec(raw.stopsLevel),
     freezeLevel: D.dec(raw.freezeLevel),
     marginRate: D.dec(raw.marginRate),
@@ -108,8 +113,12 @@ function mapPosition(raw: Mt5HostPosition): BrokerPosition {
     volume: D.dec(raw.volume),
     entryPrice: D.dec(raw.entryPrice),
     ...(raw.stopPrice === undefined ? {} : { stopPrice: D.dec(raw.stopPrice) }),
-    ...(raw.takeProfitPrice === undefined ? {} : { takeProfitPrice: D.dec(raw.takeProfitPrice) }),
-    ...(raw.unrealisedPnl === undefined ? {} : { unrealisedPnl: D.dec(raw.unrealisedPnl) }),
+    ...(raw.takeProfitPrice === undefined
+      ? {}
+      : { takeProfitPrice: D.dec(raw.takeProfitPrice) }),
+    ...(raw.unrealisedPnl === undefined
+      ? {}
+      : { unrealisedPnl: D.dec(raw.unrealisedPnl) }),
     openedAt: raw.openedAt,
   };
 }
@@ -126,7 +135,9 @@ function mapOrder(raw: Mt5HostOrder, clientOrderId?: string): BrokerOrder {
     filledQty: D.dec(raw.filledQty),
     ...(raw.limitPrice === undefined ? {} : { limitPrice: D.dec(raw.limitPrice) }),
     ...(raw.stopPrice === undefined ? {} : { stopPrice: D.dec(raw.stopPrice) }),
-    ...(raw.avgFillPrice === undefined ? {} : { avgFillPrice: D.dec(raw.avgFillPrice) }),
+    ...(raw.avgFillPrice === undefined
+      ? {}
+      : { avgFillPrice: D.dec(raw.avgFillPrice) }),
     createdAt: raw.createdAt,
   };
 }
@@ -140,7 +151,9 @@ function mapQuote(raw: Mt5HostSnapshot['quotes'][number]): BrokerQuote {
   };
 }
 
-function venueId(result: Extract<Mt5HostSubmitResult, { outcome: 'acked' }>): string | undefined {
+function venueId(
+  result: Extract<Mt5HostSubmitResult, { outcome: 'acked' }>,
+): string | undefined {
   return result.orderTicket ?? result.dealTicket;
 }
 
@@ -171,7 +184,9 @@ function mapSubmit(result: Mt5HostSubmitResult): BrokerSubmitResult {
         venueOrderId: id,
         state: mapOrderState(result.state),
         filledQty: D.dec(result.filledQty),
-        ...(result.avgFillPrice === undefined ? {} : { avgFillPrice: D.dec(result.avgFillPrice) }),
+        ...(result.avgFillPrice === undefined
+          ? {}
+          : { avgFillPrice: D.dec(result.avgFillPrice) }),
         at: result.serverTime,
         venueStatus: result.retcodeName,
       };
@@ -230,11 +245,17 @@ export class Mt5BrokerAdapter implements BrokerPort {
     }
     this.connected = true;
     this.emit({ type: 'connected', at: snapshot.observedAt });
-    this.emit({ type: 'account', at: snapshot.account.asOf, account: mapAccount(snapshot.account) });
+    this.emit({
+      type: 'account',
+      at: snapshot.account.asOf,
+      account: mapAccount(snapshot.account),
+    });
   }
 
   async disconnect(): Promise<void> {
-    if (this.connected) this.emit({ type: 'disconnected', reason: 'adapter disconnected', at: Date.now() });
+    if (this.connected) {
+      this.emit({ type: 'disconnected', reason: 'adapter disconnected', at: Date.now() });
+    }
     this.connected = false;
   }
 
@@ -244,7 +265,9 @@ export class Mt5BrokerAdapter implements BrokerPort {
 
   async getInstruments(): Promise<readonly InstrumentSpec[]> {
     const snapshot = await this.refreshConnected();
-    return snapshot.instruments.map((i) => mapInstrument(i, snapshot.account.positionModel));
+    return snapshot.instruments.map((instrument) =>
+      mapInstrument(instrument, snapshot.account.positionModel),
+    );
   }
 
   async getAccount(): Promise<BrokerAccount> {
@@ -260,7 +283,9 @@ export class Mt5BrokerAdapter implements BrokerPort {
   }
 
   async getQuote(canonical: string): Promise<BrokerQuote | undefined> {
-    const quote = (await this.refreshConnected()).quotes.find((q) => q.canonical === canonical);
+    const quote = (await this.refreshConnected()).quotes.find(
+      (candidate) => candidate.canonical === canonical,
+    );
     return quote === undefined ? undefined : mapQuote(quote);
   }
 
@@ -282,7 +307,9 @@ export class Mt5BrokerAdapter implements BrokerPort {
           ...(req.stopTriggerPrice === undefined
             ? {}
             : { stopTriggerPrice: D.Decimal.toString(req.stopTriggerPrice) }),
-          ...(req.stopLoss === undefined ? {} : { stopLoss: D.Decimal.toString(req.stopLoss) }),
+          ...(req.stopLoss === undefined
+            ? {}
+            : { stopLoss: D.Decimal.toString(req.stopLoss) }),
           ...(req.takeProfit === undefined
             ? {}
             : { takeProfit: D.Decimal.toString(req.takeProfit) }),
@@ -297,7 +324,10 @@ export class Mt5BrokerAdapter implements BrokerPort {
     }
   }
 
-  async cancelOrder(venueOrderId: string, clientOrderId: string): Promise<BrokerSubmitResult> {
+  async cancelOrder(
+    venueOrderId: string,
+    clientOrderId: string,
+  ): Promise<BrokerSubmitResult> {
     this.assertCanTrade();
     const magic = magicToWire(magicForClientOrderId(clientOrderId, this.systemPrefix));
     try {
@@ -311,8 +341,8 @@ export class Mt5BrokerAdapter implements BrokerPort {
 
   async modifyPosition(
     positionId: string,
-    stopLoss: D.Dec | undefined,
-    takeProfit: D.Dec | undefined,
+    stopLoss: Dec | undefined,
+    takeProfit: Dec | undefined,
   ): Promise<BrokerSubmitResult> {
     this.assertCanTrade();
     try {
@@ -320,7 +350,9 @@ export class Mt5BrokerAdapter implements BrokerPort {
         await this.client.modifyPosition({
           positionId,
           ...(stopLoss === undefined ? {} : { stopLoss: D.Decimal.toString(stopLoss) }),
-          ...(takeProfit === undefined ? {} : { takeProfit: D.Decimal.toString(takeProfit) }),
+          ...(takeProfit === undefined
+            ? {}
+            : { takeProfit: D.Decimal.toString(takeProfit) }),
         }),
       );
     } catch (error) {
@@ -330,7 +362,7 @@ export class Mt5BrokerAdapter implements BrokerPort {
 
   async closePosition(
     positionId: string,
-    volume: D.Dec | undefined,
+    volume: Dec | undefined,
     clientOrderId: string,
   ): Promise<BrokerSubmitResult> {
     this.assertCanTrade();
@@ -364,7 +396,7 @@ export class Mt5BrokerAdapter implements BrokerPort {
     }
 
     const magic = magicToWire(magicForClientOrderId(clientOrderId, this.systemPrefix));
-    let response;
+    let response: Awaited<ReturnType<Mt5HostClient['reconcile']>>;
     try {
       response = await this.client.reconcile({
         magic,
@@ -403,7 +435,6 @@ export class Mt5BrokerAdapter implements BrokerPort {
       return { found: 'indeterminate', reason: verdict.reason };
     }
 
-    // Prefer an actual order snapshot because it carries the complete state.
     let snapshot: Mt5HostSnapshot;
     try {
       snapshot = await this.refreshConnected();
@@ -413,8 +444,10 @@ export class Mt5BrokerAdapter implements BrokerPort {
         reason: `magic was confirmed but current MT5 snapshot failed: ${this.errorMessage(error)}`,
       };
     }
-    const order = snapshot.orders.find((o) => o.magic === magic);
-    if (order !== undefined) return { found: true, order: mapOrder(order, clientOrderId) };
+    const order = snapshot.orders.find((candidate) => candidate.magic === magic);
+    if (order !== undefined) {
+      return { found: true, order: mapOrder(order, clientOrderId) };
+    }
 
     // A market order may already have disappeared from active orders. If the
     // authoritative reconciliation saw our magic in a deal/position, return a
