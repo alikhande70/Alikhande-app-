@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import {
   classifyMt5CommandRecovery,
-  mayRetryBeforeSend,
   type Mt5CommandLifecycleRecord,
+  mayRetryBeforeSend,
   validateMt5CommandLifecycle,
 } from './command-lifecycle.js';
 
@@ -76,9 +76,9 @@ describe('MT5 command lifecycle', () => {
       ]),
     ).toThrow(/monotonically/);
 
-    expect(() =>
-      validateMt5CommandLifecycle([record('RECEIVED', 10), record('SENT', 20)]),
-    ).toThrow(/SENT must follow CHECKED/);
+    expect(() => validateMt5CommandLifecycle([record('RECEIVED', 10), record('SENT', 20)])).toThrow(
+      /SENT must follow CHECKED/,
+    );
   });
 
   it('rejects mixed request ids and commands', () => {
@@ -103,9 +103,7 @@ describe('MT5 command lifecycle', () => {
     ).toThrow(/requires outcome/);
 
     expect(() =>
-      validateMt5CommandLifecycle([
-        record('RECEIVED', 10, { outcome: 'accepted' }),
-      ]),
+      validateMt5CommandLifecycle([record('RECEIVED', 10, { outcome: 'accepted' })]),
     ).toThrow(/cannot carry outcome/);
   });
 
