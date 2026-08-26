@@ -40,7 +40,9 @@ export class Mt5SymbolMap {
         throw new Mt5SymbolMapError(`invalid MT5 venue symbol alias key '${raw}'`);
       }
       if (!validCanonical(canonical)) {
-        throw new Mt5SymbolMapError(`invalid canonical symbol '${canonical}' for MT5 symbol '${raw}'`);
+        throw new Mt5SymbolMapError(
+          `invalid canonical symbol '${canonical}' for MT5 symbol '${raw}'`,
+        );
       }
       const priorRaw = rawByCanonical.get(canonical);
       if (priorRaw !== undefined && priorRaw !== raw) {
