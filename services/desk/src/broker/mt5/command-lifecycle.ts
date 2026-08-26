@@ -54,13 +54,12 @@ function assertResultShape(record: Mt5CommandLifecycleRecord): void {
  * command may be rejected before any broker side effect. SENT is the irreversible boundary:
  * after it exists, loss of the final result is ambiguous and requires broker reconciliation.
  */
-export function validateMt5CommandLifecycle(
-  records: readonly Mt5CommandLifecycleRecord[],
-): void {
-  if (records.length === 0) return;
+export function validateMt5CommandLifecycle(records: readonly Mt5CommandLifecycleRecord[]): void {
+  const first = records[0];
+  if (first === undefined) return;
 
-  const requestId = records[0]!.requestId;
-  const command = records[0]!.command;
+  const requestId = first.requestId;
+  const command = first.command;
   let previousRank = -1;
   let sawSent = false;
   let sawResult = false;
@@ -115,19 +114,26 @@ export function classifyMt5CommandRecovery(
   if (records.length === 0) return { kind: 'unseen' };
   validateMt5CommandLifecycle(records);
 
-  const last = records.at(-1)!;
+  const last = records.at(-1);
+  if (last === undefined) return { kind: 'unseen' };
+
   switch (last.stage) {
     case 'RECEIVED':
     case 'CHECKED':
       return { kind: 'safe_before_send', lastStage: last.stage };
     case 'SENT':
       return { kind: 'must_reconcile', lastStage: 'SENT' };
-    case 'RESULT':
+    case 'RESULT': {
+      const outcome = last.outcome;
+      if (outcome === undefined) {
+        throw new Error('MT5 RESULT lifecycle record requires outcome');
+      }
       return {
         kind: 'resolved',
-        outcome: last.outcome!,
+        outcome,
         ...(last.reason === undefined ? {} : { reason: last.reason }),
       };
+    }
   }
 }
 
