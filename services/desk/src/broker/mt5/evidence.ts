@@ -1,10 +1,25 @@
 export type Mt5EvidenceKind = 'order' | 'deal' | 'position';
+export type Mt5EvidenceOrderState =
+  | 'PENDING_SUBMIT'
+  | 'WORKING'
+  | 'PARTIAL'
+  | 'FILLED'
+  | 'CANCEL_PENDING'
+  | 'CANCELLED'
+  | 'REJECTED'
+  | 'EXPIRED'
+  | 'UNKNOWN';
 
 /**
  * One broker object returned by a reconciliation scan.
  *
  * `magic` and tickets are decimal strings on purpose: MT5 exposes 64-bit
  * identifiers and JavaScript Number cannot represent all of them exactly.
+ *
+ * Historical orders also carry their terminal order state. This is critical:
+ * finding a matching historical order proves the venue saw the request, but a
+ * REJECTED/CANCELLED/EXPIRED order is not execution evidence and must never be
+ * reconstructed as a fill.
  */
 export interface Mt5EvidenceCandidate {
   readonly kind: Mt5EvidenceKind;
@@ -16,6 +31,7 @@ export interface Mt5EvidenceCandidate {
   readonly price?: string;
   readonly serverTime: number;
   readonly positionId?: string;
+  readonly orderState?: Mt5EvidenceOrderState;
 }
 
 export interface Mt5Fingerprint {
@@ -68,12 +84,30 @@ export interface Mt5ResolveOptions {
 }
 
 const DECIMAL_INTEGER = /^[0-9]+$/;
+const ORDER_STATES = new Set<Mt5EvidenceOrderState>([
+  'PENDING_SUBMIT',
+  'WORKING',
+  'PARTIAL',
+  'FILLED',
+  'CANCEL_PENDING',
+  'CANCELLED',
+  'REJECTED',
+  'EXPIRED',
+  'UNKNOWN',
+]);
 
 function validateCandidate(candidate: Mt5EvidenceCandidate): void {
   if (!DECIMAL_INTEGER.test(candidate.ticket))
     throw new Error('MT5 evidence ticket must be decimal');
   if (!DECIMAL_INTEGER.test(candidate.magic)) throw new Error('MT5 evidence magic must be decimal');
   if (!Number.isFinite(candidate.serverTime)) throw new Error('MT5 evidence time must be finite');
+  if (candidate.kind === 'order') {
+    if (candidate.orderState === undefined || !ORDER_STATES.has(candidate.orderState)) {
+      throw new Error('MT5 order evidence must include a recognised orderState');
+    }
+  } else if (candidate.orderState !== undefined) {
+    throw new Error('MT5 deal/position evidence cannot carry orderState');
+  }
 }
 
 function sameFingerprint(candidate: Mt5EvidenceCandidate, expected: Mt5Fingerprint): boolean {
