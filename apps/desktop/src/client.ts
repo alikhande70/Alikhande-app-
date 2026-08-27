@@ -102,7 +102,8 @@ export class DesktopDeskClient {
         status: 0,
         code: 'MISSION_REQUIRED',
         title: 'Trade Mission required',
-        detail: 'Windows/Desktop orders must use /missions/:missionId/orders. Legacy /orders is disabled in this client.',
+        detail:
+          'Windows/Desktop orders must use /missions/:missionId/orders. Legacy /orders is disabled in this client.',
         retryable: false,
         outcomeUnknown: false,
       };
