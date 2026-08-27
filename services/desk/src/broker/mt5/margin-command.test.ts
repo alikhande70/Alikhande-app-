@@ -33,11 +33,11 @@ describe('MT5 calc_margin command', () => {
 
   it('keeps the MQL5 margin primitive read-only', () => {
     const marginSource = readFileSync(
-      new URL('../../../../../../mt5/KeelMargin.mqh', import.meta.url),
+      new URL('../../../../../mt5/KeelMargin.mqh', import.meta.url),
       'utf8',
     );
     const agentSource = readFileSync(
-      new URL('../../../../../../mt5/KeelAgent.mq5', import.meta.url),
+      new URL('../../../../../mt5/KeelAgent.mq5', import.meta.url),
       'utf8',
     );
 
