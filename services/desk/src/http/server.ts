@@ -76,7 +76,9 @@ export async function buildServer(deps: ServerDeps): Promise<FastifyInstance> {
 
   app.setErrorHandler((err: unknown, _req, reply) => {
     if (err instanceof AuthError) {
-      void reply.status(err.status).send({ code: err.code, title: 'Not authorised', detail: err.message });
+      void reply
+        .status(err.status)
+        .send({ code: err.code, title: 'Not authorised', detail: err.message });
       return;
     }
     const message = err instanceof Error ? err.message : String(err);

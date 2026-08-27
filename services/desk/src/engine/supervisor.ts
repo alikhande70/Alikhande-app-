@@ -13,24 +13,6 @@ import { KeyedMutex } from './lock.js';
 import { recordOrderEvent } from './record.js';
 import type { DeskState } from './state.js';
 
-/**
- * The execution supervisor.
- *
- * The one path from a human decision to a venue, and the place where the
- * system's central promise is kept: it never claims to know something it does
- * not. The ordering below is deliberate and is the whole design:
- *
- *   1. hold the per-intent lock          (two taps cannot race)
- *   2. check idempotency in the ledger   (a retry returns the first outcome)
- *   3. evaluate risk                     (server-side, unbypassable)
- *   4. derive size from the venue spec   (never trust a client-computed size)
- *   5. fsync the intent                  (evidence exists before transmission)
- *   6. transmit
- *   7. classify honestly                 (timeout is UNKNOWN, never REJECTED)
- *
- * Step 5 before step 6 is the property that makes a power cut survivable.
- */
-
 export interface SubmitCommand {
   readonly intentId: string;
   readonly canonical: string;
@@ -73,9 +55,7 @@ export interface SupervisorDeps {
   readonly broker: BrokerPort;
   readonly clock: Clock;
   readonly log: Logger;
-  /** Called whenever an intent reaches UNKNOWN, to start resolution. */
   readonly onUnknown: (intentId: string, clientOrderId: string) => void;
-  /** Called for each anomaly, so alerts and divergences can be raised. */
   readonly onAnomaly?: (intentId: string, anomaly: D.Anomaly) => void;
 }
 
@@ -124,13 +104,6 @@ export class ExecutionSupervisor {
     this.record(intentId, event);
   }
 
-  /**
-   * Evaluate risk and sizing without sending anything.
-   *
-   * Preparation is asynchronous because some venues (MT5) can only provide
-   * truthful margin for a concrete request. Preview and submit await this exact
-   * same path so they cannot silently disagree about margin policy.
-   */
   async preview(
     cmd: SubmitCommand,
   ): Promise<{ risk: RiskDecision; sizing: SizingResult | undefined }> {
@@ -311,7 +284,6 @@ export class ExecutionSupervisor {
           deduplicated: false,
         };
       }
-
       case 'rejected': {
         this.record(intentId, {
           type: 'submit.rejected',
@@ -333,7 +305,6 @@ export class ExecutionSupervisor {
           },
         };
       }
-
       case 'ambiguous': {
         this.record(intentId, {
           type: 'submit.ambiguous',
@@ -589,7 +560,10 @@ export class ExecutionSupervisor {
         });
       } catch (error) {
         this.deps.log.warn(
-          { canonical: spec.canonical, err: error instanceof Error ? error.message : String(error) },
+          {
+            canonical: spec.canonical,
+            err: error instanceof Error ? error.message : String(error),
+          },
           'request-specific margin lookup failed; blocking as unknown',
         );
         return undefined;
@@ -612,8 +586,6 @@ export class ExecutionSupervisor {
       return result.requiredAccountCurrency;
     }
 
-    // Non-MT5 adapters may still publish a venue-defined static margin rate.
-    // Keep that legacy path isolated: MT5 never invents such a scalar.
     const quoteMargin = D.marginQuote(spec, volume, entry);
     if (quoteMargin === undefined) return undefined;
     const conv = this.deps.state.fxBook.convert({
