@@ -1,10 +1,10 @@
 import { describe, expect, it, vi } from 'vitest';
-import type { Mt5HostSnapshot, Mt5HostSubmitResult } from './host-types.js';
 import {
   buildMt5ExecutionHost,
   type Mt5ExecutionAgent,
   Mt5ExecutionHostError,
 } from './execution-host.js';
+import type { Mt5HostSnapshot, Mt5HostSubmitResult } from './host-types.js';
 
 const TOKEN = 'host-token-0123456789';
 
@@ -65,7 +65,13 @@ describe('MT5 execution host', () => {
       method: 'POST',
       url: '/v1/margin',
       headers: { authorization: `Bearer ${TOKEN}` },
-      payload: { symbol: 'XAUUSD', side: 'buy', kind: 'market', volume: '0.10', price: '2500.00' },
+      payload: {
+        symbol: 'XAUUSD',
+        side: 'buy',
+        kind: 'market',
+        volume: '0.10',
+        price: '2500.00',
+      },
     });
 
     expect(response.statusCode).toBe(503);
