@@ -3,7 +3,7 @@
 //|  Loopback-only MT5 bridge for the Keel personal trading system. |
 //+------------------------------------------------------------------+
 #property strict
-#property version   "0.5.0"
+#property version   "0.6.0"
 #property description "Keel MT5 bridge. Add 127.0.0.1 to Tools > Options > Expert Advisors > allowed addresses before use."
 
 input string InpDeskHost = "127.0.0.1";
@@ -11,10 +11,6 @@ input uint   InpDeskPort = 28761;
 input string InpAgentToken = "";
 input string InpAgentId = "keel-mt5-agent";
 input uint   InpHeartbeatSeconds = 1;
-// Explicit tradable universe, comma separated, exactly as the broker spells the
-// symbols (suffixes included). Instrument discovery must not depend on what
-// happens to be open: a flat account would otherwise publish no instruments at
-// all, and nothing could be sized until a position already existed.
 input string InpSymbols = "XAUUSD,EURUSD";
 
 int    g_socket = INVALID_HANDLE;
@@ -60,17 +56,6 @@ string PositionModelText()
    return("netting");
   }
 
-//--- Clock domains ------------------------------------------------------------
-// TimeTradeServer() is the *broker's* wall clock; LiteFinance and most FX
-// brokers run GMT+2/+3, not UTC. The desk stamps its ledger in real UTC, so any
-// value compared against desk timestamps -- send windows, history coverage,
-// heartbeat freshness -- must be UTC or the comparison silently measures the
-// broker's timezone offset instead of elapsed time.
-//
-// The sign of that error decides how it fails: a server ahead of UTC makes
-// absence impossible to conclude, and a server behind UTC makes false absence
-// possible. UTC therefore crosses the wire, with the offset reported alongside
-// for session reasoning that genuinely wants server time.
 long UtcMillis()    { return((long)TimeGMT()*1000); }
 long ServerMillis() { return((long)TimeTradeServer()*1000); }
 long ServerUtcOffsetSeconds() { return((long)TimeTradeServer()-(long)TimeGMT()); }
@@ -157,8 +142,6 @@ bool SendHello()
       TradeModeText(),PositionModelText(),ULongText(g_agent_epoch),UtcMillis());
    if(!SendLine(line)) return(false);
    g_hello_sent=true;
-   // Anything durably written but not acknowledged goes out now, before new
-   // events, so ordering within the epoch is preserved across the gap.
    KeelReplayUndelivered();
    return(true);
   }
@@ -245,8 +228,9 @@ bool IsSafeRequestId(const string value)
 
 bool IsAllowedCommand(const string command)
   {
-   return(command=="snapshot" || command=="place_order" || command=="cancel_order" ||
-          command=="modify_position" || command=="close_position" || command=="reconcile");
+   return(command=="snapshot" || command=="calc_margin" || command=="place_order" ||
+          command=="cancel_order" || command=="modify_position" ||
+          command=="close_position" || command=="reconcile");
   }
 
 bool HasSeenRequestId(const string request_id)
@@ -294,6 +278,7 @@ void SendRejectedResult(const string request_id,const string reason)
   }
 
 #include "KeelOrderCheck.mqh"
+#include "KeelMargin.mqh"
 #include "KeelSnapshot.mqh"
 #include "KeelReconcile.mqh"
 
@@ -330,6 +315,12 @@ void HandleCommandLine(const string line)
       return;
      }
    RememberRequestId(request_id);
+
+   if(command=="calc_margin")
+     {
+      KeelHandleCalcMargin(line,request_id);
+      return;
+     }
 
    if(command=="place_order")
      {
@@ -414,13 +405,6 @@ void EmitTransaction(const MqlTradeTransaction &trans,const MqlTradeRequest &req
      }
   }
 
-//--- Epoch and undelivered-event replay ---------------------------------------
-// Event sequence numbers restart with each run of the EA, so the desk needs to
-// know which run it is talking to. Without that it compared a fresh sequence
-// against the previous run's watermark, rejected everything, and went deaf --
-// heartbeats included.
-//
-// The epoch is persisted and incremented at startup. It only ever moves forward.
 ulong KeelLoadEpoch()
   {
    int handle=FileOpen(g_epoch_file,FILE_READ|FILE_TXT|FILE_ANSI|FILE_SHARE_READ,0,CP_UTF8);
@@ -444,8 +428,6 @@ bool KeelStoreEpoch(const ulong epoch)
    return(true);
   }
 
-// Restore the highest sequence already written, so a restart continues the
-// numbering within the new epoch rather than colliding with spooled lines.
 ulong KeelHighestSpooledSeq()
   {
    int handle=FileOpen(g_spool_file,FILE_READ|FILE_TXT|FILE_ANSI|FILE_SHARE_READ,0,CP_UTF8);
@@ -465,12 +447,6 @@ ulong KeelHighestSpooledSeq()
    return(highest);
   }
 
-// Re-send spooled events the desk has not acknowledged.
-//
-// Replay cannot fabricate broker truth: these lines were written from real
-// MqlTradeTransaction callbacks before transmission was attempted. Duplicates
-// are harmless because the desk drops any sequence it has already seen, and
-// reconciliation -- not this stream -- remains authoritative.
 void KeelReplayUndelivered()
   {
    int handle=FileOpen(g_spool_file,FILE_READ|FILE_TXT|FILE_ANSI|FILE_SHARE_READ,0,CP_UTF8);
@@ -498,14 +474,10 @@ int OnInit()
       return(INIT_PARAMETERS_INCORRECT);
      }
    LoadSeenRequestIds();
-   // A new run of the agent. The epoch moves forward so the desk knows the
-   // sequence numbering below has restarted, and the sequence resumes above
-   // anything already spooled so a replayed line cannot collide with a new one.
    g_agent_epoch=KeelLoadEpoch()+1;
    if(!KeelStoreEpoch(g_agent_epoch))
      {
-      Print("KeelAgent: refusing to start without a durable epoch; the desk could not tell "
-            "this run's events apart from the previous run's");
+      Print("KeelAgent: refusing to start without a durable epoch; the desk could not tell this run's events apart from the previous run's");
       return(INIT_FAILED);
      }
    g_event_seq=KeelHighestSpooledSeq();
