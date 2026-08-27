@@ -32,7 +32,8 @@ export interface ServerDeps {
   readonly alerts: AlertEngine;
   readonly hub: RealtimeHub;
   readonly auth: Authenticator;
-  readonly missions: MissionRuntime;
+  /** Present in the assembled Desk; optional only for isolated legacy server fixtures. */
+  readonly missions?: MissionRuntime;
   readonly health: () => Record<string, unknown>;
   readonly cancelOrder: (intentId: string, reply: FastifyReply) => Promise<Record<string, unknown>>;
   readonly copilotAsk?: (question: string, conversationId?: string) => Promise<unknown>;
@@ -159,7 +160,7 @@ export async function buildServer(deps: ServerDeps): Promise<FastifyInstance> {
     const { limit } = z
       .object({ limit: z.coerce.number().int().min(1).max(1000).default(200) })
       .parse(req.query);
-    return { missions: deps.missions.listRecent(limit) };
+    return { missions: deps.missions?.listRecent(limit) ?? [] };
   });
 
   app.get('/journal', async (req) => {
@@ -535,7 +536,7 @@ export function buildSnapshot(deps: ServerDeps): Record<string, unknown> {
         'CANCEL_REQUESTED',
       ])
       .map(orderToWire),
-    missions: deps.missions.listRecent(),
+    missions: deps.missions?.listRecent() ?? [],
     divergences: deps.reconciler.openDivergences,
     drawdown: {
       status: drawdown.status,
