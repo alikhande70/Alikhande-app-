@@ -2,6 +2,7 @@ import { useDeskStore } from '../store/desk.js';
 import { type ClientOptions, DeskClient } from './client.js';
 import { clearDeskClient, installDeskClient } from './runtime.js';
 import type { SecureSigner } from './signer.js';
+import { canonicalString } from './signing.js';
 import { DeskSocket, type WebSocketLike } from './socket.js';
 
 /** Topics that make up the operator's authoritative mobile read model. */
@@ -76,6 +77,24 @@ export async function restoreDeskRuntime(
   const socket = new DeskSocket({
     url: pairing.streamUrl ?? streamUrlFor(pairing.baseUrl),
     topics: DESK_TOPICS,
+    authenticate: async () => {
+      const timestamp =
+        (options.now?.() ?? Date.now()) + useDeskStore.getState().clockOffsetMs;
+      const nonce = options.randomId();
+      const bodyHash = await options.hashBody('');
+      const signature = await options.signer.sign(
+        canonicalString({
+          method: 'GET',
+          path: '/stream',
+          timestamp,
+          nonce,
+          bodyHash,
+        }),
+        'Connect to your trading desk',
+        false,
+      );
+      return { deviceId: pairing.deviceId, timestamp, nonce, signature };
+    },
     ...(options.socketFactory === undefined ? {} : { factory: options.socketFactory }),
     ...(options.now === undefined ? {} : { now: options.now }),
     events: {

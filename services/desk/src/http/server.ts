@@ -19,6 +19,7 @@ import type { Clock } from '../sim/clock.js';
 import type { EnrolledDevice } from './auth.js';
 import { AuthError, type Authenticator, hashBody } from './auth.js';
 import { registerMissionRoutes } from './mission-routes.js';
+import { verifyStreamHelloAuth } from './stream-auth.js';
 
 export interface ServerDeps {
   readonly config: DeskConfig;
@@ -287,27 +288,63 @@ export async function buildServer(deps: ServerDeps): Promise<FastifyInstance> {
 
   app.get('/stream', { websocket: true }, (socket) => {
     const clientId = randomUUID();
-    deps.hub.connect({
-      id: clientId,
-      send: (text) => socket.send(text),
-      close: (code, reason) => socket.close(code, reason),
-    });
+    let authenticated = false;
+    let hubConnected = false;
+
+    const connectHub = (): void => {
+      if (hubConnected) return;
+      hubConnected = true;
+      deps.hub.connect({
+        id: clientId,
+        send: (text) => socket.send(text),
+        close: (code, reason) => socket.close(code, reason),
+      });
+    };
+
+    const reject = (reason: string): void => {
+      deps.log.warn({ clientId, reason }, 'realtime client authentication refused');
+      try {
+        socket.close(4401, 'not authorised');
+      } catch {
+        /* already gone */
+      }
+    };
 
     socket.on('message', (raw: Buffer) => {
-      deps.hub.touch(clientId);
       let msg: Record<string, unknown>;
       try {
         msg = JSON.parse(raw.toString()) as Record<string, unknown>;
       } catch {
+        if (!authenticated) reject('first frame was not valid JSON');
         return;
       }
-      switch (msg.type) {
-        case 'hello': {
-          const topics = Array.isArray(msg.topics) ? (msg.topics as string[]) : [];
-          const resume = (msg.resume ?? {}) as Record<string, number>;
-          for (const t of topics) deps.hub.subscribe(clientId, t, resume[t]);
-          break;
+
+      if (!authenticated) {
+        if (msg.type !== 'hello') {
+          reject('first frame was not an authenticated hello');
+          return;
         }
+        try {
+          verifyStreamHelloAuth(msg.auth, deps.auth);
+        } catch (err) {
+          reject(err instanceof Error ? err.message : String(err));
+          return;
+        }
+        authenticated = true;
+        connectHub();
+        const topics = Array.isArray(msg.topics) ? (msg.topics as string[]) : [];
+        const resume = (msg.resume ?? {}) as Record<string, number>;
+        for (const t of topics) deps.hub.subscribe(clientId, t, resume[t]);
+        return;
+      }
+
+      deps.hub.touch(clientId);
+      switch (msg.type) {
+        case 'hello':
+          // A second hello would otherwise allow a client to blur connection
+          // identity and resume semantics. Reconnect instead and sign afresh.
+          reject('duplicate hello on an authenticated stream');
+          break;
         case 'subscribe': {
           const topics = Array.isArray(msg.topics) ? (msg.topics as string[]) : [];
           for (const t of topics) deps.hub.subscribe(clientId, t);
@@ -332,7 +369,9 @@ export async function buildServer(deps: ServerDeps): Promise<FastifyInstance> {
       }
     });
 
-    socket.on('close', () => deps.hub.disconnect(clientId));
+    socket.on('close', () => {
+      if (hubConnected) deps.hub.disconnect(clientId);
+    });
   });
 
   return app;

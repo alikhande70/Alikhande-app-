@@ -33,8 +33,18 @@ class ProvisionedSigner implements SecureSigner {
     keyKind: 'ed25519',
     hardwareBacked: false,
   };
+  lastCanonical = '';
+  lastReason = '';
+  lastRequireBiometric = true;
 
-  async sign(): Promise<string> {
+  async sign(
+    canonical: string,
+    reason: string,
+    requireBiometric: boolean,
+  ): Promise<string> {
+    this.lastCanonical = canonical;
+    this.lastReason = reason;
+    this.lastRequireBiometric = requireBiometric;
     return 'signature';
   }
 
@@ -83,13 +93,14 @@ describe('mobile Desk bootstrap', () => {
 
   it('installs the signed client and wires socket truth into the gap-aware store', async () => {
     const ws = new FakeSocket();
+    const signer = new ProvisionedSigner();
     let openedUrl = '';
     let now = 1_000;
 
     const runtime = await restoreDeskRuntime(
       { baseUrl: 'https://desk.example.test', deviceId: 'device-1' },
       {
-        signer: new ProvisionedSigner(),
+        signer,
         hashBody: async () => 'hash',
         randomId: () => 'nonce',
         now: () => now,
@@ -105,12 +116,23 @@ describe('mobile Desk bootstrap', () => {
     expect(useDeskStore.getState().connection).toBe('connecting');
 
     ws.open();
+    await Promise.resolve();
+    await Promise.resolve();
     expect(useDeskStore.getState().connection).toBe('connected');
     const hello = JSON.parse(ws.sent[0] ?? '{}') as Record<string, unknown>;
     expect(hello.type).toBe('hello');
     expect(hello.topics).toEqual(
       expect.arrayContaining(['health', 'account', 'positions', 'orders', 'missions']),
     );
+    expect(hello.auth).toEqual({
+      deviceId: 'device-1',
+      timestamp: 1_000,
+      nonce: 'nonce',
+      signature: 'signature',
+    });
+    expect(signer.lastCanonical).toBe('keel-v1\nGET\n/stream\n1000\nnonce\nhash\n-');
+    expect(signer.lastReason).toBe('Connect to your trading desk');
+    expect(signer.lastRequireBiometric).toBe(false);
 
     ws.frame({
       type: 'snapshot',
@@ -171,6 +193,8 @@ describe('mobile Desk bootstrap', () => {
     );
 
     ws.open();
+    await Promise.resolve();
+    await Promise.resolve();
     ws.frame({
       type: 'snapshot',
       topic: 'missions',

@@ -14,6 +14,13 @@
 
 export type TopicName = string;
 
+export interface SocketAuthentication {
+  readonly deviceId: string;
+  readonly timestamp: number;
+  readonly nonce: string;
+  readonly signature: string;
+}
+
 export interface SocketFrame {
   readonly type: string;
   readonly topic?: string;
@@ -63,6 +70,12 @@ export interface SocketOptions {
   readonly url: string;
   readonly topics: readonly string[];
   readonly events: SocketEvents;
+  /**
+   * Builds a fresh signed read proof for every connection attempt. Production
+   * callers provide this; isolated socket unit tests may omit it because they
+   * do not stand up the authenticated Desk server.
+   */
+  readonly authenticate?: () => Promise<SocketAuthentication>;
   /** Injected so tests can drive a fake socket. */
   readonly factory?: (url: string) => WebSocketLike;
   readonly now?: () => number;
@@ -167,20 +180,7 @@ export class DeskSocket {
     this.ws = ws;
 
     ws.onopen = () => {
-      this.attempt = 0;
-      this.setState('connected');
-      // Present what we hold, so the desk can replay only what we missed. This
-      // is what makes a backgrounded phone cheap to bring back.
-      const resume: Record<string, number> = {};
-      for (const [topic, seq] of this.lastSeq) resume[topic] = seq;
-      this.send({
-        type: 'hello',
-        protocolVersion: 1,
-        clientVersion: '0.1.0',
-        topics: this.opts.topics,
-        resume,
-      });
-      this.startHeartbeat();
+      void this.sendHello(ws);
     };
 
     ws.onmessage = (ev) => {
@@ -204,6 +204,42 @@ export class DeskSocket {
       // `onclose` follows, and that is where reconnection is handled. Doing it
       // in both would double the backoff schedule.
     };
+  }
+
+  private async sendHello(ws: WebSocketLike): Promise<void> {
+    try {
+      const auth = await this.opts.authenticate?.();
+      // A previous connection may have closed while a platform signer was
+      // completing. Never let its late proof authenticate the replacement.
+      if (this.closing || this.ws !== ws) return;
+
+      this.attempt = 0;
+      this.setState('connected');
+      // Present what we hold, so the desk can replay only what we missed. This
+      // is what makes a backgrounded phone cheap to bring back.
+      const resume: Record<string, number> = {};
+      for (const [topic, seq] of this.lastSeq) resume[topic] = seq;
+      this.send({
+        type: 'hello',
+        protocolVersion: 1,
+        clientVersion: '0.1.0',
+        topics: this.opts.topics,
+        resume,
+        ...(auth === undefined ? {} : { auth }),
+      });
+      this.startHeartbeat();
+    } catch (err) {
+      if (this.closing || this.ws !== ws) return;
+      this.setState(
+        'disconnected',
+        `stream authentication failed: ${err instanceof Error ? err.message : String(err)}`,
+      );
+      try {
+        ws.close();
+      } catch {
+        /* already gone */
+      }
+    }
   }
 
   private handle(frame: SocketFrame): void {
