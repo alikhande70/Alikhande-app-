@@ -52,6 +52,8 @@ const snapshotSchema = z.object({
   riskVerdict: z.record(z.string(), z.unknown()).optional(),
 });
 
+type ParsedSnapshot = z.infer<typeof snapshotSchema>;
+
 const scanSchema = z
   .object({
     scanId: z.string().min(1).max(200),
@@ -89,6 +91,28 @@ const scanSchema = z
       });
     }
   });
+
+function toDecisionSnapshot(value: ParsedSnapshot): DecisionSnapshot {
+  const plan =
+    value.plan === undefined
+      ? undefined
+      : {
+          side: value.plan.side,
+          invalidation: value.plan.invalidation,
+          ...(value.plan.entry === undefined ? {} : { entry: value.plan.entry }),
+          ...(value.plan.stop === undefined ? {} : { stop: value.plan.stop }),
+          ...(value.plan.target === undefined ? {} : { target: value.plan.target }),
+          ...(value.plan.volume === undefined ? {} : { volume: value.plan.volume }),
+        };
+  return {
+    snapshotVersion: value.snapshotVersion,
+    asOf: value.asOf,
+    known: value.known,
+    missing: value.missing,
+    ...(plan === undefined ? {} : { plan }),
+    ...(value.riskVerdict === undefined ? {} : { riskVerdict: value.riskVerdict }),
+  };
+}
 
 function conflict(reply: FastifyReply, error: unknown): Record<string, unknown> {
   void reply.status(409);
@@ -132,7 +156,20 @@ export function registerMissionRoutes(
   app.post('/scans', async (req, reply) => {
     try {
       const body = scanSchema.parse(req.body);
-      const mission = runtime.scans.ingest(body);
+      const mission = runtime.scans.ingest({
+        scanId: body.scanId,
+        canonical: body.canonical,
+        timeframe: body.timeframe,
+        trigger: body.trigger,
+        scanConfigVersion: body.scanConfigVersion,
+        observedAt: body.observedAt,
+        marketState: body.marketState,
+        disposition: body.disposition,
+        ...(body.decisionSnapshot === undefined
+          ? {}
+          : { decisionSnapshot: toDecisionSnapshot(body.decisionSnapshot) }),
+        ...(body.rejectionReason === undefined ? {} : { rejectionReason: body.rejectionReason }),
+      });
       return { mission };
     } catch (error) {
       if (error instanceof MissionInvariantError) return conflict(reply, error);
@@ -151,7 +188,7 @@ export function registerMissionRoutes(
         .parse(req.body);
       const mission = runtime.missions.plan(
         missionId,
-        body.snapshot,
+        toDecisionSnapshot(body.snapshot),
         body.origin as MissionOrigin,
         deps.clock.now(),
       );
