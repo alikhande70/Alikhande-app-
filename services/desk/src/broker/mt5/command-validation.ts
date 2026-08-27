@@ -5,6 +5,7 @@ import type {
   Mt5HostOrderRequest,
   Mt5HostReconcileRequest,
 } from './host-types.js';
+import type { Mt5MarginRequest } from './margin-wire.js';
 
 export class Mt5CommandValidationError extends Error {
   constructor(message: string) {
@@ -15,6 +16,7 @@ export class Mt5CommandValidationError extends Error {
 
 type CommandName =
   | 'snapshot'
+  | 'calc_margin'
   | 'place_order'
   | 'cancel_order'
   | 'modify_position'
@@ -23,6 +25,7 @@ type CommandName =
 
 export type ValidatedMt5Command =
   | { readonly command: 'snapshot'; readonly payload: Record<string, never> }
+  | { readonly command: 'calc_margin'; readonly payload: Mt5MarginRequest }
   | { readonly command: 'place_order'; readonly payload: Mt5HostOrderRequest }
   | { readonly command: 'cancel_order'; readonly payload: Mt5HostCancelRequest }
   | { readonly command: 'modify_position'; readonly payload: Mt5HostModifyRequest }
@@ -103,6 +106,36 @@ function rejectUnknownKeys(value: Record<string, unknown>, allowed: readonly str
   }
 }
 
+function validateSide(value: Record<string, unknown>): 'buy' | 'sell' {
+  const side = value.side;
+  if (side !== 'buy' && side !== 'sell') {
+    throw new Mt5CommandValidationError('side must be buy or sell');
+  }
+  return side;
+}
+
+function validateKind(
+  value: Record<string, unknown>,
+): 'market' | 'limit' | 'stop' | 'stop_limit' {
+  const kind = value.kind;
+  if (kind !== 'market' && kind !== 'limit' && kind !== 'stop' && kind !== 'stop_limit') {
+    throw new Mt5CommandValidationError('kind must be market, limit, stop, or stop_limit');
+  }
+  return kind;
+}
+
+function validateMargin(payload: unknown): Mt5MarginRequest {
+  const value = record(payload, 'calc_margin payload');
+  rejectUnknownKeys(value, ['symbol', 'side', 'kind', 'volume', 'price']);
+  return {
+    symbol: text(value, 'symbol'),
+    side: validateSide(value),
+    kind: validateKind(value),
+    volume: decimal(value, 'volume'),
+    price: decimal(value, 'price'),
+  };
+}
+
 function validatePlaceOrder(payload: unknown): Mt5HostOrderRequest {
   const value = record(payload, 'place_order payload');
   rejectUnknownKeys(value, [
@@ -120,14 +153,8 @@ function validatePlaceOrder(payload: unknown): Mt5HostOrderRequest {
     'maxSlippage',
   ]);
 
-  const side = value.side;
-  if (side !== 'buy' && side !== 'sell') {
-    throw new Mt5CommandValidationError('side must be buy or sell');
-  }
-  const kind = value.kind;
-  if (kind !== 'market' && kind !== 'limit' && kind !== 'stop' && kind !== 'stop_limit') {
-    throw new Mt5CommandValidationError('kind must be market, limit, stop, or stop_limit');
-  }
+  const side = validateSide(value);
+  const kind = validateKind(value);
 
   const limitPrice = optionalDecimal(value, 'limitPrice');
   const stopTriggerPrice = optionalDecimal(value, 'stopTriggerPrice');
@@ -197,10 +224,7 @@ function validateClose(payload: unknown): Mt5HostCloseRequest {
 function validateReconcile(payload: unknown): Mt5HostReconcileRequest {
   const value = record(payload, 'reconcile payload');
   rejectUnknownKeys(value, ['magic', 'symbol', 'side', 'volume', 'sentNotBefore', 'sentNotAfter']);
-  const side = value.side;
-  if (side !== 'buy' && side !== 'sell') {
-    throw new Mt5CommandValidationError('side must be buy or sell');
-  }
+  const side = validateSide(value);
   const sentNotBefore = finiteTime(value, 'sentNotBefore');
   const sentNotAfter = finiteTime(value, 'sentNotAfter');
   if (sentNotAfter < sentNotBefore) {
@@ -230,6 +254,8 @@ export function validateMt5Command(command: CommandName, payload: unknown): Vali
       rejectUnknownKeys(value, []);
       return { command, payload: {} };
     }
+    case 'calc_margin':
+      return { command, payload: validateMargin(payload) };
     case 'place_order':
       return { command, payload: validatePlaceOrder(payload) };
     case 'cancel_order':
