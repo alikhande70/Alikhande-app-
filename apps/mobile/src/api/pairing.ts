@@ -84,7 +84,10 @@ export async function pairDesk(
   const baseUrl = normalizeDeskUrl(request.baseUrl);
   const code = request.code.trim().toUpperCase();
   if (!/^[0-9A-F]{10}$/.test(code)) {
-    throw new PairingError('enrolment code must be the 10-character code shown by the Desk', 'BAD_CODE');
+    throw new PairingError(
+      'enrolment code must be the 10-character code shown by the Desk',
+      'BAD_CODE',
+    );
   }
 
   const alreadyProvisioned = await options.signer.isProvisioned();
@@ -168,7 +171,10 @@ async function enrol(
       }),
     });
   } catch (error) {
-    throw new PairingError(`could not reach the Desk enrolment endpoint: ${messageOf(error)}`, 'ENROL_FAILED');
+    throw new PairingError(
+      `could not reach the Desk enrolment endpoint: ${messageOf(error)}`,
+      'ENROL_FAILED',
+    );
   }
 
   let body: unknown;
@@ -244,7 +250,10 @@ function parseEnrolResponse(value: unknown): EnrolResponse {
     !Number.isFinite(enrolledAt) ||
     enrolledAt <= 0
   ) {
-    throw new PairingError('Desk enrolment response is missing required identity fields', 'ENROL_RESPONSE_INVALID');
+    throw new PairingError(
+      'Desk enrolment response is missing required identity fields',
+      'ENROL_RESPONSE_INVALID',
+    );
   }
   return { deviceId, label, keyKind, claimsHardwareBacked, enrolledAt };
 }
