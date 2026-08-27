@@ -15,7 +15,10 @@ import type { MissionRecord } from './types.js';
 export class MissionRuntime {
   readonly missions: MissionService;
 
-  constructor(private readonly ledger: Ledger, missions?: MissionService) {
+  constructor(
+    private readonly ledger: Ledger,
+    missions?: MissionService,
+  ) {
     this.missions = missions ?? new MissionService(ledger);
   }
 
@@ -140,7 +143,8 @@ export class MissionRuntime {
 
   private requireMission(missionId: string): MissionRecord {
     const mission = this.missions.load(missionId);
-    if (mission === undefined) throw new Error(`mission '${missionId}' disappeared during broker bridge`);
+    if (mission === undefined)
+      throw new Error(`mission '${missionId}' disappeared during broker bridge`);
     return mission;
   }
 }
