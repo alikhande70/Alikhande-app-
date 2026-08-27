@@ -29,10 +29,17 @@ interface MissionOrderResponse {
   };
 }
 
+/**
+ * Windows/Desktop order surface bound to proven Mission truth.
+ *
+ * The truth gate is deliberately mandatory. A caller cannot instantiate an
+ * operator that skips stale/gap/canonical/stage checks merely because a UI or
+ * test forgot to wire the realtime projection.
+ */
 export class DesktopMissionOperator {
   constructor(
     private readonly client: DesktopDeskClient,
-    private readonly missionTruth?: MissionTruthGate,
+    private readonly missionTruth: MissionTruthGate,
   ) {}
 
   async listMissions<T>(limit = 100): Promise<DesktopResult<T>> {
@@ -49,15 +56,13 @@ export class DesktopMissionOperator {
       };
     }
 
-    if (this.missionTruth !== undefined) {
-      const gate = this.missionTruth.canSubmit(input.missionId, input.canonical);
-      if (!gate.ok) {
-        return {
-          kind: 'blocked',
-          title: 'Mission truth is not current',
-          detail: gate.reason,
-        };
-      }
+    const gate = this.missionTruth.canSubmit(input.missionId, input.canonical);
+    if (!gate.ok) {
+      return {
+        kind: 'blocked',
+        title: 'Mission truth is not current',
+        detail: gate.reason,
+      };
     }
 
     const result = await this.client.command<MissionOrderResponse>(
