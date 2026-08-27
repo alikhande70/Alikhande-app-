@@ -60,7 +60,7 @@ export async function buildMt5ExecutionHost(
     if (!req.url.startsWith('/v1/')) return;
     const supplied = bearer(req);
     if (supplied === undefined || !tokenMatches(options.token, supplied)) {
-      void reply.status(401).send({
+      return reply.status(401).send({
         code: 'UNAUTHENTICATED',
         detail: 'valid MT5 execution-host bearer token required',
       });
@@ -69,7 +69,7 @@ export async function buildMt5ExecutionHost(
 
   function liveSession(reply: FastifyReply): Mt5ExecutionAgent | Mt5AgentSession | undefined {
     const session = options.session();
-    if (session !== undefined && session.isLive()) return session;
+    if (session?.isLive()) return session;
     void reply.status(503).send({
       code: 'NO_EXECUTION_PATH',
       detail: 'MT5 agent is absent, stale, or terminal-disconnected',
