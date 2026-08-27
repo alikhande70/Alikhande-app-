@@ -4,6 +4,8 @@ import { DesktopMissionOperator } from '../../../desktop/src/mission-operator.js
 
 const signer = { sign: vi.fn(async () => 'signature') };
 
+type TestFetch = (input: string | URL | Request, init?: RequestInit) => Promise<Response>;
+
 function response(status: number, body: unknown): Response {
   return new Response(JSON.stringify(body), {
     status,
@@ -11,7 +13,7 @@ function response(status: number, body: unknown): Response {
   });
 }
 
-function makeClient(fetchFn: typeof fetch) {
+function makeClient(fetchFn: TestFetch) {
   return new DesktopDeskClient({
     baseUrl: 'http://127.0.0.1:8787',
     deviceId: 'windows-1',
@@ -19,7 +21,9 @@ function makeClient(fetchFn: typeof fetch) {
     hashBody: async (body) => `hash:${body}`,
     randomId: () => 'request-nonce',
     now: () => 1_800_000_000_000,
-    fetchFn,
+    // React Native and Node expose slightly different overload sets for fetch.
+    // The test double implements the common runtime contract used here.
+    fetchFn: fetchFn as typeof fetch,
   });
 }
 
@@ -35,7 +39,7 @@ const order = {
 
 describe('Windows/Desktop Mission client', () => {
   it('refuses legacy Mission-less /orders before any network call', async () => {
-    const fetchFn = vi.fn<typeof fetch>();
+    const fetchFn = vi.fn<TestFetch>();
     const client = makeClient(fetchFn);
 
     const result = await client.command('/orders', { symbol: 'XAUUSD' });
@@ -47,7 +51,7 @@ describe('Windows/Desktop Mission client', () => {
   it('gets a command nonce and sends a Mission order exactly once', async () => {
     signer.sign.mockClear();
     const fetchFn = vi
-      .fn<typeof fetch>()
+      .fn<TestFetch>()
       .mockResolvedValueOnce(response(200, { nonce: 'command-nonce' }))
       .mockResolvedValueOnce(
         response(200, {
@@ -79,7 +83,7 @@ describe('Windows/Desktop Mission client', () => {
 
   it('classifies a command network failure as UNKNOWN and never retries it', async () => {
     const fetchFn = vi
-      .fn<typeof fetch>()
+      .fn<TestFetch>()
       .mockResolvedValueOnce(response(200, { nonce: 'command-nonce' }))
       .mockRejectedValueOnce(new Error('socket closed'));
     const operator = new DesktopMissionOperator(makeClient(fetchFn));
