@@ -147,21 +147,13 @@ describe('MissionExecutionCoordinator', () => {
     };
     const coordinator = new MissionExecutionCoordinator(ledger, missions, submitter);
 
-    const out = await coordinator.submit(
-      'mission-1',
-      command(),
-      'operator:android',
-      1_250,
-    );
+    const out = await coordinator.submit('mission-1', command(), 'operator:android', 1_250);
 
     expect(out.accepted).toBe(true);
     const mission = missions.load('mission-1');
     expect(mission?.stage).toBe('ARMED');
     expect(mission?.intentIds).toEqual(['intent-1']);
-    expect(mission?.actions.map((action) => action.type)).toEqual([
-      'authorise',
-      'submit',
-    ]);
+    expect(mission?.actions.map((action) => action.type)).toEqual(['authorise', 'submit']);
     expect(ledger.verifyChain().ok).toBe(true);
     ledger.close();
   });
@@ -179,12 +171,7 @@ describe('MissionExecutionCoordinator', () => {
     };
     const coordinator = new MissionExecutionCoordinator(ledger, missions, submitter);
 
-    const out = await coordinator.submit(
-      'mission-1',
-      command(),
-      'operator:desktop',
-      1_250,
-    );
+    const out = await coordinator.submit('mission-1', command(), 'operator:desktop', 1_250);
 
     expect(out.accepted).toBe(false);
     const mission = missions.load('mission-1');
