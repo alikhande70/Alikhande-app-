@@ -114,9 +114,7 @@ function validateSide(value: Record<string, unknown>): 'buy' | 'sell' {
   return side;
 }
 
-function validateKind(
-  value: Record<string, unknown>,
-): 'market' | 'limit' | 'stop' | 'stop_limit' {
+function validateKind(value: Record<string, unknown>): 'market' | 'limit' | 'stop' | 'stop_limit' {
   const kind = value.kind;
   if (kind !== 'market' && kind !== 'limit' && kind !== 'stop' && kind !== 'stop_limit') {
     throw new Mt5CommandValidationError('kind must be market, limit, stop, or stop_limit');
