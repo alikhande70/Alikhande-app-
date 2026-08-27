@@ -1,4 +1,5 @@
 import type { DesktopDeskClient, DesktopResult } from './client.js';
+import type { MissionTruthGate } from './mission-truth.js';
 
 export interface DesktopMissionOrder {
   readonly missionId: string;
@@ -29,7 +30,10 @@ interface MissionOrderResponse {
 }
 
 export class DesktopMissionOperator {
-  constructor(private readonly client: DesktopDeskClient) {}
+  constructor(
+    private readonly client: DesktopDeskClient,
+    private readonly missionTruth?: MissionTruthGate,
+  ) {}
 
   async listMissions<T>(limit = 100): Promise<DesktopResult<T>> {
     const bounded = Math.max(1, Math.min(250, Math.trunc(limit)));
@@ -43,6 +47,17 @@ export class DesktopMissionOperator {
         title: 'Trade Mission required',
         detail: 'A Windows order cannot be created without a durable Mission id.',
       };
+    }
+
+    if (this.missionTruth !== undefined) {
+      const gate = this.missionTruth.canSubmit(input.missionId, input.canonical);
+      if (!gate.ok) {
+        return {
+          kind: 'blocked',
+          title: 'Mission truth is not current',
+          detail: gate.reason,
+        };
+      }
     }
 
     const result = await this.client.command<MissionOrderResponse>(
