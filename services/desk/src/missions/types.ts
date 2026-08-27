@@ -115,3 +115,32 @@ export interface MissionRecord {
   readonly review?: MissionReview;
   readonly lastEventAt: number;
 }
+
+/**
+ * Immutable facts emitted by the Mission aggregate.
+ *
+ * These intentionally contain no "current state" blob. Current state is a pure
+ * fold over these facts, so replay and point-in-time reconstruction cannot
+ * disagree with a mutable mission table.
+ */
+export type MissionLedgerEvent =
+  | { kind: 'mission.observed'; observation: MissionObservation }
+  | {
+      kind: 'mission.snapshotSealed';
+      missionId: string;
+      snapshot: DecisionSnapshot;
+      sealedAt: number;
+    }
+  | {
+      kind: 'mission.stageChanged';
+      missionId: string;
+      from: MissionStage;
+      to: MissionStage;
+      origin: MissionOrigin;
+      at: number;
+      reason?: string;
+    }
+  | { kind: 'mission.intentLinked'; missionId: string; intentId: string; at: number }
+  | { kind: 'mission.positionLinked'; missionId: string; positionId: string; at: number }
+  | { kind: 'mission.actionRecorded'; missionId: string; action: MissionAction }
+  | { kind: 'mission.reviewed'; missionId: string; review: MissionReview };
