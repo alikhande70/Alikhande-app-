@@ -1,9 +1,9 @@
 import { beforeEach, describe, expect, it } from 'vitest';
+import { useDeskStore } from '../store/desk.js';
+import { restoreDeskRuntime, streamUrlFor } from './bootstrap.js';
 import { currentDeskClient } from './runtime.js';
 import type { SecureSigner, SignerIdentity } from './signer.js';
 import type { WebSocketLike } from './socket.js';
-import { restoreDeskRuntime, streamUrlFor } from './bootstrap.js';
-import { useDeskStore } from '../store/desk.js';
 
 class FakeSocket implements WebSocketLike {
   sent: string[] = [];
