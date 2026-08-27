@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { Ledger } from '../ledger/ledger.js';
-import { MissionRuntime, externalMissionId } from './runtime.js';
+import { externalMissionId, MissionRuntime } from './runtime.js';
 import { MissionService } from './service.js';
 import type { DecisionSnapshot, MissionObservation } from './types.js';
 
@@ -143,7 +143,12 @@ describe('MissionRuntime broker truth bridge', () => {
     expect(
       ledger
         .readStream('mission-internal')
-        .filter((row) => row.kind === 'mission.stageChanged' && row.event.kind === 'mission.stageChanged' && row.event.to === 'CLOSED'),
+        .filter(
+          (row) =>
+            row.kind === 'mission.stageChanged' &&
+            row.event.kind === 'mission.stageChanged' &&
+            row.event.to === 'CLOSED',
+        ),
     ).toHaveLength(1);
     ledger.close();
   });
