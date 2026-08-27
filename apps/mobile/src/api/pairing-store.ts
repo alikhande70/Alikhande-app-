@@ -36,7 +36,10 @@ export class SecurePairingMetadataStore implements PairingMetadataStore {
     try {
       encoded = await this.storage.getItem(PAIRING_KEY);
     } catch (error) {
-      throw new PairingStoreError(`could not read pairing metadata: ${messageOf(error)}`, 'READ_FAILED');
+      throw new PairingStoreError(
+        `could not read pairing metadata: ${messageOf(error)}`,
+        'READ_FAILED',
+      );
     }
     if (encoded === null) return undefined;
 
@@ -60,7 +63,10 @@ export class SecurePairingMetadataStore implements PairingMetadataStore {
     try {
       await this.storage.setItem(PAIRING_KEY, payload);
     } catch (error) {
-      throw new PairingStoreError(`could not persist pairing metadata: ${messageOf(error)}`, 'WRITE_FAILED');
+      throw new PairingStoreError(
+        `could not persist pairing metadata: ${messageOf(error)}`,
+        'WRITE_FAILED',
+      );
     }
   }
 
@@ -68,7 +74,10 @@ export class SecurePairingMetadataStore implements PairingMetadataStore {
     try {
       await this.storage.removeItem(PAIRING_KEY);
     } catch (error) {
-      throw new PairingStoreError(`could not clear pairing metadata: ${messageOf(error)}`, 'CLEAR_FAILED');
+      throw new PairingStoreError(
+        `could not clear pairing metadata: ${messageOf(error)}`,
+        'CLEAR_FAILED',
+      );
     }
   }
 }
