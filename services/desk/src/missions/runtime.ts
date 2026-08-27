@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 import type { BrokerEvent } from '../broker/port.js';
 import type { Ledger } from '../ledger/ledger.js';
+import { ScanMissionIngestor } from './scan-ingestor.js';
 import { MissionService } from './service.js';
 import type { MissionRecord } from './types.js';
 
@@ -15,12 +16,14 @@ import type { MissionRecord } from './types.js';
  */
 export class MissionRuntime {
   readonly missions: MissionService;
+  readonly scans: ScanMissionIngestor;
 
   constructor(
     private readonly ledger: Ledger,
     missions?: MissionService,
   ) {
     this.missions = missions ?? new MissionService(ledger);
+    this.scans = new ScanMissionIngestor(this.missions);
   }
 
   /**
