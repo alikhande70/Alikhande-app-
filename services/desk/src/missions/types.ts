@@ -18,6 +18,7 @@ export type MissionStage =
   | 'REVIEWED';
 
 export type MissionOrigin =
+  | 'scanner'
   | 'brain'
   | 'operator:android'
   | 'operator:desktop'
