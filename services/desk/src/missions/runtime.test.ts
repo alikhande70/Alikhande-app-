@@ -45,6 +45,25 @@ function armInternal(missions: MissionService, intentId = 'intent-1'): void {
   missions.linkIntent('mission-internal', intentId, 1_210);
 }
 
+function persistIntent(ledger: Ledger, intentId: string, clientOrderId: string): void {
+  ledger.append({
+    kind: 'intent.created',
+    intent: {
+      intentId,
+      canonical: 'XAUUSD',
+      symbol: 'XAUUSD',
+      side: 'buy',
+      kind: 'market',
+      timeInForce: 'GTC',
+      volume: '0.10',
+      preTradeNote: 'test',
+      tags: [],
+      clientOrderId,
+    },
+    risk: { verdict: 'pass', checks: [], policyVersion: 1, evaluatedAt: 1_200 },
+  });
+}
+
 describe('MissionRuntime broker truth bridge', () => {
   it('adopts an unattributed broker position without fabricating a manual decision', () => {
     const ledger = makeLedger();
@@ -103,6 +122,61 @@ describe('MissionRuntime broker truth bridge', () => {
     ledger.close();
   });
 
+  it('resolves a broker position through persisted client order id rather than similarity', () => {
+    const ledger = makeLedger();
+    const missions = new MissionService(ledger);
+    armInternal(missions, 'intent-owned');
+    persistIntent(ledger, 'intent-owned', 'k-owned');
+    const runtime = new MissionRuntime(ledger, missions);
+
+    const mission = runtime.observeBrokerEvent('mt5', {
+      type: 'position',
+      at: 1_500,
+      position: {
+        positionId: 'position-owned',
+        canonical: 'XAUUSD',
+        symbol: 'XAUUSD.x',
+        side: 'buy',
+        volume: { n: 10n, s: 2 },
+        entryPrice: { n: 240030n, s: 2 },
+        openedAt: 1_490,
+        clientOrderId: 'k-owned',
+      },
+    });
+
+    expect(mission?.missionId).toBe('mission-internal');
+    expect(mission?.stage).toBe('MANAGING');
+    expect(mission?.positionIds).toEqual(['position-owned']);
+    ledger.close();
+  });
+
+  it('treats an unknown client order id as external instead of guessing ownership', () => {
+    const ledger = makeLedger();
+    const missions = new MissionService(ledger);
+    armInternal(missions, 'intent-owned');
+    const runtime = new MissionRuntime(ledger, missions);
+
+    const mission = runtime.observeBrokerEvent('mt5', {
+      type: 'position',
+      at: 1_500,
+      position: {
+        positionId: 'position-foreign',
+        canonical: 'XAUUSD',
+        symbol: 'XAUUSD.x',
+        side: 'buy',
+        volume: { n: 10n, s: 2 },
+        entryPrice: { n: 240030n, s: 2 },
+        openedAt: 1_490,
+        clientOrderId: 'k-not-in-ledger',
+      },
+    });
+
+    expect(mission?.origin).toBe('external:unknown');
+    expect(mission?.missionId).toBe(externalMissionId('mt5', 'position-foreign'));
+    expect(missions.load('mission-internal')?.positionIds).toEqual([]);
+    ledger.close();
+  });
+
   it('never attributes a similar foreign position to an internal mission without identity', () => {
     const ledger = makeLedger();
     const missions = new MissionService(ledger);
@@ -150,6 +224,33 @@ describe('MissionRuntime broker truth bridge', () => {
             row.event.to === 'CLOSED',
         ),
     ).toHaveLength(1);
+    ledger.close();
+  });
+
+  it('closes through the broker event bridge using only the durable position link', () => {
+    const ledger = makeLedger();
+    const missions = new MissionService(ledger);
+    armInternal(missions, 'intent-owned');
+    const runtime = new MissionRuntime(ledger, missions);
+    runtime.observePosition({
+      broker: 'paper',
+      positionId: 'position-owned',
+      canonical: 'XAUUSD',
+      intentId: 'intent-owned',
+      at: 1_500,
+    });
+
+    const mission = runtime.observeBrokerEvent('paper', {
+      type: 'positionClosed',
+      at: 2_000,
+      positionId: 'position-owned',
+      exitPrice: { n: 241000n, s: 2 },
+      netPnl: { n: 1000n, s: 2 },
+      costs: { n: 350n, s: 2 },
+    });
+
+    expect(mission?.stage).toBe('CLOSED');
+    expect(mission?.actions.at(-1)?.type).toBe('close');
     ledger.close();
   });
 
