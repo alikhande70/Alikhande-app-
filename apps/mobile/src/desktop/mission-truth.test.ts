@@ -19,7 +19,11 @@ const order = {
   note: 'Breakout confirmation',
 };
 
-function makeClient(fetchFn = vi.fn<typeof fetch>()) {
+function fetchMock() {
+  return vi.fn() as unknown as typeof fetch;
+}
+
+function makeClient(fetchFn: typeof fetch = fetchMock()) {
   return new DesktopDeskClient({
     baseUrl: 'http://127.0.0.1:8787',
     deviceId: 'windows-1',
@@ -33,7 +37,7 @@ function makeClient(fetchFn = vi.fn<typeof fetch>()) {
 
 describe('Windows/Desktop Mission truth', () => {
   it('retains last-known rows but blocks orders after disconnect', async () => {
-    const fetchFn = vi.fn<typeof fetch>();
+    const fetchFn = fetchMock();
     const truth = new DesktopMissionTruth();
     expect(truth.replaceSnapshot(10, [mission])).toBe(true);
     truth.markDisconnected();
@@ -83,8 +87,8 @@ describe('Windows/Desktop Mission truth', () => {
   });
 
   it('allows network submission only after a fresh proven snapshot', async () => {
-    const fetchFn = vi
-      .fn<typeof fetch>()
+    const fetchFn = fetchMock();
+    vi.mocked(fetchFn)
       .mockResolvedValueOnce(
         new Response(JSON.stringify({ nonce: 'command-nonce' }), { status: 200 }),
       )
