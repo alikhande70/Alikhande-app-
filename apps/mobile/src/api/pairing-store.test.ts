@@ -1,6 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import type { PairingMetadata } from './pairing.js';
-import { PairingStoreError, SecurePairingMetadataStore, type PairingStorage } from './pairing-store.js';
+import {
+  type PairingStorage,
+  PairingStoreError,
+  SecurePairingMetadataStore,
+} from './pairing-store.js';
 
 class MemoryStorage implements PairingStorage {
   value: string | null = null;
