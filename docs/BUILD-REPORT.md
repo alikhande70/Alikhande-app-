@@ -93,7 +93,7 @@ Implemented:
 
 ## Windows/Desktop path — repository state
 
-The repository now has a platform-neutral Mission-bound Windows operator core plus a hardened Mission realtime projection. It is **not yet a packaged/native Windows application**.
+The repository now has a platform-neutral Mission-bound Windows operator core, a hardened Mission realtime projection, and a fail-closed native-signer adapter boundary. It is **not yet a packaged/native Windows application**, and no repository test is treated as proof of Windows hardware-backed key protection.
 
 Implemented:
 
@@ -103,18 +103,23 @@ Implemented:
 - `DesktopMissionOperator` sends only `/missions/:missionId/orders` with explicit `origin: operator:windows`.
 - `DesktopMissionTruth` retains last-known rows after disconnect/gap but blocks consequential use until completeness is re-proven.
 - Mission order entry requires the exact Mission, exact canonical and orderable stage (`PLANNED` or `ARMED`).
-- **MissionTruth is now mandatory in `DesktopMissionOperator`; callers/tests cannot construct an actionable operator that bypasses the stale-state gate.**
+- **MissionTruth is mandatory in `DesktopMissionOperator`; callers/tests cannot construct an actionable operator that bypasses the stale-state gate.**
 - Authenticated Desktop realtime uses a fresh signed hello on each socket and refuses late auth proof from a replaced socket.
 - Desktop realtime subscribes only to `missions`.
 - Sequence gaps preserve old rows as incomplete and trigger a fresh snapshot request instead of applying an unproven delta.
 - Server `resync` marks Mission rows incomplete until the immediately-following snapshot is validated.
-- Desktop now honours the Desk-advertised heartbeat interval and sends `ping` frames, preventing healthy authenticated clients from being reaped as dead.
-- **Every Desktop reconnect currently requests a full Mission snapshot (`resume: {}`)** rather than trusting a stale pre-disconnect sequence. This deliberately trades bandwidth for proof: if nothing changed while offline, zero replayed deltas cannot falsely leave stale rows looking current. Resume optimisation is deferred until the protocol has an explicit resume acknowledgement.
+- Desktop honours the Desk-advertised heartbeat interval and sends `ping` frames, preventing healthy authenticated clients from being reaped as dead.
+- **Every Desktop reconnect requests a full Mission snapshot (`resume: {}`)** rather than trusting a stale pre-disconnect sequence. This deliberately trades bandwidth for proof: if nothing changed while offline, zero replayed deltas cannot falsely leave stale rows looking current. Resume optimisation is deferred until the protocol has an explicit resume acknowledgement.
 - Reconnect regression tests prove a pre-disconnect sequence cannot re-enable order entry; only a fresh server snapshot restores current truth.
+- `WindowsProtectedSigner` now implements the repository-side `DesktopSigner` boundary over an opaque native Ed25519 key provider. Private key material never enters repository metadata.
+- Persisted signer metadata is versioned and public-only (`keyName`, public key, protection class, creation time).
+- Metadata-with-missing-key, orphan-native-key and malformed-metadata states all fail closed instead of silently regenerating a new Desk identity.
+- A native bridge report of hardware protection is recorded only as `hardware-backed-reported`; repository status remains `hardwareBackedVerified: false` until target-Windows evidence exists.
+- Metadata persistence failure intentionally leaves an orphan key visible so later startup fails closed rather than guessing identity continuity.
 
 Remaining Desktop work:
 
-1. Native Windows signer/private-key persistence and truthful security classification.
+1. Implement the actual native Windows key-provider bridge and protected storage primitive behind `WindowsNativeEd25519Bridge`; prove its behavior on target Windows and classify security truthfully.
 2. Real app shell/UI binding this single Mission truth/runtime path; no Desktop-local trading truth store.
 3. Packaging and target-Windows runtime verification.
 
@@ -131,8 +136,8 @@ Remaining Desktop work:
 
 ADR-0018 remains **IN PROGRESS**. Remaining work is narrow and explicit:
 
-1. **Native device-key proof** — Android hardware-backed behavior and Windows native key persistence/security classification require target-device/runtime proof and, where still missing, native adapter implementation.
-2. **Windows app completion** — bind native signer/persistence and UI shell to the existing single Desktop Mission runtime path; do not introduce a local source of trading truth.
+1. **Native device-key proof** — Android hardware-backed behavior and the Windows native bridge/security classification require target-device/runtime proof. The repository-side Windows signer adapter now exists, but it deliberately does not claim native/hardware verification.
+2. **Windows app completion** — bind the native signer provider/persistence and UI shell to the existing single Desktop Mission runtime path; do not introduce a local source of trading truth.
 3. **Legacy `/orders` retirement** — compatibility server route still permits Mission-less internal order submission. Remove/fail-close it only after every actual operator path is Mission-bound.
 4. **Final ADR-0018 independent audit** — replay/reconnect/red-team server + Android + Desktop and confirm identical Mission ownership/state with no hidden local truth or bypass.
 
@@ -144,11 +149,12 @@ Trading Brain implementation remains blocked until these are resolved or formall
 | --- | --- | --- |
 | Architecture ADR-0015–0022 | **DONE** | Accepted ADRs + `docs/BRAIN-DESIGN-REVIEW.md`. |
 | Repository MT5 foundation | **SUBSTANTIALLY DONE** | Deterministic execution truth, instrument/margin/recovery wiring built; target-terminal proof remains external. |
-| Repository lint/typecheck/tests | **PASS** | Exact code head `9d32911ff3ee659934519a5e220aebf840bfc703` passed GitHub Actions `verify`; this documentation commit requires its own exact-head run before being called green. |
+| Repository lint/typecheck/tests | **PASS** | Exact code head `13ecb91ea7ad4a7b4fa45f26b139ebfb2a96bf7b` passed GitHub Actions `verify`; this documentation commit requires its own exact-head run before being called green. |
 | Simulation/chaos | **STRONG, NOT COMPLETE** | Duplicate/recovery/clock/partial-fill/margin and Mission replay paths covered; real terminal/device restart remains external. |
-| Trade Mission spine | **IN PROGRESS — SERVER + ANDROID + DESKTOP CORE** | Durable lifecycle and client Mission truth paths exist; native Windows shell/key + bypass retirement + exit audit remain. |
+| Trade Mission spine | **IN PROGRESS — SERVER + ANDROID + DESKTOP CORE** | Durable lifecycle and client Mission truth paths exist; native Windows bridge/shell + bypass retirement + exit audit remain. |
 | Android first-time pairing | **REPOSITORY BUILT / DEVICE PROOF BLOCKED** | Controller/screen/persistence fail closed without signer; hardware-backed proof external. |
-| Realtime + command authentication | **REPOSITORY DONE** | Signed stream admission, replay guard, command nonce; Desktop heartbeat/reconnect proof now covered. |
+| Windows protected signer | **ADAPTER BUILT / TARGET PROOF BLOCKED** | Repository adapter preserves identity and keeps the private key opaque; native provider implementation and Windows proof remain external work. |
+| Realtime + command authentication | **REPOSITORY DONE** | Signed stream admission, replay guard, command nonce; Desktop heartbeat/reconnect proof covered. |
 | Trading Brain | **DESIGNED ONLY / BLOCKED** | Must wait for ADR-0018 exit criteria. |
 | Memory/Evaluation | **DESIGNED ONLY / BLOCKED** | Must wait for Mission + deterministic/versioned Brain facts. |
 | MetaEditor compile | **NOT VERIFIED** | Requires Windows/MetaEditor. |
@@ -167,14 +173,14 @@ Repository CI does **not** prove:
 - EA/host/terminal restart and reconnect against real broker state;
 - end-to-end App → Desk → host → EA → MT5 → LiteFinance → reconciliation;
 - physical Android native key provisioning/storage and background/resume behavior;
-- Windows native signer/key persistence, packaging and target-Windows runtime behavior;
+- actual Windows native key provider, protected private-key persistence, hardware-backed classification, packaging and target-Windows runtime behavior;
 - any real-money execution.
 
 No real-money execution is enabled or claimed.
 
 ## Next highest-priority sequence
 
-1. Build/integrate the native Windows signer + protected key persistence adapter and classify it truthfully; do not claim hardware-backed protection without target proof.
+1. Implement/integrate the actual Windows native key-provider + protected persistence bridge behind the new fail-closed signer adapter; do not claim hardware-backed protection without target proof.
 2. Compose the real Windows app shell around the **single** existing `DesktopMissionTruth + DesktopMissionRealtime + DesktopMissionOperator` path.
 3. Add app-shell restart/reconnect tests proving local UI state cannot re-enable actions before server Mission snapshot proof.
 4. When Android and the actual Windows operator path are both Mission-bound, disable/remove server `POST /orders` and add a regression test proving internal orders require Mission ownership.
