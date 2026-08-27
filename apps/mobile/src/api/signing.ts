@@ -39,10 +39,20 @@ export function canonicalString(p: SignatureParts): string {
  * The client's copy of this list is a *convenience*, not a control: the desk
  * enforces it independently and will refuse a command that arrives without one.
  * If the two lists ever disagree, the desk wins, which is the safe direction.
+ *
+ * Mission routes are intentionally included here. The Desk has classified them
+ * as mutating since ADR-0018 was wired, so omitting them on Android made the
+ * phone send a normally signed request without a command nonce. The Desk then
+ * rejected the request before Mission logic ever ran. Keeping these paths in
+ * the client is therefore required for the Mission-bound execution path to be
+ * reachable from Android.
  */
 const COMMAND_PATHS = [
   /^\/orders$/,
   /^\/orders\/[^/]+\/cancel$/,
+  /^\/scans$/,
+  /^\/missions\/[^/]+\/plan$/,
+  /^\/missions\/[^/]+\/orders$/,
   /^\/positions\/[^/]+\/(modify|close)$/,
   /^\/panic$/,
   /^\/policy$/,
@@ -63,6 +73,9 @@ export function isCommandPath(path: string): boolean {
 export function biometricReason(path: string, summary?: string): string {
   if (summary !== undefined && summary.length > 0) return summary;
   if (/^\/orders$/.test(path)) return 'Send this order to the broker';
+  if (/^\/scans$/.test(path)) return 'Record this scan on your trading desk';
+  if (/^\/missions\/[^/]+\/plan$/.test(path)) return 'Seal this mission plan';
+  if (/^\/missions\/[^/]+\/orders$/.test(path)) return 'Send this mission order to the broker';
   if (/cancel$/.test(path)) return 'Cancel this order';
   if (/close$/.test(path)) return 'Close this position';
   if (/^\/panic$/.test(path)) return 'Close everything and stop trading';
