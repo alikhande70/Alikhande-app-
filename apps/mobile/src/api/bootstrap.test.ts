@@ -61,6 +61,12 @@ class MissingSigner extends ProvisionedSigner {
   }
 }
 
+async function settleSocketOpen(): Promise<void> {
+  // Production stream authentication crosses hashing + platform signing before
+  // the hello can be emitted. Flush only that bounded promise chain.
+  for (let i = 0; i < 6; i += 1) await Promise.resolve();
+}
+
 beforeEach(() => {
   useDeskStore.getState().reset();
 });
@@ -112,8 +118,7 @@ describe('mobile Desk bootstrap', () => {
     expect(useDeskStore.getState().connection).toBe('connecting');
 
     ws.open();
-    await Promise.resolve();
-    await Promise.resolve();
+    await settleSocketOpen();
     expect(useDeskStore.getState().connection).toBe('connected');
     const hello = JSON.parse(ws.sent[0] ?? '{}') as Record<string, unknown>;
     expect(hello.type).toBe('hello');
@@ -189,8 +194,7 @@ describe('mobile Desk bootstrap', () => {
     );
 
     ws.open();
-    await Promise.resolve();
-    await Promise.resolve();
+    await settleSocketOpen();
     ws.frame({
       type: 'snapshot',
       topic: 'missions',

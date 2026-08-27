@@ -80,6 +80,12 @@ function harness(): Harness {
   return { socket, fake, snapshots, deltas, gaps, states, latencies };
 }
 
+async function settleSocketOpen(): Promise<void> {
+  // Opening may need to await a platform signing operation before the hello is
+  // emitted. Give the bounded promise chain time to settle without timers.
+  for (let i = 0; i < 6; i += 1) await Promise.resolve();
+}
+
 describe('contiguity', () => {
   it('accepts the first frame at any sequence', () => {
     expect(checkContiguity(undefined, 500)).toEqual({ ok: true });
@@ -97,16 +103,18 @@ describe('contiguity', () => {
 });
 
 describe('handshake', () => {
-  it('presents the sequences it holds so the desk can replay only the gap', () => {
+  it('presents the sequences it holds so the desk can replay only the gap', async () => {
     const h = harness();
     h.socket.connect();
     h.fake.open();
+    await settleSocketOpen();
     h.fake.deliver({ type: 'snapshot', topic: 'positions', seq: 10, payload: [] });
     h.fake.deliver({ type: 'delta', topic: 'positions', seq: 11, upsert: [] });
 
     h.fake.drop();
     h.socket.connect();
     h.fake.open();
+    await settleSocketOpen();
 
     const hellos = h.fake.sent.filter((m) => (m as { type: string }).type === 'hello');
     const last = hellos[hellos.length - 1] as { resume: Record<string, number> };
@@ -157,10 +165,11 @@ describe('applying updates', () => {
     expect(h.socket.connectionState).toBe('connected');
   });
 
-  it('ignores a duplicate delta without resyncing', () => {
+  it('ignores a duplicate delta without resyncing', async () => {
     const h = harness();
     h.socket.connect();
     h.fake.open();
+    await settleSocketOpen();
     h.fake.deliver({ type: 'snapshot', topic: 'positions', seq: 1, payload: [] });
     h.fake.deliver({ type: 'delta', topic: 'positions', seq: 2, upsert: ['x'] });
     h.fake.deliver({ type: 'delta', topic: 'positions', seq: 2, upsert: ['x'] });
@@ -217,7 +226,7 @@ describe('server-initiated resync', () => {
 });
 
 describe('liveness', () => {
-  it('measures round trip and clock offset from a pong', () => {
+  it('measures round trip and clock offset from a pong', async () => {
     let now = 1_000_000;
     let fired = false;
     const fake = new FakeSocket();
@@ -247,6 +256,7 @@ describe('liveness', () => {
     });
     socket.connect();
     fake.open();
+    await settleSocketOpen();
 
     const ping = fake.sent.find((m) => (m as { type: string }).type === 'ping') as {
       clientTime: number;
