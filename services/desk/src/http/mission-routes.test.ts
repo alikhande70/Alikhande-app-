@@ -33,7 +33,12 @@ function outcome(intentId: string, at: number): SubmitOutcome {
   };
 }
 
-function register(app: ReturnType<typeof Fastify>, ledger: Ledger, runtime: MissionRuntime, now: () => number) {
+function register(
+  app: ReturnType<typeof Fastify>,
+  ledger: Ledger,
+  runtime: MissionRuntime,
+  now: () => number,
+) {
   registerMissionRoutes(
     app,
     {
@@ -362,7 +367,7 @@ describe('mission HTTP spine', () => {
         evidenceSeqs: [7, 7],
       },
     });
-    expect(badReview.statusCode).toBe(500);
+    expect(badReview.statusCode).toBe(400);
     expect(runtime.missions.load(missionId)?.stage).toBe('ABANDONED');
     expect(runtime.missions.load(missionId)?.review).toBeUndefined();
 
