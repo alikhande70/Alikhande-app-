@@ -1,5 +1,6 @@
 import type { Anomaly, Dec, OrderEvent, OrderState } from '@keel/core';
 import * as D from '@keel/core';
+import type { MissionLedgerEvent } from '../missions/types.js';
 
 /**
  * Everything that can change the desk's state, as immutable facts.
@@ -50,6 +51,7 @@ export interface RiskDecisionRecord {
 }
 
 export type LedgerEvent =
+  | MissionLedgerEvent
   | { kind: 'desk.started'; version: string; config: Record<string, unknown> }
   | { kind: 'desk.stopping'; reason: string }
   | { kind: 'broker.connected'; broker: string; capabilities: Record<string, unknown> }
@@ -260,6 +262,15 @@ export function fromWireOrderEvent(e: WireOrderEvent): OrderEvent {
  */
 export function streamOf(e: LedgerEvent): string {
   switch (e.kind) {
+    case 'mission.observed':
+      return e.observation.missionId;
+    case 'mission.snapshotSealed':
+    case 'mission.stageChanged':
+    case 'mission.intentLinked':
+    case 'mission.positionLinked':
+    case 'mission.actionRecorded':
+    case 'mission.reviewed':
+      return e.missionId;
     case 'intent.created':
       return e.intent.intentId;
     case 'intent.refused':
@@ -318,7 +329,8 @@ export function streamOf(e: LedgerEvent): string {
  *
  * `intent.created` is the load-bearing one: it is fsynced before a single byte
  * reaches the broker, so a process killed mid-send always leaves evidence that
- * something may be out there.
+ * something may be out there. Mission lifecycle events are equally durable:
+ * they are the future evaluation dataset and may not disappear on restart.
  */
 export const DURABLE_KINDS: ReadonlySet<LedgerEventKind> = new Set([
   'intent.created',
@@ -330,4 +342,11 @@ export const DURABLE_KINDS: ReadonlySet<LedgerEventKind> = new Set([
   'drawdown.breached',
   'drawdown.breachCleared',
   'policy.updated',
+  'mission.observed',
+  'mission.snapshotSealed',
+  'mission.stageChanged',
+  'mission.intentLinked',
+  'mission.positionLinked',
+  'mission.actionRecorded',
+  'mission.reviewed',
 ]);
