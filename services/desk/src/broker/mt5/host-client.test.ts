@@ -71,6 +71,80 @@ describe('Mt5HostClient', () => {
     });
   });
 
+  it('requests margin for the exact proposal and revalidates its fingerprint', async () => {
+    const request = vi.fn<Mt5HostRequest>().mockResolvedValue({
+      status: 200,
+      body: {
+        status: 'available',
+        requiredAccountCurrency: '123.45',
+        source: 'OrderCalcMargin',
+        asOfUtcMs: 1_700_000_000_000,
+        requestFingerprint: {
+          symbol: 'XAUUSD',
+          side: 'buy',
+          volume: '0.10',
+          price: '2500.00',
+        },
+      },
+    });
+    const client = clientWith(request);
+
+    const result = await client.calculateMargin({
+      symbol: 'XAUUSD',
+      side: 'buy',
+      kind: 'market',
+      volume: '0.10',
+      price: '2500.00',
+    });
+
+    expect(result).toMatchObject({
+      status: 'available',
+      source: 'OrderCalcMargin',
+    });
+    expect(request).toHaveBeenCalledOnce();
+    const [url, init] = request.mock.calls[0] ?? [];
+    expect(url).toBe('http://127.0.0.1:8790/v1/margin');
+    expect(init?.headers.authorization).toBe(`Bearer ${TOKEN}`);
+    expect(JSON.parse(init?.body ?? '{}')).toEqual({
+      symbol: 'XAUUSD',
+      side: 'buy',
+      kind: 'market',
+      volume: '0.10',
+      price: '2500.00',
+    });
+  });
+
+  it('fails closed when a margin response belongs to a different proposal', async () => {
+    const client = clientWith(async () => ({
+      status: 200,
+      body: {
+        status: 'available',
+        requiredAccountCurrency: '123.45',
+        source: 'OrderCalcMargin',
+        asOfUtcMs: 1_700_000_000_000,
+        requestFingerprint: {
+          symbol: 'EURUSD',
+          side: 'buy',
+          volume: '0.10',
+          price: '2500.00',
+        },
+      },
+    }));
+
+    await expect(
+      client.calculateMargin({
+        symbol: 'XAUUSD',
+        side: 'buy',
+        kind: 'market',
+        volume: '0.10',
+        price: '2500.00',
+      }),
+    ).resolves.toMatchObject({
+      status: 'unavailable',
+      certainty: 'unknown',
+    });
+  });
+
   it('revalidates snapshot truth at the HTTP boundary', async () => {
     const client = clientWith(async () => ({ status: 200, body: validSnapshot() }));
     await expect(client.snapshot()).resolves.toMatchObject({
