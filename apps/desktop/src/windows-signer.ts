@@ -18,12 +18,7 @@ export interface WindowsNativeKeyRecord {
 export interface WindowsNativeEd25519Bridge {
   hasKey(keyName: string): Promise<boolean>;
   generateKey(keyName: string): Promise<WindowsNativeKeyRecord>;
-  sign(
-    keyName: string,
-    message: string,
-    reason: string,
-    consequential: boolean,
-  ): Promise<string>;
+  sign(keyName: string, message: string, reason: string, consequential: boolean): Promise<string>;
   removeKey(keyName: string): Promise<void>;
 }
 
@@ -157,13 +152,9 @@ export class WindowsProtectedSigner implements DesktopSigner {
     if (!(await this.bridge.hasKey(this.metadata.keyName))) {
       throw new Error('Windows signing key is no longer available; command is not authorised');
     }
-    const signature = await this.bridge.sign(
-      this.metadata.keyName,
-      message,
-      reason,
-      consequential,
-    );
-    if (!isBase64(signature)) throw new Error('Windows native bridge returned a malformed signature');
+    const signature = await this.bridge.sign(this.metadata.keyName, message, reason, consequential);
+    if (!isBase64(signature))
+      throw new Error('Windows native bridge returned a malformed signature');
     return signature;
   }
 
