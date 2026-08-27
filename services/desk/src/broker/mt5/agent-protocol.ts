@@ -53,12 +53,7 @@ export interface Mt5AgentTransactionMessage {
 export interface Mt5AgentResultMessage {
   readonly type: 'result';
   readonly requestId: string;
-  /**
-   * Submit-shaped results are the historical contract. `calc_margin` deliberately
-   * travels through the same request-id correlated result envelope but is parsed
-   * by the caller as an opaque body; the session never interprets broker truth.
-   */
-  readonly result: Mt5HostSubmitResult | Record<string, unknown>;
+  readonly result: Mt5HostSubmitResult;
 }
 
 export type Mt5AgentMessage =
@@ -230,7 +225,10 @@ export function decodeAgentMessage(line: string): Mt5AgentMessage {
       return {
         type: 'result',
         requestId: requiredString(parsed, 'requestId'),
-        result: parsed.result,
+        // Result bodies are request-id correlated and command-specific. Submit
+        // paths consume the submit shape; calc_margin re-parses the same opaque
+        // object with the stricter margin parser before it can reach risk.
+        result: parsed.result as unknown as Mt5HostSubmitResult,
       };
     default:
       throw new Mt5AgentProtocolError('unknown MT5 agent message type');
