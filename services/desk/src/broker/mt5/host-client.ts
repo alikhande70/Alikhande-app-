@@ -8,6 +8,8 @@ import type {
   Mt5HostSnapshot,
   Mt5HostSubmitResult,
 } from './host-types.js';
+import { parseMt5MarginResponse, type Mt5MarginOutcome } from './margin.js';
+import type { Mt5MarginRequest } from './margin-wire.js';
 import { validateMt5HostReconcileResponse } from './reconcile-validation.js';
 import { validateMt5HostSnapshot } from './snapshot-validation.js';
 
@@ -102,6 +104,23 @@ export class Mt5HostClient {
         raw,
       );
     }
+  }
+
+  /**
+   * Request margin for one exact proposal.
+   *
+   * The response is re-bound to the request fingerprint at this HTTP trust
+   * boundary. A valid-looking margin for another symbol/side/volume/price is
+   * therefore unavailable rather than silently reusable.
+   */
+  async calculateMargin(request: Mt5MarginRequest): Promise<Mt5MarginOutcome> {
+    const raw = await this.call<unknown>('POST', '/v1/margin', request);
+    return parseMt5MarginResponse(raw, {
+      symbol: request.symbol,
+      side: request.side,
+      volume: request.volume,
+      price: request.price,
+    });
   }
 
   placeOrder(request: Mt5HostOrderRequest): Promise<Mt5HostSubmitResult> {
