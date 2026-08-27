@@ -51,8 +51,7 @@ const COMMAND_PATHS = [
   /^\/orders$/,
   /^\/orders\/[^/]+\/cancel$/,
   /^\/scans$/,
-  /^\/missions\/[^/]+\/plan$/,
-  /^\/missions\/[^/]+\/orders$/,
+  /^\/missions\/[^/]+\/(plan|abandon|review|orders)$/,
   /^\/positions\/[^/]+\/(modify|close)$/,
   /^\/panic$/,
   /^\/policy$/,
@@ -75,6 +74,8 @@ export function biometricReason(path: string, summary?: string): string {
   if (/^\/orders$/.test(path)) return 'Send this order to the broker';
   if (/^\/scans$/.test(path)) return 'Record this scan on your trading desk';
   if (/^\/missions\/[^/]+\/plan$/.test(path)) return 'Seal this mission plan';
+  if (/^\/missions\/[^/]+\/abandon$/.test(path)) return 'Abandon this trading mission';
+  if (/^\/missions\/[^/]+\/review$/.test(path)) return 'Seal this mission review';
   if (/^\/missions\/[^/]+\/orders$/.test(path)) return 'Send this mission order to the broker';
   if (/cancel$/.test(path)) return 'Cancel this order';
   if (/close$/.test(path)) return 'Close this position';
