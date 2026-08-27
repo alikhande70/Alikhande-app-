@@ -467,8 +467,8 @@ export default function TicketScreen() {
           />
 
           <Label size="xs" tone="tertiary" style={{ textAlign: 'center' }}>
-            Intent {intentId.current.slice(0, 8)} · Mission {missionId?.slice(0, 8) ?? 'missing'} · a
-            retry of this decision reuses the same intent id.
+            Intent {intentId.current.slice(0, 8)} · Mission {missionId?.slice(0, 8) ?? 'missing'} ·
+            a retry of this decision reuses the same intent id.
           </Label>
         </>
       )}
