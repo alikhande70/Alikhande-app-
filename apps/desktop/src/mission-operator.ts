@@ -83,7 +83,8 @@ export class DesktopMissionOperator {
       return {
         kind: 'blocked',
         title: result.data.problem?.title ?? 'The desk refused this order',
-        detail: result.data.problem?.detail ?? 'The Mission remains durable and no success is assumed.',
+        detail:
+          result.data.problem?.detail ?? 'The Mission remains durable and no success is assumed.',
       };
     }
 
