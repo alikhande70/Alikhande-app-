@@ -1,7 +1,10 @@
 import { describe, expect, it, vi } from 'vitest';
 import { DesktopDeskClient } from '../../../desktop/src/client.js';
-import { DesktopMissionRealtime, type DesktopWebSocketLike } from '../../../desktop/src/realtime.js';
 import { DesktopMissionTruth } from '../../../desktop/src/mission-truth.js';
+import {
+  DesktopMissionRealtime,
+  type DesktopWebSocketLike,
+} from '../../../desktop/src/realtime.js';
 
 class FakeSocket implements DesktopWebSocketLike {
   readonly sent: string[] = [];
@@ -165,9 +168,10 @@ describe('Windows/Desktop Mission realtime', () => {
       sign: vi
         .fn()
         .mockImplementationOnce(
-          () => new Promise<string>((resolve) => {
-            resolveFirst = resolve;
-          }),
+          () =>
+            new Promise<string>((resolve) => {
+              resolveFirst = resolve;
+            }),
         )
         .mockResolvedValueOnce('new-signature'),
     };
