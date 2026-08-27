@@ -1,11 +1,18 @@
 import * as Haptics from 'expo-haptics';
 import { router, useLocalSearchParams } from 'expo-router';
-import { useCallback, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Pressable, ScrollView, TextInput, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { currentDeskClient } from '../src/api/runtime.js';
 import { Card, Label, Numeric, Row, useTheme } from '../src/components/primitives.js';
 import { SlideToCommit } from '../src/components/SlideToCommit.js';
 import { canTrade, useDeskStore } from '../src/store/desk.js';
+import {
+  previewTicket,
+  submitMissionTicket,
+  type TicketOutcome,
+  type TicketPreview,
+} from '../src/trading/ticket-transport.js';
 
 /**
  * The order ticket.
@@ -26,43 +33,34 @@ import { canTrade, useDeskStore } from '../src/store/desk.js';
  *
  * Everything the desk refused is shown in full, with the rule that refused it,
  * because "blocked" without a reason teaches the operator to distrust the tool.
+ *
+ * ADR-0018 adds two non-negotiable truth rules: this ticket must carry a durable
+ * Mission id, and it may show "sent" only after the authenticated Desk command
+ * returns an accepted Mission-bound intent. Local UI state is never execution
+ * evidence.
  */
-
-interface PreviewResult {
-  readonly risk: {
-    verdict: 'pass' | 'warn' | 'block';
-    checks: { rule: string; verdict: string; observed: string; limit: string; message: string }[];
-  };
-  readonly sizing?:
-    | {
-        ok: true;
-        volume: string;
-        riskAtStop: string;
-        budgetUtilisation: string;
-        marginQuote: string;
-        rewardToRisk?: string;
-        valuationMethod: string;
-        crossCheckDivergencePct?: string;
-      }
-    | { ok: false; code: string; detail: string; venueBound?: string; riskAtVenueBound?: string };
-}
-
 export default function TicketScreen() {
   const theme = useTheme();
   const insets = useSafeAreaInsets();
-  const params = useLocalSearchParams<{ canonical?: string; side?: string; positionId?: string }>();
+  const params = useLocalSearchParams<{
+    canonical?: string;
+    side?: string;
+    positionId?: string;
+    missionId?: string;
+  }>();
   const state = useDeskStore();
 
   const canonical = params.canonical ?? 'XAUUSD';
+  const missionId = params.missionId;
+  const deskClient = currentDeskClient();
   const [side, setSide] = useState<'buy' | 'sell'>(params.side === 'sell' ? 'sell' : 'buy');
   const [stopPrice, setStopPrice] = useState('');
   const [targetPrice, setTargetPrice] = useState('');
   const [note, setNote] = useState('');
-  const [preview, _setPreview] = useState<PreviewResult | undefined>(undefined);
+  const [preview, setPreview] = useState<TicketPreview | undefined>(undefined);
+  const [previewProblem, setPreviewProblem] = useState<string | undefined>(undefined);
   const [submitting, setSubmitting] = useState(false);
-  const [outcome, setOutcome] = useState<
-    { kind: 'unknown' | 'blocked' | 'sent'; title: string; detail: string } | undefined
-  >(undefined);
+  const [outcome, setOutcome] = useState<TicketOutcome | undefined>(undefined);
 
   /**
    * The intent id is minted once, when the ticket opens, and reused for every
@@ -80,9 +78,13 @@ export default function TicketScreen() {
   // undefined sizing result means "we do not know how big this should be",
   // which must gate the commit shut rather than leak an undefined through it.
   const sized = sizing?.ok === true;
+  const missionReady = missionId !== undefined && missionId.trim().length > 0;
+  const transportReady = deskClient !== undefined;
 
   const readyToCommit =
     gate.ok &&
+    missionReady &&
+    transportReady &&
     sized &&
     blockers.length === 0 &&
     note.trim().length >= 10 &&
@@ -90,26 +92,80 @@ export default function TicketScreen() {
     !submitting;
 
   const commitLabel = useMemo(() => {
+    if (!missionReady) return 'Trade Mission required';
+    if (!transportReady) return 'Desk transport unavailable';
     if (!sized) return 'Set a stop to size this';
-    const s = sizing as Extract<NonNullable<PreviewResult['sizing']>, { ok: true }>;
+    const s = sizing as Extract<NonNullable<TicketPreview['sizing']>, { ok: true }>;
     return `Slide to risk ${s.riskAtStop} ${state.account?.currency ?? ''}`;
-  }, [sized, sizing, state.account?.currency]);
+  }, [missionReady, transportReady, sized, sizing, state.account?.currency]);
+
+  // The preview is the Desk's real risk/sizing path, not client arithmetic.
+  // Debounce edits and discard late responses so an old stop cannot overwrite a
+  // newer proposal on screen.
+  useEffect(() => {
+    setPreview(undefined);
+    setPreviewProblem(undefined);
+    if (!gate.ok || deskClient === undefined || stopPrice.trim().length === 0) return;
+
+    let current = true;
+    const timer = setTimeout(() => {
+      void previewTicket(deskClient, {
+        canonical,
+        side,
+        stopPrice: stopPrice.trim(),
+        ...(targetPrice.trim().length === 0 ? {} : { targetPrice: targetPrice.trim() }),
+        note: note.trim(),
+      }).then((result) => {
+        if (!current) return;
+        if (result.ok) {
+          setPreview(result.data);
+          return;
+        }
+        setPreviewProblem(result.detail);
+      });
+    }, 250);
+
+    return () => {
+      current = false;
+      clearTimeout(timer);
+    };
+  }, [canonical, deskClient, gate.ok, note, side, stopPrice, targetPrice]);
 
   const onCommit = useCallback(async () => {
     setSubmitting(true);
     void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
-    // Wired to DeskClient.command('/orders', …) by the app shell. The three
-    // outcomes it must distinguish are modelled here so the UI cannot collapse
-    // them: sent, refused, and unknown.
-    setOutcome({
-      kind: 'sent',
-      title: 'Handed to your desk',
-      detail:
-        'The desk has recorded this and is pursuing it. Its state will appear on the Book tab ' +
-        'once the broker confirms — not before.',
+
+    if (deskClient === undefined) {
+      setOutcome({
+        kind: 'blocked',
+        title: 'Desk transport unavailable',
+        detail:
+          'This phone does not currently hold an authenticated Desk client. Nothing was sent.',
+      });
+      setSubmitting(false);
+      return;
+    }
+    if (missionId === undefined || missionId.trim().length === 0) {
+      setOutcome({
+        kind: 'blocked',
+        title: 'No Trade Mission',
+        detail: 'This ticket is not attached to a durable Trade Mission. Nothing was sent.',
+      });
+      setSubmitting(false);
+      return;
+    }
+
+    const result = await submitMissionTicket(deskClient, missionId, {
+      intentId: intentId.current,
+      canonical,
+      side,
+      stopPrice: stopPrice.trim(),
+      ...(targetPrice.trim().length === 0 ? {} : { targetPrice: targetPrice.trim() }),
+      note: note.trim(),
     });
+    setOutcome(result);
     setSubmitting(false);
-  }, []);
+  }, [canonical, deskClient, missionId, note, side, stopPrice, targetPrice]);
 
   return (
     <ScrollView
@@ -145,6 +201,26 @@ export default function TicketScreen() {
               <Label weight="semibold">Cannot send right now</Label>
               <Label size="sm" tone="secondary">
                 {gate.reason}
+              </Label>
+            </Card>
+          )}
+
+          {!missionReady && (
+            <Card tone="critical">
+              <Label weight="semibold">Trade Mission required</Label>
+              <Label size="sm" tone="secondary">
+                Internal orders must come from a durable planned Mission. Open this ticket from a
+                Mission-aware trade flow.
+              </Label>
+            </Card>
+          )}
+
+          {!transportReady && (
+            <Card tone="critical">
+              <Label weight="semibold">Desk transport unavailable</Label>
+              <Label size="sm" tone="secondary">
+                This phone has no authenticated Desk client installed in the app runtime. The ticket
+                fails closed and cannot claim a handoff.
               </Label>
             </Card>
           )}
@@ -259,6 +335,15 @@ export default function TicketScreen() {
           </Card>
 
           {/* --- What the desk computed --------------------------------- */}
+          {previewProblem !== undefined && (
+            <Card tone="warning">
+              <Label weight="semibold">Desk preview unavailable</Label>
+              <Label size="sm" tone="secondary">
+                {previewProblem}
+              </Label>
+            </Card>
+          )}
+
           {sizing !== undefined && !sizing.ok && (
             <Card tone="warning">
               <Label weight="semibold">Cannot size this</Label>
@@ -382,8 +467,8 @@ export default function TicketScreen() {
           />
 
           <Label size="xs" tone="tertiary" style={{ textAlign: 'center' }}>
-            Intent {intentId.current.slice(0, 8)} · a retry of this decision reuses this id, so it
-            cannot be placed twice.
+            Intent {intentId.current.slice(0, 8)} · Mission {missionId?.slice(0, 8) ?? 'missing'} · a
+            retry of this decision reuses the same intent id.
           </Label>
         </>
       )}
@@ -391,7 +476,7 @@ export default function TicketScreen() {
   );
 }
 
-function Outcome({ outcome }: { outcome: { kind: string; title: string; detail: string } }) {
+function Outcome({ outcome }: { outcome: TicketOutcome }) {
   const theme = useTheme();
   return (
     <Card
