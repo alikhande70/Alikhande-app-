@@ -14,28 +14,13 @@ export interface Mt5AgentHello {
   readonly server: string;
   readonly tradeMode: 'demo' | 'contest' | 'real';
   readonly positionModel: 'netting' | 'hedging';
-  /**
-   * Which run of the agent this is. Increases every time the EA starts.
-   *
-   * Event sequence numbers are only monotonic *within* one epoch: an EA restart
-   * begins again near 1. The desk builds a new session per socket, so a
-   * reconnect already starts from a clean watermark -- the epoch does not
-   * rescue that. What it provides is the ability to *order agent runs*: a stale
-   * agent reconnecting, or one whose epoch store was lost, can be identified
-   * and refused instead of being indistinguishable from a fresh start, and a
-   * replayed spool can be attributed to the run that wrote it.
-   *
-   * Optional so an older agent still connects; absent is treated as epoch 0.
-   */
   readonly agentEpoch?: string;
   readonly at: number;
 }
 
 export interface Mt5AgentHeartbeat {
   readonly type: 'heartbeat';
-  /** Broker-local epoch ms, for session reasoning only. Never compared to desk time. */
   readonly serverMillis?: number;
-  /** serverMillis - at, in seconds. Observed from the agent, never configured. */
   readonly serverUtcOffsetSec?: number;
   readonly eventSeq: string;
   readonly terminalConnected: boolean;
@@ -68,7 +53,12 @@ export interface Mt5AgentTransactionMessage {
 export interface Mt5AgentResultMessage {
   readonly type: 'result';
   readonly requestId: string;
-  readonly result: Mt5HostSubmitResult;
+  /**
+   * Submit-shaped results are the historical contract. `calc_margin` deliberately
+   * travels through the same request-id correlated result envelope but is parsed
+   * by the caller as an opaque body; the session never interprets broker truth.
+   */
+  readonly result: Mt5HostSubmitResult | Record<string, unknown>;
 }
 
 export type Mt5AgentMessage =
@@ -84,6 +74,7 @@ export interface Mt5DeskCommandMessage {
   readonly requestId: string;
   readonly command:
     | 'snapshot'
+    | 'calc_margin'
     | 'place_order'
     | 'cancel_order'
     | 'modify_position'
@@ -239,7 +230,7 @@ export function decodeAgentMessage(line: string): Mt5AgentMessage {
       return {
         type: 'result',
         requestId: requiredString(parsed, 'requestId'),
-        result: parsed.result as unknown as Mt5HostSubmitResult,
+        result: parsed.result,
       };
     default:
       throw new Mt5AgentProtocolError('unknown MT5 agent message type');
