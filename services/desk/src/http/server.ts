@@ -18,6 +18,7 @@ import type { RealtimeHub } from '../realtime/hub.js';
 import type { Clock } from '../sim/clock.js';
 import type { EnrolledDevice } from './auth.js';
 import { AuthError, type Authenticator, hashBody } from './auth.js';
+import { registerMissionRoutes } from './mission-routes.js';
 
 export interface ServerDeps {
   readonly config: DeskConfig;
@@ -42,6 +43,9 @@ export interface ServerDeps {
 const COMMAND_PATHS = [
   /^\/orders$/,
   /^\/orders\/[^/]+\/cancel$/,
+  /^\/scans$/,
+  /^\/missions\/[^/]+\/plan$/,
+  /^\/missions\/[^/]+\/orders$/,
   /^\/positions\/[^/]+\/(modify|close)$/,
   /^\/panic$/,
   /^\/policy$/,
@@ -128,6 +132,16 @@ export async function buildServer(deps: ServerDeps): Promise<FastifyInstance> {
       isCommand(actualPath),
     );
   });
+
+  registerMissionRoutes(app, deps, parseSubmit, (out, missionId) => ({
+    missionId,
+    intentId: out.intentId,
+    accepted: out.accepted,
+    deduplicated: out.deduplicated,
+    risk: riskToWire(out.risk),
+    ...(out.sizing !== undefined ? { sizing: sizingToWire(out.sizing) } : {}),
+    ...(out.problem !== undefined ? { problem: out.problem } : {}),
+  }));
 
   app.post('/enrol', async (req) => {
     const body = z
