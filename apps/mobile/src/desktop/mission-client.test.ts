@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { DesktopDeskClient } from '../../../desktop/src/client.js';
 import { DesktopMissionOperator } from '../../../desktop/src/mission-operator.js';
+import { DesktopMissionTruth } from '../../../desktop/src/mission-truth.js';
 
 const signer = { sign: vi.fn(async () => 'signature') };
 
@@ -25,6 +26,21 @@ function makeClient(fetchFn: TestFetch) {
     // The test double implements the common runtime contract used here.
     fetchFn: fetchFn as typeof fetch,
   });
+}
+
+function currentTruth(): DesktopMissionTruth {
+  const truth = new DesktopMissionTruth();
+  expect(
+    truth.replaceSnapshot(1, [
+      {
+        missionId: 'mission-1',
+        canonical: 'XAUUSD',
+        stage: 'ARMED',
+        lastEventAt: 1_800_000_000_000,
+      },
+    ]),
+  ).toBe(true);
+  return truth;
 }
 
 const order = {
@@ -62,7 +78,7 @@ describe('Windows/Desktop Mission client', () => {
         }),
       );
     const client = makeClient(fetchFn);
-    const operator = new DesktopMissionOperator(client);
+    const operator = new DesktopMissionOperator(client, currentTruth());
 
     const result = await operator.submitMarketOrder(order);
 
@@ -86,11 +102,23 @@ describe('Windows/Desktop Mission client', () => {
       .fn<TestFetch>()
       .mockResolvedValueOnce(response(200, { nonce: 'command-nonce' }))
       .mockRejectedValueOnce(new Error('socket closed'));
-    const operator = new DesktopMissionOperator(makeClient(fetchFn));
+    const operator = new DesktopMissionOperator(makeClient(fetchFn), currentTruth());
 
     const result = await operator.submitMarketOrder(order);
 
     expect(result.kind).toBe('unknown');
     expect(fetchFn).toHaveBeenCalledTimes(2);
+  });
+
+  it('cannot construct an actionable path from stale Mission truth', async () => {
+    const fetchFn = vi.fn<TestFetch>();
+    const truth = currentTruth();
+    truth.markDisconnected();
+    const operator = new DesktopMissionOperator(makeClient(fetchFn), truth);
+
+    const result = await operator.submitMarketOrder(order);
+
+    expect(result).toMatchObject({ kind: 'blocked', title: 'Mission truth is not current' });
+    expect(fetchFn).not.toHaveBeenCalled();
   });
 });
