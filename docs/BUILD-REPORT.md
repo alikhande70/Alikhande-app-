@@ -90,15 +90,19 @@ Implemented:
 - Mission-bound submission flows through `MissionExecutionCoordinator`, which durably records the Mission ownership claim before calling `ExecutionSupervisor`, links only a real durable `intent.created`, and repairs the narrow crash gap via `recoverPendingLinks()` before Mission commands are served.
 - Canonical contradictions between Mission and order fail closed with `MISSION_CONFLICT`; ownership is never inferred from symbol/volume/time similarity.
 - Scan, plan and mission-bound order commands are classified as mutating commands by the existing signed request + command-nonce anti-replay layer.
-- HTTP regression coverage now exercises `Scan → CANDIDATE → immutable DecisionSnapshot → PLANNED → ARMED → durable Intent link` and verifies the recorded `scan → plan → authorise → submit` action chain.
+- HTTP regression coverage exercises `Scan → CANDIDATE → immutable DecisionSnapshot → PLANNED → ARMED → durable Intent link` and verifies the recorded `scan → plan → authorise → submit` action chain.
+- A dedicated lifecycle integration test now closes and replays both evaluation populations: `Scan → Mission → Decision Snapshot → Intent → broker Position → broker Close → Review`, and `Scan → rejected/ABANDONED → Review`. Both rebuild identically from the immutable ledger after constructing a fresh runtime, and the ledger hash chain is re-verified.
+- The lifecycle test itself exercised the causal-time guard: an initial rejected-scan fixture accidentally placed its Decision Snapshot after the rejection time and was correctly refused as future knowledge. The fixture was corrected; the guard was not weakened.
+- Android request signing now recognizes `/scans`, `/missions/:id/plan` and `/missions/:id/orders` as command-nonce/biometric-protected paths, matching the Desk's security boundary. Before this fix, Mission mutations from Android would be normally signed but rejected before reaching Mission logic because no command nonce was requested.
 
-Current Mission implementation is still **PARTIAL**. The durable/server-side spine now covers scan ingestion, rejected setups, planning, explicit Mission-bound intent ownership and broker position/close observation. Remaining exit work is primarily lifecycle completeness and client migration: the compatibility `/orders` endpoint still permits a legacy order without a Mission, Android/Windows have not yet been migrated to the Mission-bound command path, and a full runtime test through Position → Close/Abandon → Review is still required. Trading Brain work remains blocked until these exit criteria are met.
+Current Mission implementation is still **PARTIAL**. The durable/server-side spine now covers scan ingestion, rejected setups, planning, explicit Mission-bound intent ownership, broker position/close observation, review-domain transitions and replay. Remaining exit work is primarily client/runtime completion: the compatibility `/orders` endpoint still permits a legacy order without a Mission, Android/Windows are not yet fully migrated to consume/use Mission state for order entry, and the current mobile Ticket UI still contains placeholder submission behavior that can display a local `sent` outcome without an observed Desk acknowledgement. That UI must be wired to the authenticated Mission-bound transport or fail closed before legacy `/orders` can be retired. Trading Brain work remains blocked until these exit criteria are met.
 
 ## Current repository verification
 
 - MT5/TestClock foundation commit `699d35e...`: GitHub Actions `verify` **PASS**.
-- Mission domain/runtime earlier heads: GitHub Actions `verify` **PASS**.
-- Mission HTTP spine code head `ca777f2898b8e151ab9077c491ce03073b791247`: GitHub Actions `verify` **PASS** (lint, typecheck and tests).
+- Mission HTTP/server spine earlier heads: GitHub Actions `verify` **PASS**.
+- Full traded/rejected Mission lifecycle replay head `eb0066ceec31d4cb4b2ecfdda876e55b42dadc0e`: GitHub Actions `verify` **PASS**.
+- Android Mission command authorization exact code head `96094b9eed8a65268272320924f25a8a6d2ed8a4`: GitHub Actions `verify` **PASS** (lint, typecheck and tests).
 - This documentation commit requires its own exact-head CI result before being called green.
 
 Repository CI proves TypeScript/static/test behavior only. It does **not** prove MQL compilation or target-terminal behavior.
@@ -124,9 +128,9 @@ No real-money execution is enabled or claimed.
 | --- | --- | --- |
 | Architecture ADR-0015–0022 | **DONE** | Accepted architecture and design critique exist. |
 | Repository MT5 foundation | **SUBSTANTIALLY DONE** | Instrument truth, request-specific Margin, recovery/reconcile hardening and runtime host wiring built; real terminal proof remains. |
-| Repository lint/typecheck/tests | **PASS at latest code head** | `ca777f2...` passed full `verify`; documentation head needs exact-head CI. |
+| Repository lint/typecheck/tests | **PASS at latest code head** | `96094b9...` passed full `verify`; documentation head needs exact-head CI. |
 | Simulation/chaos | **STRONG, NOT COMPLETE** | Duplicate/recovery/clock/partial-fill/margin paths covered; real EA restart boundary still external. |
-| Trade Mission spine | **IN PROGRESS — SERVER SPINE MOSTLY CONNECTED** | Scan/rejected/plan/Mission-bound intent/broker-position server path exists; legacy client migration and full terminal lifecycle/review test remain. |
+| Trade Mission spine | **IN PROGRESS — DOMAIN/SERVER REPLAY STRONG, CLIENT MIGRATION OPEN** | Full traded and rejected lifecycle/replay is proven in repository tests; Android command security now recognizes Mission routes, but order-ticket transport/state consumption and legacy bypass retirement remain. |
 | Trading Brain | **DESIGNED ONLY** | Must wait for Mission exit criteria. |
 | Memory/Evaluation | **DESIGNED ONLY** | Must wait for Mission + deterministic Brain facts. |
 | MetaEditor compile | **NOT VERIFIED** | Requires Windows. |
@@ -135,9 +139,11 @@ No real-money execution is enabled or claimed.
 
 ## Next highest-priority sequence
 
-1. Add a runtime integration test that completes both paths: `Scan → Mission → Decision Snapshot → Intent → Position → Close → Review`, and `Scan → rejected/abandoned → Review`, without inventing broker truth.
-2. Migrate Android/Windows order commands to carry/use Mission identity and consume the server Mission snapshot/topic.
-3. Once clients are migrated, fail closed or explicitly deprecate the compatibility `/orders` route so new internal orders cannot bypass Mission ownership.
-4. Close ADR-0018 with restart/reconnect and replay tests proving the Mission spine remains identical after process reconstruction.
-5. Only after ADR-0018 exit criteria are met, begin ADR-0019 deterministic/versioned Trading Brain.
-6. Do not enable Demo `OrderSend` until Windows/MetaEditor/real MT5 read-only validation establishes the external execution foundation.
+1. Remove the mobile Ticket's placeholder success path: it must never display `sent` without an observed successful Desk response. Wire it to the authenticated Mission-bound command path, or fail closed while transport/pairing is unavailable.
+2. Add Mission state to the Android store/socket bootstrap so Android consumes the same `/state`/`missions` truth as the Desk, including reconnect/resync semantics.
+3. Migrate Android/Windows order-entry flows to explicit Mission identity and Mission-bound submission.
+4. Add authenticated abandon/review lifecycle commands where operator workflows require them, preserving immutable Decision Snapshot/review rules.
+5. Once clients are migrated, fail closed or explicitly deprecate the compatibility `/orders` route so new internal orders cannot bypass Mission ownership.
+6. Close ADR-0018 with client reconnect/replay tests proving the Mission spine remains identical after process reconstruction.
+7. Only after ADR-0018 exit criteria are met, begin ADR-0019 deterministic/versioned Trading Brain.
+8. Do not enable Demo `OrderSend` until Windows/MetaEditor/real MT5 read-only validation establishes the external execution foundation.
