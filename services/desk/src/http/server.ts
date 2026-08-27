@@ -13,6 +13,7 @@ import type { DeskState } from '../engine/state.js';
 import type { ExecutionSupervisor, SubmitCommand } from '../engine/supervisor.js';
 import type { Ledger } from '../ledger/ledger.js';
 import type { Projector } from '../ledger/projections.js';
+import type { MissionRuntime } from '../missions/runtime.js';
 import type { RealtimeHub } from '../realtime/hub.js';
 import type { Clock } from '../sim/clock.js';
 import type { EnrolledDevice } from './auth.js';
@@ -31,6 +32,7 @@ export interface ServerDeps {
   readonly alerts: AlertEngine;
   readonly hub: RealtimeHub;
   readonly auth: Authenticator;
+  readonly missions: MissionRuntime;
   readonly health: () => Record<string, unknown>;
   readonly cancelOrder: (intentId: string, reply: FastifyReply) => Promise<Record<string, unknown>>;
   readonly copilotAsk?: (question: string, conversationId?: string) => Promise<unknown>;
@@ -153,6 +155,12 @@ export async function buildServer(deps: ServerDeps): Promise<FastifyInstance> {
   app.get('/state', async () => buildSnapshot(deps));
   app.get('/instruments', async () => deps.state.allInstruments().map((s) => specToWire(s)));
   app.get('/orders', async () => deps.state.allOrders(200).map(orderToWire));
+  app.get('/missions', async (req) => {
+    const { limit } = z
+      .object({ limit: z.coerce.number().int().min(1).max(1000).default(200) })
+      .parse(req.query);
+    return { missions: deps.missions.listRecent(limit) };
+  });
 
   app.get('/journal', async (req) => {
     const q = z
@@ -527,6 +535,7 @@ export function buildSnapshot(deps: ServerDeps): Record<string, unknown> {
         'CANCEL_REQUESTED',
       ])
       .map(orderToWire),
+    missions: deps.missions.listRecent(),
     divergences: deps.reconciler.openDivergences,
     drawdown: {
       status: drawdown.status,
