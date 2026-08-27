@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto';
+import type { BrokerEvent } from '../broker/port.js';
 import type { Ledger } from '../ledger/ledger.js';
 import { MissionService } from './service.js';
 import type { MissionRecord } from './types.js';
@@ -50,6 +51,41 @@ export class MissionRuntime {
       if (mission !== undefined) out.push(mission);
     }
     return out;
+  }
+
+  /**
+   * Consume only broker facts that can change Mission lifecycle.
+   *
+   * The broker event itself is already downstream of adapter validation. For a
+   * position owned by Keel we recover the intent through the venue-preserved
+   * client order id and the durable intent ledger; if that chain is incomplete,
+   * the position is external. Symbol/side/volume/time are deliberately ignored
+   * as ownership signals.
+   */
+  observeBrokerEvent(broker: string, event: BrokerEvent): MissionRecord | undefined {
+    switch (event.type) {
+      case 'position': {
+        const intentId =
+          event.position.clientOrderId === undefined
+            ? undefined
+            : this.findIntentByClientOrderId(event.position.clientOrderId);
+        return this.observePosition({
+          broker,
+          positionId: event.position.positionId,
+          canonical: event.position.canonical,
+          at: event.at,
+          ...(intentId === undefined ? {} : { intentId }),
+        });
+      }
+      case 'positionClosed':
+        return this.closePosition({
+          positionId: event.positionId,
+          at: event.at,
+          reason: 'broker position closed',
+        });
+      default:
+        return undefined;
+    }
   }
 
   /**
@@ -145,6 +181,18 @@ export class MissionRuntime {
       mission = this.missions.beginManaging(missionId, mission.origin, at);
     }
     return mission;
+  }
+
+  private findIntentByClientOrderId(clientOrderId: string): string | undefined {
+    const row = this.ledger.db
+      .prepare(
+        `SELECT stream FROM ledger
+         WHERE kind = 'intent.created'
+           AND json_extract(payload, '$.intent.clientOrderId') = ?
+         ORDER BY seq DESC LIMIT 1`,
+      )
+      .get(clientOrderId) as { stream: string } | undefined;
+    return row?.stream;
   }
 
   private findMissionByIntent(intentId: string): string | undefined {
