@@ -132,6 +132,14 @@ export class TestClock implements Clock {
    * moves and time does not move on its own. Jumping straight to the next
    * scheduled task keeps a multi-minute backoff schedule instant while
    * preserving the exact ordering real time would produce.
+   *
+   * A promise may also cross several ordinary async/microtask boundaries before
+   * it schedules its first clock task. Margin preflight is one example:
+   * prepare -> calculate margin -> resume prepare -> broker submit -> sleep.
+   * Treating a momentarily empty task queue as "nothing more will be scheduled"
+   * makes the harness return an unresolved promise and the test later times out
+   * in wall-clock time. We therefore give pure microtask chains bounded room to
+   * make progress before declaring the virtual-clock operation stalled.
    */
   async settle<T>(p: Promise<T>, budgetMs = 3_600_000): Promise<T> {
     let done = false;
@@ -145,15 +153,37 @@ export class TestClock implements Clock {
         throw e;
       },
     );
-    await Promise.resolve();
-    await Promise.resolve();
 
     const deadline = this.current + budgetMs;
+    let idleMicrotaskTurns = 0;
+    const MAX_IDLE_MICROTASK_TURNS = 64;
+
     while (!done) {
+      // Let async functions that do not sleep advance far enough to either
+      // finish or schedule their next virtual-clock task.
+      await Promise.resolve();
+
+      if (done) break;
       const next = this.nextTaskAt;
-      if (next === undefined || next > deadline) break;
-      await this.advance(Math.max(1, next - this.current));
+      if (next !== undefined) {
+        idleMicrotaskTurns = 0;
+        if (next > deadline) {
+          throw new Error(
+            `TestClock.settle exceeded virtual-time budget: next task is ${next - this.current}ms away`,
+          );
+        }
+        await this.advance(Math.max(1, next - this.current));
+        continue;
+      }
+
+      idleMicrotaskTurns += 1;
+      if (idleMicrotaskTurns >= MAX_IDLE_MICROTASK_TURNS) {
+        throw new Error(
+          'TestClock.settle stalled: promise is unresolved and no virtual-clock task was scheduled',
+        );
+      }
     }
+
     return tracked;
   }
 }
