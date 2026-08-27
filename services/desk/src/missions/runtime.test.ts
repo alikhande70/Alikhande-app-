@@ -160,4 +160,28 @@ describe('MissionRuntime broker truth bridge', () => {
     expect(ledger.verifyChain().ok).toBe(true);
     ledger.close();
   });
+
+  it('rebuilds a newest-first reconnect snapshot from durable mission streams', () => {
+    const ledger = makeLedger();
+    const runtime = new MissionRuntime(ledger);
+    runtime.observePosition({ broker: 'mt5', positionId: 'older', canonical: 'EURUSD', at: 1_000 });
+    runtime.observePosition({ broker: 'mt5', positionId: 'newer', canonical: 'XAUUSD', at: 2_000 });
+
+    const missions = runtime.listRecent();
+    expect(missions.map((mission) => mission.positionIds[0])).toEqual(['newer', 'older']);
+    expect(missions.every((mission) => mission.stage === 'MANAGING')).toBe(true);
+    ledger.close();
+  });
+
+  it('bounds reconnect snapshots instead of allowing unbounded reads', () => {
+    const ledger = makeLedger();
+    const runtime = new MissionRuntime(ledger);
+    runtime.observePosition({ broker: 'mt5', positionId: 'one', canonical: 'EURUSD', at: 1_000 });
+    runtime.observePosition({ broker: 'mt5', positionId: 'two', canonical: 'XAUUSD', at: 2_000 });
+
+    expect(runtime.listRecent(1)).toHaveLength(1);
+    expect(() => runtime.listRecent(0)).toThrow('between 1 and 1000');
+    expect(() => runtime.listRecent(1001)).toThrow('between 1 and 1000');
+    ledger.close();
+  });
 });

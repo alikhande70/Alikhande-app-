@@ -23,6 +23,36 @@ export class MissionRuntime {
   }
 
   /**
+   * Current durable mission view, newest activity first.
+   *
+   * This is intentionally rebuilt from mission streams rather than maintained
+   * as a second mutable store. Reconnects therefore see the same state that a
+   * clean replay would produce, which keeps Android/Windows views downstream of
+   * the immutable ledger rather than downstream of process memory.
+   */
+  listRecent(limit = 200): readonly MissionRecord[] {
+    if (!Number.isInteger(limit) || limit < 1 || limit > 1000) {
+      throw new Error('mission list limit must be an integer between 1 and 1000');
+    }
+    const rows = this.ledger.db
+      .prepare(
+        `SELECT stream, MAX(seq) AS last_seq
+         FROM ledger
+         WHERE kind LIKE 'mission.%'
+         GROUP BY stream
+         ORDER BY last_seq DESC
+         LIMIT ?`,
+      )
+      .all(limit) as Array<{ stream: string }>;
+    const out: MissionRecord[] = [];
+    for (const row of rows) {
+      const mission = this.missions.load(row.stream);
+      if (mission !== undefined) out.push(mission);
+    }
+    return out;
+  }
+
+  /**
    * Link an observed broker position to its mission when durable intent identity
    * proves ownership. Without that proof, adopt it as external/unknown.
    */
