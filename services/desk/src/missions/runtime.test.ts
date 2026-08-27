@@ -1,3 +1,4 @@
+import * as D from '@keel/core';
 import { describe, expect, it } from 'vitest';
 import { Ledger } from '../ledger/ledger.js';
 import { externalMissionId, MissionRuntime } from './runtime.js';
@@ -137,8 +138,8 @@ describe('MissionRuntime broker truth bridge', () => {
         canonical: 'XAUUSD',
         symbol: 'XAUUSD.x',
         side: 'buy',
-        volume: { n: 10n, s: 2 },
-        entryPrice: { n: 240030n, s: 2 },
+        volume: D.dec('0.10'),
+        entryPrice: D.dec('2400.30'),
         openedAt: 1_490,
         clientOrderId: 'k-owned',
       },
@@ -164,8 +165,8 @@ describe('MissionRuntime broker truth bridge', () => {
         canonical: 'XAUUSD',
         symbol: 'XAUUSD.x',
         side: 'buy',
-        volume: { n: 10n, s: 2 },
-        entryPrice: { n: 240030n, s: 2 },
+        volume: D.dec('0.10'),
+        entryPrice: D.dec('2400.30'),
         openedAt: 1_490,
         clientOrderId: 'k-not-in-ledger',
       },
@@ -244,9 +245,9 @@ describe('MissionRuntime broker truth bridge', () => {
       type: 'positionClosed',
       at: 2_000,
       positionId: 'position-owned',
-      exitPrice: { n: 241000n, s: 2 },
-      netPnl: { n: 1000n, s: 2 },
-      costs: { n: 350n, s: 2 },
+      exitPrice: D.dec('2410.00'),
+      netPnl: D.dec('10.00'),
+      costs: D.dec('3.50'),
     });
 
     expect(mission?.stage).toBe('CLOSED');
