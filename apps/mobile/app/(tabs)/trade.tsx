@@ -1,5 +1,5 @@
 import { router } from 'expo-router';
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { Pressable, ScrollView, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Label, Numeric, Row, useTheme } from '../../src/components/primitives.js';
@@ -18,6 +18,10 @@ const TIMEFRAMES = ['1m', '5m', '15m', '1h', '4h', '1d'] as const;
  * The buy and sell buttons sit at the bottom, inside thumb reach, and they open
  * the ticket rather than sending anything. There is no one-tap market order in
  * this product, by design.
+ *
+ * ADR-0018 adds one more hard rule: an internal order starts from a durable
+ * Trade Mission. This screen therefore refuses order entry until the Mission
+ * topic is complete and a PLANNED/ARMED Mission exists for the instrument.
  */
 export default function TradeScreen() {
   const theme = useTheme();
@@ -28,6 +32,24 @@ export default function TradeScreen() {
 
   const quote = state.quotes[canonical];
   const gate = canTrade(state);
+  const mission = useMemo(
+    () =>
+      state.missions
+        .filter(
+          (candidate) =>
+            candidate.canonical === canonical &&
+            (candidate.stage === 'PLANNED' || candidate.stage === 'ARMED'),
+        )
+        .sort((a, b) => b.lastEventAt - a.lastEventAt)[0],
+    [canonical, state.missions],
+  );
+  const missionsComplete = state.topics.missions?.status === 'complete';
+  const canOpenTicket = gate.ok && missionsComplete && mission !== undefined;
+  const missionReason = !missionsComplete
+    ? 'Trade Missions are not fully synchronized yet.'
+    : mission === undefined
+      ? 'No planned Trade Mission exists for this instrument.'
+      : undefined;
 
   return (
     <View style={{ flex: 1, backgroundColor: theme.color.canvas, paddingTop: insets.top }}>
@@ -123,12 +145,27 @@ export default function TradeScreen() {
             {gate.reason}
           </Label>
         )}
+        {gate.ok && missionReason !== undefined && (
+          <Label size="xs" tone="warning" style={{ textAlign: 'center' }}>
+            {missionReason}
+          </Label>
+        )}
+        {mission !== undefined && missionsComplete && (
+          <Label size="xs" tone="tertiary" style={{ textAlign: 'center' }}>
+            Mission {mission.missionId.slice(0, 8)} · {mission.stage.toLowerCase()}
+          </Label>
+        )}
         <Row gap={theme.space.sm}>
           {(['sell', 'buy'] as const).map((side) => (
             <Pressable
               key={side}
-              disabled={!gate.ok}
-              onPress={() => router.push(`/ticket?canonical=${canonical}&side=${side}`)}
+              disabled={!canOpenTicket}
+              onPress={() => {
+                if (mission === undefined) return;
+                router.push(
+                  `/ticket?canonical=${encodeURIComponent(canonical)}&side=${side}&missionId=${encodeURIComponent(mission.missionId)}`,
+                );
+              }}
               style={{
                 flex: 1,
                 minHeight: theme.hit.commit,
@@ -138,7 +175,7 @@ export default function TradeScreen() {
                 backgroundColor: side === 'buy' ? theme.color.longMuted : theme.color.shortMuted,
                 borderWidth: 1,
                 borderColor: side === 'buy' ? theme.color.long : theme.color.short,
-                opacity: gate.ok ? 1 : 0.4,
+                opacity: canOpenTicket ? 1 : 0.4,
               }}
               accessibilityRole="button"
               accessibilityLabel={`Open the ticket to ${side === 'buy' ? 'go long' : 'go short'} ${canonical}`}
@@ -147,7 +184,7 @@ export default function TradeScreen() {
                 {side === 'buy' ? 'Long' : 'Short'}
               </Label>
               <Label size="xs" tone="tertiary">
-                opens the ticket
+                opens the Mission ticket
               </Label>
             </Pressable>
           ))}
