@@ -17,7 +17,10 @@ export interface DesktopMissionView {
 }
 
 export interface MissionTruthGate {
-  canSubmit(missionId: string, canonical: string):
+  canSubmit(
+    missionId: string,
+    canonical: string,
+  ):
     | { readonly ok: true; readonly mission: DesktopMissionView }
     | { readonly ok: false; readonly reason: string };
 }
@@ -42,7 +45,8 @@ function parseMission(value: unknown): DesktopMissionView | undefined {
   const raw = value as Record<string, unknown>;
   if (typeof raw.missionId !== 'string' || raw.missionId.trim().length === 0) return undefined;
   if (typeof raw.canonical !== 'string' || raw.canonical.trim().length === 0) return undefined;
-  if (typeof raw.stage !== 'string' || !stages.has(raw.stage as DesktopMissionStage)) return undefined;
+  if (typeof raw.stage !== 'string' || !stages.has(raw.stage as DesktopMissionStage))
+    return undefined;
   if (typeof raw.lastEventAt !== 'number' || !Number.isFinite(raw.lastEventAt)) return undefined;
   return {
     missionId: raw.missionId,
@@ -138,7 +142,10 @@ export class DesktopMissionTruth implements MissionTruthGate {
     this.seq = undefined;
   }
 
-  canSubmit(missionId: string, canonical: string):
+  canSubmit(
+    missionId: string,
+    canonical: string,
+  ):
     | { readonly ok: true; readonly mission: DesktopMissionView }
     | { readonly ok: false; readonly reason: string } {
     if (this.state !== 'current') {
