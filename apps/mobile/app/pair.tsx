@@ -10,8 +10,8 @@ import {
   View,
   useColorScheme,
 } from 'react-native';
-import { getPairingRuntime } from '../src/api/pairing-runtime.js';
 import { PairingError, pairDesk } from '../src/api/pairing.js';
+import { getPairingRuntime } from '../src/api/pairing-runtime.js';
 import { makeTheme, radius, space, type } from '../src/design/tokens.js';
 
 type PairState =
@@ -36,7 +36,11 @@ export default function PairScreen() {
   const [state, setState] = useState<PairState>({ kind: 'idle' });
 
   const normalizedCode = useMemo(
-    () => code.replace(/[^0-9a-f]/gi, '').toUpperCase().slice(0, 10),
+    () =>
+      code
+        .replace(/[^0-9a-f]/gi, '')
+        .toUpperCase()
+        .slice(0, 10),
     [code],
   );
   const canSubmit =
@@ -227,7 +231,9 @@ export default function PairScreen() {
                 color: state.serverAccepted ? theme.color.unknown : theme.color.critical,
               }}
             >
-              {state.serverAccepted ? 'Desk accepted this key — do not enrol again' : 'Pairing failed'}
+              {state.serverAccepted
+                ? 'Desk accepted this key — do not enrol again'
+                : 'Pairing failed'}
             </Text>
             <Text style={{ ...type.ui.xs, color: theme.color.textSecondary }}>{state.detail}</Text>
           </View>
