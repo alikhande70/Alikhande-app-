@@ -101,6 +101,36 @@ export interface BrokerOrderRequest {
   readonly maxSlippage?: Dec;
 }
 
+/** One concrete proposal whose margin requirement must be known before risk can pass. */
+export interface BrokerMarginRequest {
+  readonly canonical: string;
+  readonly symbol: string;
+  readonly side: 'buy' | 'sell';
+  readonly kind: BrokerOrderRequest['kind'];
+  readonly volume: Dec;
+  readonly price: Dec;
+}
+
+/**
+ * Margin truth for one concrete proposal.
+ *
+ * `available` must describe exactly the request passed to `calculateMargin` and
+ * carry the venue/account observation time. `unavailable` is intentionally a
+ * first-class result: callers must block rather than substitute zero.
+ */
+export type BrokerMarginResult =
+  | {
+      readonly status: 'available';
+      readonly requiredAccountCurrency: Dec;
+      readonly asOf: number;
+      readonly source: string;
+    }
+  | {
+      readonly status: 'unavailable';
+      readonly reason: string;
+      readonly certainty: 'refused' | 'unknown';
+    };
+
 /**
  * Durable evidence the resolver can reconstruct after a process restart.
  *
@@ -193,6 +223,15 @@ export interface BrokerPort {
   getPositions(): Promise<readonly BrokerPosition[]>;
   getOpenOrders(): Promise<readonly BrokerOrder[]>;
   getQuote(canonical: string): Promise<BrokerQuote | undefined>;
+
+  /**
+   * Optional request-specific margin truth.
+   *
+   * Venues such as MT5 expose margin as a function of the concrete proposal,
+   * not as an instrument scalar. When present, the execution supervisor uses
+   * this method instead of deriving margin from `InstrumentSpec.marginRate`.
+   */
+  calculateMargin?(req: BrokerMarginRequest): Promise<BrokerMarginResult>;
 
   placeOrder(req: BrokerOrderRequest): Promise<BrokerSubmitResult>;
   cancelOrder(venueOrderId: string, clientOrderId: string): Promise<BrokerSubmitResult>;

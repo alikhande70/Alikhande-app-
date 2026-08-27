@@ -18,20 +18,6 @@ import type { Clock } from '../sim/clock.js';
 import type { EnrolledDevice } from './auth.js';
 import { AuthError, type Authenticator, hashBody } from './auth.js';
 
-/**
- * The desk's HTTP and WebSocket surface.
- *
- * Two rules shape every handler:
- *
- * 1. **Commands and reads are separated at the auth layer.** Anything that can
- *    move money consumes a single-use server nonce; reads do not, so a flaky
- *    network never locks the operator out of seeing their own positions.
- * 2. **A response never implies execution.** `POST /orders` returning 200 means
- *    the desk durably recorded the intent and will pursue it. Live order state
- *    arrives over the socket, from the venue. The field is named `accepted`
- *    rather than `placed` for exactly that reason.
- */
-
 export interface ServerDeps {
   readonly config: DeskConfig;
   readonly clock: Clock;
@@ -46,12 +32,10 @@ export interface ServerDeps {
   readonly hub: RealtimeHub;
   readonly auth: Authenticator;
   readonly health: () => Record<string, unknown>;
-  /** Wired in main.ts, because cancelling needs the supervisor's event route. */
   readonly cancelOrder: (intentId: string, reply: FastifyReply) => Promise<Record<string, unknown>>;
   readonly copilotAsk?: (question: string, conversationId?: string) => Promise<unknown>;
 }
 
-/** Endpoints that require a single-use command nonce and a biometric assertion. */
 const COMMAND_PATHS = [
   /^\/orders$/,
   /^\/orders\/[^/]+\/cancel$/,
@@ -76,9 +60,6 @@ export async function buildServer(deps: ServerDeps): Promise<FastifyInstance> {
   const app = Fastify({ logger: false, bodyLimit: 1_048_576 });
   await app.register(websocketPlugin, { options: { maxPayload: 1_048_576 } });
 
-  // The signature covers a hash of the exact bytes, so the raw body must be
-  // preserved before parsing. Re-serialising the parsed object would produce
-  // different bytes and break every signature.
   app.addContentTypeParser('application/json', { parseAs: 'string' }, (req, body, done) => {
     const text = typeof body === 'string' ? body : body.toString('utf8');
     req.rawBodyText = text;
@@ -95,9 +76,7 @@ export async function buildServer(deps: ServerDeps): Promise<FastifyInstance> {
 
   app.setErrorHandler((err: unknown, _req, reply) => {
     if (err instanceof AuthError) {
-      void reply
-        .status(err.status)
-        .send({ code: err.code, title: 'Not authorised', detail: err.message });
+      void reply.status(err.status).send({ code: err.code, title: 'Not authorised', detail: err.message });
       return;
     }
     const message = err instanceof Error ? err.message : String(err);
@@ -108,15 +87,11 @@ export async function buildServer(deps: ServerDeps): Promise<FastifyInstance> {
     void reply.status(500).send({
       code: 'INTERNAL',
       title: 'The desk failed to handle this request',
-      // The detail is deliberately included: this is a single-operator system
-      // and an opaque 500 helps nobody at 2am.
       detail: message,
       retryable: true,
       outcomeUnknown: false,
     });
   });
-
-  // --- Authentication -------------------------------------------------------
 
   app.addHook('preHandler', async (req: FastifyRequest, _reply: FastifyReply) => {
     const path = req.routeOptions.url ?? req.url.split('?')[0] ?? req.url;
@@ -149,18 +124,11 @@ export async function buildServer(deps: ServerDeps): Promise<FastifyInstance> {
     );
   });
 
-  // --- Enrolment and health -------------------------------------------------
-
   app.post('/enrol', async (req) => {
     const body = z
       .object({
         code: z.string(),
         publicKey: z.string(),
-        /**
-         * The device's own claim that the key lives in a security processor.
-         * Recorded, never trusted — the desk cannot verify it, but the operator
-         * should be able to see which of their devices claims what.
-         */
         hardwareBacked: z.boolean().default(false),
       })
       .parse(req.body);
@@ -179,15 +147,9 @@ export async function buildServer(deps: ServerDeps): Promise<FastifyInstance> {
   });
 
   app.get('/health', async () => deps.health());
-
   app.get('/command-nonce', async () => deps.auth.issueCommandNonce());
-
-  // --- State ----------------------------------------------------------------
-
   app.get('/state', async () => buildSnapshot(deps));
-
   app.get('/instruments', async () => deps.state.allInstruments().map((s) => specToWire(s)));
-
   app.get('/orders', async () => deps.state.allOrders(200).map(orderToWire));
 
   app.get('/journal', async (req) => {
@@ -221,33 +183,24 @@ export async function buildServer(deps: ServerDeps): Promise<FastifyInstance> {
   });
 
   app.get('/alerts', async () => deps.alerts.recentAlerts(100));
-
   app.post('/alerts/:alertId/ack', async (req) => {
     const { alertId } = z.object({ alertId: z.string() }).parse(req.params);
     deps.alerts.acknowledge(alertId);
     return { ok: true };
   });
-
   app.get('/divergences', async () => deps.reconciler.openDivergences);
-
-  // --- Preview (no side effects) --------------------------------------------
 
   app.post('/preview', async (req) => {
     const cmd = parseSubmit(req.body, randomUUID());
-    const { risk, sizing } = deps.supervisor.preview(cmd);
+    const { risk, sizing } = await deps.supervisor.preview(cmd);
     return { risk: riskToWire(risk), sizing: sizingToWire(sizing) };
   });
-
-  // --- Commands -------------------------------------------------------------
 
   app.post('/orders', async (req, reply) => {
     const body = req.body as Record<string, unknown>;
     const intentId = z.string().uuid().parse(body.intentId);
     const cmd = parseSubmit(body, intentId);
     const out = await deps.supervisor.submit(cmd);
-    // 202: the desk has taken responsibility for the intent. It is deliberately
-    // not 201 Created — nothing has been created at the venue yet, and the
-    // status code should not imply otherwise.
     void reply.status(out.accepted ? 202 : 409);
     return {
       intentId: out.intentId,
@@ -266,8 +219,6 @@ export async function buildServer(deps: ServerDeps): Promise<FastifyInstance> {
 
   app.post('/positions/:positionId/close', async (req) => {
     const { positionId } = z.object({ positionId: z.string() }).parse(req.params);
-    // closeOne, not flatten. Routing this to flatten would close the whole book
-    // when the operator asked for one row — see Guard.closeOne.
     return deps.guard.closeOne(positionId, 'requested by operator');
   });
 
@@ -291,8 +242,6 @@ export async function buildServer(deps: ServerDeps): Promise<FastifyInstance> {
     return { ok: true };
   });
 
-  // --- Copilot --------------------------------------------------------------
-
   app.post('/copilot/ask', async (req, reply) => {
     if (deps.copilotAsk === undefined) {
       void reply.status(503);
@@ -310,8 +259,6 @@ export async function buildServer(deps: ServerDeps): Promise<FastifyInstance> {
       .parse(req.body);
     return deps.copilotAsk(body.question, body.conversationId);
   });
-
-  // --- Realtime -------------------------------------------------------------
 
   app.get('/stream', { websocket: true }, (socket) => {
     const clientId = randomUUID();
@@ -365,10 +312,6 @@ export async function buildServer(deps: ServerDeps): Promise<FastifyInstance> {
 
   return app;
 }
-
-// ---------------------------------------------------------------------------
-// Wire mapping. Every Dec becomes a decimal string; no floats cross the wire.
-// ---------------------------------------------------------------------------
 
 function str(v: unknown): string | undefined {
   return typeof v === 'string' && v.length > 0 ? v : undefined;
@@ -444,8 +387,6 @@ export function sizingToWire(s: D.SizingResult | undefined): Record<string, unkn
     riskAtStop: D.Decimal.toString(s.riskAtStop),
     budgetUtilisation: D.Decimal.toString(s.budgetUtilisation),
     notionalQuote: D.Decimal.toString(s.notionalQuote),
-    // Absent when the venue publishes no margin rate. The client shows
-    // "unavailable" rather than a zero it would read as free.
     ...(s.marginQuote === undefined ? {} : { marginQuote: D.Decimal.toString(s.marginQuote) }),
     valuationMethod: s.trace.valuationMethod,
     conversionPath: s.trace.conversionPath,

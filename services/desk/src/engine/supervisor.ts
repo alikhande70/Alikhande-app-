@@ -3,7 +3,7 @@ import type { Dec, InstrumentSpec, RiskDecision, Side, SizingResult } from '@kee
 import * as D from '@keel/core';
 import { evaluate, sizePosition } from '@keel/core';
 import type { Logger } from 'pino';
-import type { BrokerOrderRequest, BrokerPort } from '../broker/port.js';
+import type { BrokerMarginResult, BrokerOrderRequest, BrokerPort } from '../broker/port.js';
 import { supportsSafeRetry } from '../broker/port.js';
 import type { LedgerEvent, OrderIntent, RiskDecisionRecord } from '../ledger/events.js';
 import type { Ledger } from '../ledger/ledger.js';
@@ -79,21 +79,6 @@ export interface SupervisorDeps {
   readonly onAnomaly?: (intentId: string, anomaly: D.Anomaly) => void;
 }
 
-/**
- * The venue-visible idempotency key, derived deterministically from the intent
- * id so a retry of the same human decision carries the same key.
- *
- * It must be short: MT5 order comments are 31 characters, and several venues
- * cap client ids well below a UUID's length. Truncating the id itself is not an
- * option — two intents whose ids share a prefix would collide, and a collision
- * here is silent and expensive: the venue treats the second, genuinely
- * different, trade as a duplicate of the first and never places it. The
- * operator sees an acknowledgement for a trade that does not exist.
- *
- * So the key is a hash, not a prefix. 80 bits of SHA-256 in base32 gives a
- * collision probability below 1 in 10^12 across a lifetime of orders, in 21
- * characters including the prefix.
- */
 export function clientOrderIdFor(intentId: string): string {
   const digest = createHash('sha256').update(intentId).digest();
   return `k-${base32(digest.subarray(0, 10))}`;
@@ -122,12 +107,6 @@ export class ExecutionSupervisor {
 
   constructor(private readonly deps: SupervisorDeps) {}
 
-  /**
-   * The one route an order event takes into the ledger.
-   *
-   * Applies it, records it together with any anomalies atomically, and
-   * escalates. Nothing in this service should append an `order.event` directly.
-   */
   private record(intentId: string, event: D.OrderEvent): void {
     recordOrderEvent(
       {
@@ -141,22 +120,21 @@ export class ExecutionSupervisor {
     );
   }
 
-  /**
-   * Apply an event that arrived from the venue's own stream — a fill, an order
-   * update. Public because the broker wiring needs it, and because routing it
-   * anywhere else would recreate the defect this exists to prevent.
-   */
   applyVenueEvent(intentId: string, event: D.OrderEvent): void {
     this.record(intentId, event);
   }
 
   /**
    * Evaluate risk and sizing without sending anything.
-   * Shares every line of logic with `submit`, so a preview can never disagree
-   * with what enforcement will do.
+   *
+   * Preparation is asynchronous because some venues (MT5) can only provide
+   * truthful margin for a concrete request. Preview and submit await this exact
+   * same path so they cannot silently disagree about margin policy.
    */
-  preview(cmd: SubmitCommand): { risk: RiskDecision; sizing: SizingResult | undefined } {
-    const prepared = this.prepare(cmd);
+  async preview(
+    cmd: SubmitCommand,
+  ): Promise<{ risk: RiskDecision; sizing: SizingResult | undefined }> {
+    const prepared = await this.prepare(cmd);
     if ('failure' in prepared) {
       return { risk: prepared.risk, sizing: prepared.sizing };
     }
@@ -170,8 +148,6 @@ export class ExecutionSupervisor {
   private async submitLocked(cmd: SubmitCommand): Promise<SubmitOutcome> {
     const { ledger, projector, state, broker, clock, log } = this.deps;
 
-    // --- 2. Idempotency ----------------------------------------------------
-    // A retry of the same human decision must never produce a second order.
     projector.catchUp();
     if (state.hasIntent(cmd.intentId)) {
       const existing = projector.loadOrderRecord(cmd.intentId);
@@ -187,8 +163,7 @@ export class ExecutionSupervisor {
       };
     }
 
-    // --- 3 & 4. Risk and sizing -------------------------------------------
-    const prepared = this.prepare(cmd);
+    const prepared = await this.prepare(cmd);
     if ('failure' in prepared) {
       ledger.append({
         kind: 'intent.refused',
@@ -243,9 +218,6 @@ export class ExecutionSupervisor {
         : {}),
     };
 
-    // --- 5. Durability before transmission --------------------------------
-    // Synchronous and fsynced. When this returns, evidence that we were about
-    // to send exists on disk, whatever happens next.
     const pre: LedgerEvent[] = [{ kind: 'intent.created', intent, risk: toRiskRecord(risk) }];
     if (cmd.override !== undefined) {
       pre.push({
@@ -258,11 +230,8 @@ export class ExecutionSupervisor {
     }
     ledger.appendAll(pre);
     projector.catchUp();
-    // Separate from the batch above so it goes through the one route that also
-    // records and escalates anomalies.
     this.record(cmd.intentId, { type: 'submit.started', at: clock.now() });
 
-    // --- 6. Transmit -------------------------------------------------------
     const brokerReq: BrokerOrderRequest = {
       clientOrderId,
       canonical: cmd.canonical,
@@ -286,8 +255,6 @@ export class ExecutionSupervisor {
     try {
       result = await broker.placeOrder(brokerReq);
     } catch (err) {
-      // A thrown error tells us nothing about whether the venue acted. The only
-      // honest classification is ambiguous.
       result = {
         outcome: 'ambiguous',
         reason: `transport threw: ${err instanceof Error ? err.message : String(err)}`,
@@ -295,7 +262,6 @@ export class ExecutionSupervisor {
       };
     }
 
-    // --- 7. Classify -------------------------------------------------------
     return this.recordSubmitResult(cmd.intentId, clientOrderId, result, risk, sizing);
   }
 
@@ -317,16 +283,6 @@ export class ExecutionSupervisor {
           ...(result.venueStatus !== undefined ? { venueStatus: result.venueStatus } : {}),
         });
 
-        // The acknowledgement is itself a venue observation. When it reports
-        // fills, that information must not be dropped on the floor: some venues
-        // return the resulting deal inline and never send a separate fill
-        // event, and a venue deduplicating on client order id returns the
-        // *original* order's state, which is a discrepancy worth surfacing.
-        //
-        // When the fill event already arrived (the normal case for a streaming
-        // venue) local state matches and this is a no-op. When it did not, the
-        // state machine adopts the venue's figure and raises an anomaly —
-        // which is exactly right, because something did go wrong.
         if (D.Decimal.gt(result.filledQty, D.Decimal.ZERO)) {
           const local = projector.loadOrderRecord(intentId);
           if (local !== undefined && D.Decimal.gt(result.filledQty, local.filledQty)) {
@@ -372,8 +328,6 @@ export class ExecutionSupervisor {
             code: result.code ?? 'BROKER_REJECTED',
             title: 'The broker rejected this order',
             detail: result.reason,
-            // Retryable only in the sense that the operator may fix and resend
-            // as a *new* intent; this intent id is finished.
             retryable: false,
             outcomeUnknown: false,
           },
@@ -391,7 +345,7 @@ export class ExecutionSupervisor {
         if (canResolve) this.deps.onUnknown(intentId, clientOrderId);
         return {
           intentId,
-          accepted: true, // the desk owns it and will pursue it
+          accepted: true,
           risk,
           ...(sizing !== undefined ? { sizing } : {}),
           deduplicated: false,
@@ -410,12 +364,7 @@ export class ExecutionSupervisor {
     }
   }
 
-  /**
-   * Everything that happens before transmission: instrument lookup, sizing, and
-   * the risk evaluation. Pure with respect to the ledger, so `preview` and
-   * `submit` cannot diverge.
-   */
-  private prepare(cmd: SubmitCommand):
+  private async prepare(cmd: SubmitCommand): Promise<
     | { spec: InstrumentSpec; volume: Dec; risk: RiskDecision; sizing: SizingResult | undefined }
     | {
         failure: {
@@ -427,7 +376,8 @@ export class ExecutionSupervisor {
         };
         risk: RiskDecision;
         sizing: SizingResult | undefined;
-      } {
+      }
+  > {
     const { state, clock, broker } = this.deps;
     const now = clock.now();
     const policy = state.policy;
@@ -472,7 +422,6 @@ export class ExecutionSupervisor {
             : quote.bid
         : cmd.price;
 
-    // --- Sizing ------------------------------------------------------------
     let volume: Dec | undefined;
     let sizing: SizingResult | undefined;
 
@@ -545,9 +494,15 @@ export class ExecutionSupervisor {
       volume = sizing.volume;
     }
 
-    // --- Risk --------------------------------------------------------------
     const riskAccount = sizing?.ok ? sizing.riskAtStop : undefined;
-    const marginAccount = this.marginInAccountCurrency(spec, volume, entry, account.currency, now);
+    const marginAccount = await this.marginInAccountCurrency(
+      spec,
+      volume,
+      entry,
+      cmd,
+      account.currency,
+      now,
+    );
 
     const decision = evaluate(
       {
@@ -555,9 +510,6 @@ export class ExecutionSupervisor {
         side: cmd.side,
         volume,
         requestedRiskBudget: riskAccount ?? D.dec('0.00'),
-        // Deliberately not `?? 0.00`. An unavailable margin used to be coerced
-        // to zero here, which made the governor's free-margin rule pass
-        // trivially -- a stale FX rate disabled the check without a trace.
         ...(marginAccount === undefined ? {} : { marginRequiredAccount: marginAccount }),
         hasPreTradeNote: cmd.preTradeNote.trim().length > 0,
         recentIdenticalIntents: state.recentIdenticalIntents(
@@ -613,17 +565,56 @@ export class ExecutionSupervisor {
     return { spec, volume, risk: decision, sizing };
   }
 
-  private marginInAccountCurrency(
+  private async marginInAccountCurrency(
     spec: InstrumentSpec,
     volume: Dec,
     entry: Dec | undefined,
+    cmd: SubmitCommand,
     accountCurrency: string,
     now: number,
-  ): Dec | undefined {
+  ): Promise<Dec | undefined> {
     if (entry === undefined) return undefined;
+
+    const calculateMargin = this.deps.broker.calculateMargin;
+    if (calculateMargin !== undefined) {
+      let result: BrokerMarginResult;
+      try {
+        result = await calculateMargin.call(this.deps.broker, {
+          canonical: spec.canonical,
+          symbol: spec.symbol,
+          side: cmd.side,
+          kind: cmd.kind,
+          volume,
+          price: entry,
+        });
+      } catch (error) {
+        this.deps.log.warn(
+          { canonical: spec.canonical, err: error instanceof Error ? error.message : String(error) },
+          'request-specific margin lookup failed; blocking as unknown',
+        );
+        return undefined;
+      }
+      if (result.status !== 'available') {
+        this.deps.log.warn(
+          { canonical: spec.canonical, reason: result.reason, certainty: result.certainty },
+          'request-specific margin unavailable; blocking entry',
+        );
+        return undefined;
+      }
+      const age = now - result.asOf;
+      if (!Number.isFinite(result.asOf) || age < 0 || age > this.deps.state.policy.maxQuoteAgeMs) {
+        this.deps.log.warn(
+          { canonical: spec.canonical, asOf: result.asOf, ageMs: age },
+          'request-specific margin is stale or from the future; blocking entry',
+        );
+        return undefined;
+      }
+      return result.requiredAccountCurrency;
+    }
+
+    // Non-MT5 adapters may still publish a venue-defined static margin rate.
+    // Keep that legacy path isolated: MT5 never invents such a scalar.
     const quoteMargin = D.marginQuote(spec, volume, entry);
-    // No published margin rate — the normal case on MT5, where margin is
-    // request-specific and must come from OrderCalcMargin. Unknown, not zero.
     if (quoteMargin === undefined) return undefined;
     const conv = this.deps.state.fxBook.convert({
       amount: quoteMargin,

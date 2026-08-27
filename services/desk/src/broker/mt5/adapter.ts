@@ -5,6 +5,8 @@ import type {
   BrokerCapabilities,
   BrokerEventHandler,
   BrokerLookupContext,
+  BrokerMarginRequest,
+  BrokerMarginResult,
   BrokerOrder,
   BrokerOrderRequest,
   BrokerPort,
@@ -373,6 +375,56 @@ export class Mt5BrokerAdapter implements BrokerPort {
       mapQuote(quote, this.instrumentBinding),
     );
     return quotes.find((candidate) => candidate.canonical === canonical);
+  }
+
+  async calculateMargin(req: BrokerMarginRequest): Promise<BrokerMarginResult> {
+    if (!this.connected || this.snapshotCache === undefined) {
+      return {
+        status: 'unavailable',
+        reason: 'MT5 adapter is not connected',
+        certainty: 'unknown',
+      };
+    }
+    try {
+      this.assertModeAllowed(this.snapshotCache.account);
+      const resolvedCanonical = this.instrumentBinding.canonicalFor(req.symbol, req.canonical);
+      if (resolvedCanonical !== req.canonical) {
+        return {
+          status: 'unavailable',
+          reason:
+            `margin canonical '${req.canonical}' does not match configured MT5 binding ` +
+            `'${resolvedCanonical}' for '${req.symbol}'`,
+          certainty: 'unknown',
+        };
+      }
+
+      const outcome = await this.client.calculateMargin({
+        symbol: req.symbol,
+        side: req.side,
+        kind: req.kind,
+        volume: D.Decimal.toString(req.volume),
+        price: D.Decimal.toString(req.price),
+      });
+      if (outcome.status === 'unavailable') {
+        return {
+          status: 'unavailable',
+          reason: outcome.reason,
+          certainty: outcome.certainty,
+        };
+      }
+      return {
+        status: 'available',
+        requiredAccountCurrency: outcome.requiredAccountCurrency,
+        asOf: outcome.asOfUtcMs,
+        source: outcome.source,
+      };
+    } catch (error) {
+      return {
+        status: 'unavailable',
+        reason: `MT5 margin request failed: ${this.errorMessage(error)}`,
+        certainty: 'unknown',
+      };
+    }
   }
 
   async placeOrder(req: BrokerOrderRequest): Promise<BrokerSubmitResult> {
