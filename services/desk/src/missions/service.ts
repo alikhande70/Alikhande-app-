@@ -29,6 +29,12 @@ const NORMAL_TRANSITIONS: Readonly<Record<MissionStage, ReadonlySet<MissionStage
   REVIEWED: new Set(),
 };
 
+const EXTERNAL_ORIGINS: ReadonlySet<MissionOrigin> = new Set([
+  'manual:mt5',
+  'pending-activation',
+  'external:unknown',
+]);
+
 function assertFiniteTime(value: number, field: string): void {
   if (!Number.isFinite(value) || value < 0) {
     throw new MissionInvariantError(`${field} must be a finite non-negative timestamp`);
@@ -47,7 +53,8 @@ function assertSnapshot(snapshot: DecisionSnapshot): void {
   const seen = new Set<string>();
   for (const item of snapshot.missing) {
     assertNonEmpty(item, 'decision snapshot missing item');
-    if (seen.has(item)) throw new MissionInvariantError(`decision snapshot duplicates missing item '${item}'`);
+    if (seen.has(item))
+      throw new MissionInvariantError(`decision snapshot duplicates missing item '${item}'`);
     seen.add(item);
   }
 }
@@ -70,23 +77,49 @@ function baseRecord(observation: MissionObservation, ledgerTs: number): MissionR
   };
 }
 
+function assertReplayTransition(record: MissionRecord, to: MissionStage): void {
+  const externalAdoption =
+    record.stage === 'OBSERVED' && to === 'MANAGING' && EXTERNAL_ORIGINS.has(record.origin);
+  if (!externalAdoption && !NORMAL_TRANSITIONS[record.stage].has(to)) {
+    throw new MissionInvariantError(`invalid mission transition ${record.stage} -> ${to}`);
+  }
+  if (to === 'PLANNED' && record.decisionSnapshot === undefined) {
+    throw new MissionInvariantError('PLANNED requires a sealed decision snapshot');
+  }
+  if (
+    to === 'ABANDONED' &&
+    (record.stage === 'OBSERVED' || record.stage === 'CANDIDATE') &&
+    record.decisionSnapshot === undefined
+  ) {
+    throw new MissionInvariantError('untraded ABANDONED mission requires a decision snapshot');
+  }
+  if (to === 'REVIEWED' && record.review === undefined) {
+    throw new MissionInvariantError('REVIEWED requires an immutable mission review');
+  }
+}
+
 /** Fold one mission stream into current state. Ledger facts remain authoritative. */
-export function reduceMission(events: readonly { event: LedgerEvent; ts: number }[]): MissionRecord | undefined {
+export function reduceMission(
+  events: readonly { event: LedgerEvent; ts: number }[],
+): MissionRecord | undefined {
   let record: MissionRecord | undefined;
 
   for (const row of events) {
     const event = row.event;
     switch (event.kind) {
       case 'mission.observed': {
-        if (record !== undefined) throw new MissionInvariantError('mission contains more than one observation');
+        if (record !== undefined)
+          throw new MissionInvariantError('mission contains more than one observation');
         record = baseRecord(event.observation, row.ts);
         break;
       }
       case 'mission.snapshotSealed': {
-        if (record === undefined) throw new MissionInvariantError('snapshot exists before mission observation');
+        if (record === undefined)
+          throw new MissionInvariantError('snapshot exists before mission observation');
         if (record.decisionSnapshot !== undefined) {
           throw new MissionInvariantError('decision snapshot is immutable and cannot be resealed');
         }
+        assertSnapshot(event.snapshot);
         record = {
           ...record,
           decisionSnapshot: event.snapshot,
@@ -96,12 +129,14 @@ export function reduceMission(events: readonly { event: LedgerEvent; ts: number 
         break;
       }
       case 'mission.stageChanged': {
-        if (record === undefined) throw new MissionInvariantError('stage change exists before mission observation');
+        if (record === undefined)
+          throw new MissionInvariantError('stage change exists before mission observation');
         if (record.stage !== event.from) {
           throw new MissionInvariantError(
             `mission stage history diverged: event expects ${event.from}, current state is ${record.stage}`,
           );
         }
+        assertReplayTransition(record, event.to);
         record = {
           ...record,
           stage: event.to,
@@ -113,7 +148,8 @@ export function reduceMission(events: readonly { event: LedgerEvent; ts: number 
         break;
       }
       case 'mission.intentLinked': {
-        if (record === undefined) throw new MissionInvariantError('intent link exists before mission observation');
+        if (record === undefined)
+          throw new MissionInvariantError('intent link exists before mission observation');
         if (record.intentIds.includes(event.intentId)) break;
         record = {
           ...record,
@@ -123,7 +159,8 @@ export function reduceMission(events: readonly { event: LedgerEvent; ts: number 
         break;
       }
       case 'mission.positionLinked': {
-        if (record === undefined) throw new MissionInvariantError('position link exists before mission observation');
+        if (record === undefined)
+          throw new MissionInvariantError('position link exists before mission observation');
         if (record.positionIds.includes(event.positionId)) break;
         record = {
           ...record,
@@ -133,7 +170,8 @@ export function reduceMission(events: readonly { event: LedgerEvent; ts: number 
         break;
       }
       case 'mission.actionRecorded': {
-        if (record === undefined) throw new MissionInvariantError('action exists before mission observation');
+        if (record === undefined)
+          throw new MissionInvariantError('action exists before mission observation');
         if (record.actions.some((action) => action.actionId === event.action.actionId)) {
           throw new MissionInvariantError(`duplicate mission action id '${event.action.actionId}'`);
         }
@@ -145,8 +183,10 @@ export function reduceMission(events: readonly { event: LedgerEvent; ts: number 
         break;
       }
       case 'mission.reviewed': {
-        if (record === undefined) throw new MissionInvariantError('review exists before mission observation');
-        if (record.review !== undefined) throw new MissionInvariantError('mission review is immutable');
+        if (record === undefined)
+          throw new MissionInvariantError('review exists before mission observation');
+        if (record.review !== undefined)
+          throw new MissionInvariantError('mission review is immutable');
         record = {
           ...record,
           review: event.review,
@@ -195,13 +235,17 @@ export class MissionService {
     readonly missionId: string;
     readonly canonical: string;
     readonly positionId: string;
-    readonly origin: Extract<MissionOrigin, 'manual:mt5' | 'pending-activation' | 'external:unknown'>;
+    readonly origin: Extract<
+      MissionOrigin,
+      'manual:mt5' | 'pending-activation' | 'external:unknown'
+    >;
     readonly observedAt: number;
     readonly marketState?: Readonly<Record<string, unknown>>;
   }): MissionRecord {
     if (this.load(input.missionId) !== undefined) {
       const existing = this.require(input.missionId);
-      if (!existing.positionIds.includes(input.positionId)) this.linkPosition(input.missionId, input.positionId, input.observedAt);
+      if (!existing.positionIds.includes(input.positionId))
+        this.linkPosition(input.missionId, input.positionId, input.observedAt);
       return this.require(input.missionId);
     }
     const observation: MissionObservation = {
@@ -223,7 +267,12 @@ export class MissionService {
     };
     this.ledger.appendAll([
       { kind: 'mission.observed', observation },
-      { kind: 'mission.positionLinked', missionId: input.missionId, positionId: input.positionId, at: input.observedAt },
+      {
+        kind: 'mission.positionLinked',
+        missionId: input.missionId,
+        positionId: input.positionId,
+        at: input.observedAt,
+      },
       { kind: 'mission.actionRecorded', missionId: input.missionId, action },
       {
         kind: 'mission.stageChanged',
@@ -257,7 +306,8 @@ export class MissionService {
     }
     assertSnapshot(snapshot);
     assertFiniteTime(at, 'plan time');
-    if (snapshot.asOf > at) throw new MissionInvariantError('decision snapshot cannot come from the future');
+    if (snapshot.asOf > at)
+      throw new MissionInvariantError('decision snapshot cannot come from the future');
     const action: MissionAction = {
       actionId: `${missionId}:plan:${at}`,
       origin,
@@ -326,9 +376,12 @@ export class MissionService {
   review(missionId: string, review: MissionReview): MissionRecord {
     const mission = this.require(missionId);
     if (mission.stage !== 'CLOSED' && mission.stage !== 'ABANDONED') {
-      throw new MissionInvariantError(`review requires CLOSED or ABANDONED, found ${mission.stage}`);
+      throw new MissionInvariantError(
+        `review requires CLOSED or ABANDONED, found ${mission.stage}`,
+      );
     }
-    if (mission.review !== undefined) throw new MissionInvariantError('mission is already reviewed');
+    if (mission.review !== undefined)
+      throw new MissionInvariantError('mission is already reviewed');
     if (!Number.isInteger(review.reviewVersion) || review.reviewVersion < 1) {
       throw new MissionInvariantError('review version must be a positive integer');
     }
@@ -351,7 +404,11 @@ export class MissionService {
     assertNonEmpty(intentId, 'intent id');
     assertFiniteTime(at, 'intent link time');
     const mission = this.require(missionId);
-    if (mission.stage === 'CLOSED' || mission.stage === 'ABANDONED' || mission.stage === 'REVIEWED') {
+    if (
+      mission.stage === 'CLOSED' ||
+      mission.stage === 'ABANDONED' ||
+      mission.stage === 'REVIEWED'
+    ) {
       throw new MissionInvariantError(`cannot link an intent to terminal mission ${mission.stage}`);
     }
     if (!mission.intentIds.includes(intentId)) {
@@ -412,7 +469,8 @@ export class MissionService {
 
   private require(missionId: string): MissionRecord {
     const mission = this.load(missionId);
-    if (mission === undefined) throw new MissionInvariantError(`mission '${missionId}' does not exist`);
+    if (mission === undefined)
+      throw new MissionInvariantError(`mission '${missionId}' does not exist`);
     return mission;
   }
 }
