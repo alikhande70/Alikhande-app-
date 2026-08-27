@@ -65,17 +65,10 @@ The Mission layer is intentionally **above** execution truth. It may reference o
 Implemented:
 
 - Mission stages: `OBSERVED`, `CANDIDATE`, `PLANNED`, `ARMED`, `EXECUTING`, `MANAGING`, `CLOSED`, `ABANDONED`, `REVIEWED`.
-- Mission origins include Brain observation, Android/Desktop operator action, manual MT5, pending activation and unknown external origin.
+- Mission origins include scanner, Brain observation, Android/Desktop operator action, manual MT5, pending activation and unknown external origin.
 - Every Mission fact is stored on the existing append-only hash-chained ledger; there is no second mutable source of truth.
-- Durable Mission events:
-  - `mission.observed`
-  - `mission.snapshotSealed`
-  - `mission.stageChanged`
-  - `mission.intentLinked`
-  - `mission.positionLinked`
-  - `mission.actionRecorded`
-  - `mission.reviewed`
-- `MissionObservation` stores both market **valid time** (`observedAt`) and the ledger provides transaction/recorded time, establishing the first bitemporal spine.
+- Durable Mission events: `mission.observed`, `mission.snapshotSealed`, `mission.stageChanged`, `mission.intentLinked`, `mission.positionLinked`, `mission.actionRecorded`, `mission.reviewed`.
+- `MissionObservation` stores market **valid time** (`observedAt`) while the ledger supplies transaction/recorded time, establishing the bitemporal spine.
 - Scan configuration version is stamped on observations so later statistics can remain cohort-aware.
 - `DecisionSnapshot` explicitly records both `known` and `missing` information and is immutable once sealed.
 - A planned mission cannot exist without a sealed Decision Snapshot.
@@ -85,23 +78,28 @@ Implemented:
 - Mission reviews store decision assessment separately from optional outcome/counterfactual evidence.
 - Lifecycle actions have stable action ids so client replay is idempotent.
 - Reducer replay validates state transitions itself; malformed direct ledger histories cannot bypass service-layer transition rules.
-- Existing projection rebuild verification remains compatible with Mission ledger events.
 - `MissionRuntime` is assembled in the real Desk process rather than remaining a library-only aggregate.
 - Broker `position` events flow through durable venue `clientOrderId → intent.created → mission.intentLinked` identity before an internal Mission can claim ownership. Symbol/side/volume/time similarity is never used for ownership.
 - A broker position whose ownership chain cannot be proven is deterministically adopted as `external:unknown`; no Decision Snapshot or Brain attribution is fabricated.
 - Broker `positionClosed` events close only the Mission with the matching durable `mission.positionLinked` fact; unknown closes do not invent a Mission.
 - Position/close Mission updates publish a `missions` realtime topic sourced by ledger replay.
 - `GET /missions?limit=` exposes bounded newest-first durable Mission state, and `/state` includes the same Mission snapshot for reconnect/bootstrap clients.
-- Runtime bridge regression tests cover durable client-order-id ownership, unknown-id fail-safe adoption, close linkage, duplicate/reconnect behavior and bounded snapshots.
+- Scanner ingestion is now a real authenticated server command: `POST /scans`. Observed, candidate and rejected scans become durable Mission data; rejected scans must include the point-in-time Decision Snapshot and rejection reason.
+- Candidate planning is now a real authenticated command: `POST /missions/:missionId/plan`. The HTTP trust boundary reconstructs optional snapshot fields explicitly so immutable domain records never confuse an absent value with a present `undefined` value.
+- Mission-bound order submission is now a real authenticated command: `POST /missions/:missionId/orders`.
+- Mission-bound submission flows through `MissionExecutionCoordinator`, which durably records the Mission ownership claim before calling `ExecutionSupervisor`, links only a real durable `intent.created`, and repairs the narrow crash gap via `recoverPendingLinks()` before Mission commands are served.
+- Canonical contradictions between Mission and order fail closed with `MISSION_CONFLICT`; ownership is never inferred from symbol/volume/time similarity.
+- Scan, plan and mission-bound order commands are classified as mutating commands by the existing signed request + command-nonce anti-replay layer.
+- HTTP regression coverage now exercises `Scan → CANDIDATE → immutable DecisionSnapshot → PLANNED → ARMED → durable Intent link` and verifies the recorded `scan → plan → authorise → submit` action chain.
 
-Current Mission implementation is still **PARTIAL**: a real scan-ingestion path does not yet guarantee that every scan/rejected/non-executed setup creates a Mission; internal order submission does not yet require/record an explicit Mission link through the HTTP command path; shared Android/Windows Mission UX is not implemented. Trading Brain work remains blocked until those data-spine exit criteria are met.
+Current Mission implementation is still **PARTIAL**. The durable/server-side spine now covers scan ingestion, rejected setups, planning, explicit Mission-bound intent ownership and broker position/close observation. Remaining exit work is primarily lifecycle completeness and client migration: the compatibility `/orders` endpoint still permits a legacy order without a Mission, Android/Windows have not yet been migrated to the Mission-bound command path, and a full runtime test through Position → Close/Abandon → Review is still required. Trading Brain work remains blocked until these exit criteria are met.
 
 ## Current repository verification
 
 - MT5/TestClock foundation commit `699d35e...`: GitHub Actions `verify` **PASS**.
-- Mission domain code head `27f7802ba19c59a3f3cd8c8c7dae22abfc505e43`: GitHub Actions `verify` **PASS**.
-- Mission runtime/query code head `92fcac86ac02ed32c61db4964a6ed6cfcd73e88e`: GitHub Actions `verify` **PASS** (lint, typecheck and tests).
-- This documentation commit must receive its own exact-head CI result before being called green.
+- Mission domain/runtime earlier heads: GitHub Actions `verify` **PASS**.
+- Mission HTTP spine code head `ca777f2898b8e151ab9077c491ce03073b791247`: GitHub Actions `verify` **PASS** (lint, typecheck and tests).
+- This documentation commit requires its own exact-head CI result before being called green.
 
 Repository CI proves TypeScript/static/test behavior only. It does **not** prove MQL compilation or target-terminal behavior.
 
@@ -126,9 +124,9 @@ No real-money execution is enabled or claimed.
 | --- | --- | --- |
 | Architecture ADR-0015–0022 | **DONE** | Accepted architecture and design critique exist. |
 | Repository MT5 foundation | **SUBSTANTIALLY DONE** | Instrument truth, request-specific Margin, recovery/reconcile hardening and runtime host wiring built; real terminal proof remains. |
-| Repository lint/typecheck/tests | **PASS at last exact code head** | `92fcac86...` passed full `verify`; current documentation head still needs its own CI run. |
+| Repository lint/typecheck/tests | **PASS at latest code head** | `ca777f2...` passed full `verify`; documentation head needs exact-head CI. |
 | Simulation/chaos | **STRONG, NOT COMPLETE** | Duplicate/recovery/clock/partial-fill/margin paths covered; real EA restart boundary still external. |
-| Trade Mission spine | **IN PROGRESS** | Durable domain + broker runtime + query/realtime wiring built; scan ingestion and explicit order-command linkage remain. |
+| Trade Mission spine | **IN PROGRESS — SERVER SPINE MOSTLY CONNECTED** | Scan/rejected/plan/Mission-bound intent/broker-position server path exists; legacy client migration and full terminal lifecycle/review test remain. |
 | Trading Brain | **DESIGNED ONLY** | Must wait for Mission exit criteria. |
 | Memory/Evaluation | **DESIGNED ONLY** | Must wait for Mission + deterministic Brain facts. |
 | MetaEditor compile | **NOT VERIFIED** | Requires Windows. |
@@ -137,10 +135,9 @@ No real-money execution is enabled or claimed.
 
 ## Next highest-priority sequence
 
-1. Add a real scan-ingestion path so **every scan**, including low-score/rejected/non-executed setups, creates durable Mission evidence.
-2. Make internal order submission carry an explicit Mission id and durably link the resulting intent without letting Mission state become execution truth.
-3. Seal the exact Decision Snapshot used for an actionable/rejected setup before the lifecycle can advance or abandon.
-4. Add runtime lifecycle/restart tests spanning Scan → Mission → Decision Snapshot → Intent → Position → Close/Abandon → Review.
-5. Add shared Android/Windows Mission UX against the server `missions` snapshot/topic rather than device-local truth.
-6. Only after ADR-0018 exit criteria are met, begin ADR-0019 deterministic/versioned Trading Brain.
-7. Do not enable Demo `OrderSend` until Windows/MetaEditor/real MT5 read-only validation establishes the external execution foundation.
+1. Add a runtime integration test that completes both paths: `Scan → Mission → Decision Snapshot → Intent → Position → Close → Review`, and `Scan → rejected/abandoned → Review`, without inventing broker truth.
+2. Migrate Android/Windows order commands to carry/use Mission identity and consume the server Mission snapshot/topic.
+3. Once clients are migrated, fail closed or explicitly deprecate the compatibility `/orders` route so new internal orders cannot bypass Mission ownership.
+4. Close ADR-0018 with restart/reconnect and replay tests proving the Mission spine remains identical after process reconstruction.
+5. Only after ADR-0018 exit criteria are met, begin ADR-0019 deterministic/versioned Trading Brain.
+6. Do not enable Demo `OrderSend` until Windows/MetaEditor/real MT5 read-only validation establishes the external execution foundation.
