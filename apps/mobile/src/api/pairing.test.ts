@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import type { RunningDeskRuntime } from './bootstrap.js';
 import {
   PairingError,
@@ -84,13 +84,15 @@ describe('first-time mobile pairing', () => {
     const signer = new FakeSigner();
     const store = new MemoryPairingStore();
     const starts: PairingMetadata[] = [];
-    const fetchFn = vi.fn<typeof fetch>(async (_input, init) => {
+    let fetchCalls = 0;
+    const fetchFn = (async (_input: unknown, init?: RequestInit) => {
+      fetchCalls += 1;
       const body = JSON.parse(String(init?.body)) as Record<string, unknown>;
       expect(body.code).toBe('A1B2C3D4E5');
       expect(body.publicKey).toBe(signer.identity.publicKey);
       expect(body.hardwareBacked).toBe(false);
       return response(accepted(signer.identity));
-    });
+    }) as typeof fetch;
 
     const result = await pairDesk(
       { baseUrl: 'https://desk.example.test/', code: 'a1b2c3d4e5' },
@@ -105,7 +107,7 @@ describe('first-time mobile pairing', () => {
       },
     );
 
-    expect(fetchFn).toHaveBeenCalledTimes(1);
+    expect(fetchCalls).toBe(1);
     expect(signer.destroyed).toBe(0);
     expect(store.value).toEqual(result.pairing);
     expect(starts).toEqual([result.pairing]);
@@ -248,7 +250,11 @@ describe('first-time mobile pairing', () => {
       label: 'Existing phone',
       enrolledAt: 1,
     };
-    const fetchFn = vi.fn<typeof fetch>();
+    let fetched = false;
+    const fetchFn = (async () => {
+      fetched = true;
+      return response({});
+    }) as typeof fetch;
 
     await expect(
       pairDesk(
@@ -257,7 +263,7 @@ describe('first-time mobile pairing', () => {
       ),
     ).rejects.toMatchObject({ code: 'ALREADY_PAIRED', enrolledDeviceId: 'existing' });
 
-    expect(fetchFn).not.toHaveBeenCalled();
+    expect(fetched).toBe(false);
     expect(signer.provisioned).toBe(false);
   });
 
