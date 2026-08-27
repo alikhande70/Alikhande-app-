@@ -12,7 +12,7 @@ import { TestClock } from '../../../../services/desk/src/sim/clock.js';
 import type { ClientResult } from './client.js';
 import { DeskClient } from './client.js';
 import type { SecureSigner } from './signer.js';
-import { canonicalString, isCommandPath } from './signing.js';
+import { biometricReason, canonicalString, isCommandPath } from './signing.js';
 
 const T0 = Date.UTC(2026, 5, 15, 14, 0);
 
@@ -43,21 +43,36 @@ describe('the client and the desk sign the same bytes', () => {
     });
   }
 
-  it('agrees on the command-path list, which gates the biometric prompt', () => {
-    // The desk enforces this independently; the client's copy only decides
-    // whether to prompt. They should still agree.
+  it('classifies the Mission command surface as command-nonce protected', () => {
     const commandPaths = [
       '/orders',
       '/orders/abc/cancel',
+      '/scans',
+      '/missions/mission-1/plan',
+      '/missions/mission-1/orders',
       '/positions/PP-1/close',
       '/positions/PP-1/modify',
       '/panic',
       '/policy',
       '/guard/release',
     ];
-    const readPaths = ['/state', '/preview', '/journal', '/alerts', '/command-nonce', '/health'];
+    const readPaths = [
+      '/state',
+      '/missions',
+      '/preview',
+      '/journal',
+      '/alerts',
+      '/command-nonce',
+      '/health',
+    ];
     for (const p of commandPaths) expect(isCommandPath(p), p).toBe(true);
     for (const p of readPaths) expect(isCommandPath(p), p).toBe(false);
+  });
+
+  it('gives Mission mutations consequence-specific biometric prompts', () => {
+    expect(biometricReason('/missions/mission-1/plan')).toMatch(/mission plan/i);
+    expect(biometricReason('/missions/mission-1/orders')).toMatch(/mission order/i);
+    expect(biometricReason('/scans')).toMatch(/scan/i);
   });
 
   it('produces a signature the desk actually accepts', async () => {
@@ -254,6 +269,23 @@ describe('authorisation', () => {
     await client.command('/panic', { confirmPhrase: 'FLATTEN' });
     expect(seen.filter((u) => u.endsWith('/command-nonce'))).toHaveLength(1);
   });
+
+  it('requests command nonces for Mission planning and Mission-bound order submission', async () => {
+    const seen: string[] = [];
+    const fetchFn = (async (url: string) => {
+      seen.push(String(url));
+      if (String(url).endsWith('/command-nonce')) {
+        return new Response(JSON.stringify({ nonce: `cn-${seen.length}` }), { status: 200 });
+      }
+      return new Response('{}', { status: 202 });
+    }) as unknown as typeof fetch;
+
+    const client = makeClient(fetchFn);
+    await client.command('/missions/mission-1/plan', { snapshot: {} });
+    await client.command('/missions/mission-1/orders', { intentId: 'intent-1' });
+
+    expect(seen.filter((u) => u.endsWith('/command-nonce'))).toHaveLength(2);
+  });
 });
 
 describe('red team: a phone with a wrong clock', () => {
@@ -320,15 +352,17 @@ describe('red team: a phone with a wrong clock', () => {
   it('turns a clock-skew rejection into something the operator can act on', async () => {
     const fetchFn = (async () =>
       new Response(
-        JSON.stringify({ code: 'CLOCK_SKEW', detail: 'request timestamp is 300s from desk time' }),
-        {
-          status: 401,
-        },
+        JSON.stringify({
+          code: 'CLOCK_SKEW',
+          detail: 'request timestamp is too far from desk time',
+        }),
+        { status: 401 },
       )) as unknown as typeof fetch;
     const res = await makeClient(fetchFn).get('/state', 1);
     expect(res.ok).toBe(false);
     if (res.ok) return;
-    expect(res.title).toMatch(/clock disagrees/);
-    expect(res.detail).toMatch(/automatic date and time/);
+    expect(res.code).toBe('CLOCK_SKEW');
+    expect(res.title).toMatch(/clock/i);
+    expect(res.detail).toMatch(/automatic date and time/i);
   });
 });
