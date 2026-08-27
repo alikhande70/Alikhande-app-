@@ -6,9 +6,9 @@ This file records implementation that actually exists on the branch. ADRs descri
 
 The repository-level MT5 foundation is substantially built and fail-closed. Real broker execution remains deliberately disabled because `OrderSend`/`OrderSendAsync` are absent.
 
-Work remains on **ADR-0018 — Trade Mission**. The durable Mission spine, Mission-bound Android trading path, authenticated realtime path, first-time pairing controller/screen, pairing metadata persistence, and operator abandon/review command surface now exist in repository code. Trading Brain, memory and evaluation remain blocked by the ADR-0018 exit gate.
+Work remains on **ADR-0018 — Trade Mission**. The durable Mission spine, Mission-bound Android trading path, authenticated realtime path, first-time pairing controller/screen, pairing metadata persistence, operator abandon/review command surface, and a platform-neutral Windows/Desktop Mission-bound operator core now exist in repository code. Trading Brain, memory and evaluation remain blocked by the ADR-0018 exit gate.
 
-The largest remaining ADR-0018 product gap is now the Windows/Desktop Mission-bound client path and retirement of the compatibility `/orders` bypass. Physical-device/native-key proof also remains external.
+The Windows gap has narrowed: the repository now has signed Mission-aware Desktop transport and operator logic, but not yet a complete Windows app shell, native signer/persistence, realtime Mission store, or target-Windows runtime proof. The compatibility `/orders` bypass therefore remains server-side until every actual operator path is migrated. Physical-device/native-key proof also remains external.
 
 The preserved branch `claude/personal-trading-app-atm6e1` remains outside this workstream and must not be modified.
 
@@ -110,6 +110,16 @@ Implemented:
 - Pairing failure behavior preserves a key if Desk may already have accepted it, preventing the phone from destroying the only private key for an enrolled device.
 - Pairing metadata uses a versioned secure-store adapter; corrupt/unknown metadata fails closed rather than being treated as a fresh unpaired device.
 
+## Windows/Desktop Mission path — operator core implemented
+
+- `apps/desktop/src/client.ts` provides signed Desk transport using the same request identity/command-nonce contract as other operator clients.
+- The Desktop client **refuses legacy Mission-less `POST /orders` locally before any network call**; new Windows order entry must use `/missions/:missionId/orders`.
+- Consequential commands obtain a single-use command nonce and are signed with a user-facing authorisation reason.
+- Commands are never automatically retried. A network failure or timeout after command authorisation is represented as **UNKNOWN**, with explicit do-not-resend/reconcile semantics.
+- `DesktopMissionOperator` requires a durable `missionId`, sends `origin: operator:windows`, and distinguishes `sent`, `blocked`, and `unknown` without claiming broker truth from Desk acceptance.
+- Repository tests execute the Desktop transport/operator contract from an existing verified workspace and cover Mission-less refusal, command nonce/signing, Windows provenance, and UNKNOWN-on-network-failure behavior.
+- This is intentionally a platform-neutral operator core, **not yet a complete Windows application**. Native signing/key persistence, app shell/UI, realtime Mission state/resync, packaging, and target-Windows runtime proof remain open.
+
 ## Realtime and command security — repository closed
 
 - `/stream` requires a signed first-frame `hello` before a socket is admitted to `RealtimeHub`.
@@ -124,7 +134,7 @@ Implemented:
 ADR-0018 remains **IN PROGRESS**. Remaining work is now narrow:
 
 1. **Native device-key implementation / physical-device proof** — repository abstractions/controller are present, but StrongBox/TEE/Keychain behavior and actual key persistence still require native implementation/target-device proof. No software fallback may be promoted as hardware-backed.
-2. **Windows/Desktop Mission-bound client path** — the repository currently contains no Desktop app under `apps/`; a real Windows operator surface must consume server Mission truth and carry explicit `missionId` for order entry before the compatibility bypass can be retired.
+2. **Windows/Desktop app completion** — the Mission-bound signed operator core exists and is repository-tested, but a real Windows app shell must still bind native signing/persistence and realtime Mission state/resync to that core. It must not introduce a Desktop-local trading truth store.
 3. **Legacy `/orders` retirement** — compatibility route still permits Mission-less internal order submission. It must remain only until every actual operator client is Mission-bound, then fail closed or be removed explicitly.
 4. **Final ADR-0018 exit audit** — reconstruct/reconnect across actual Android + Windows client paths and confirm Mission state/ownership remains identical with no hidden local source of truth.
 
@@ -137,9 +147,10 @@ Trading Brain implementation remains blocked until these are resolved or explici
 - First-time Pair screen/controller + fail-closed pairing runtime/persistence: repository code exists; physical native-key proof remains external.
 - Operator abandon/review surface, immutable review behavior and lifecycle validation: exact code passed full `verify` at `e495c153d597b277474d5dfca4c47753e0fcd015`.
 - Android/Desk Mission lifecycle command-nonce contract: exact code head `285a892c22af44a34b606f6427311b45cfff89f7` — GitHub Actions `verify` **PASS**.
+- Windows/Desktop Mission-bound operator core: exact code head `acd3f750d346f4dd06ead1090ae0a12f04591d41` — GitHub Actions `verify` **PASS**.
 - This documentation head requires its own exact-head CI result before being called green.
 
-Repository CI proves static/type/test behavior only. It does **not** prove MQL compilation, physical Android secure-key behavior or target-terminal behavior.
+Repository CI proves static/type/test behavior only. It does **not** prove MQL compilation, physical Android secure-key behavior or target-Windows behavior.
 
 ## External verification boundary — still NOT VERIFIED
 
@@ -154,7 +165,7 @@ The following require Windows/device/terminal access and remain explicitly unver
 - end-to-end App → Desk → execution host → EA → MT5 → LiteFinance → reconciliation;
 - physical Android native key provisioning/storage and first-time pairing behavior on the target device;
 - physical Android background/resume socket behavior;
-- Windows/Desktop operator-client behavior, because that client surface is not yet implemented;
+- Windows/Desktop native signer/persistence, app-shell/realtime integration, packaging and target-Windows runtime behavior;
 - any `OrderSend` behavior, because sending is deliberately not implemented yet.
 
 No real-money execution is enabled or claimed.
@@ -165,9 +176,9 @@ No real-money execution is enabled or claimed.
 | --- | --- | --- |
 | Architecture ADR-0015–0022 | **DONE** | Accepted architecture and design review exist. |
 | Repository MT5 foundation | **SUBSTANTIALLY DONE** | Instrument truth, request-specific Margin, recovery/reconcile hardening and execution-host wiring built; target-terminal proof remains. |
-| Repository lint/typecheck/tests | **PASS at latest code head** | `285a892c...` passed full `verify`; this report head needs its own result. |
+| Repository lint/typecheck/tests | **PASS at latest code head** | `acd3f750...` passed full `verify`; this report head needs its own result. |
 | Simulation/chaos | **STRONG, NOT COMPLETE** | Duplicate/recovery/clock/partial-fill/margin paths covered; real EA restart boundary remains external. |
-| Trade Mission spine | **IN PROGRESS — SERVER + ANDROID MISSION PATH BUILT** | Durable lifecycle/replay, pairing/controller, Mission-bound mobile truth and operator lifecycle routes exist; Desktop migration + bypass retirement + final exit audit remain. |
+| Trade Mission spine | **IN PROGRESS — SERVER + ANDROID + DESKTOP CORE BUILT** | Durable lifecycle/replay, Mission-bound mobile truth, and Windows operator core exist; Desktop app completion + bypass retirement + final exit audit remain. |
 | Android first-time pairing | **REPOSITORY BUILT / DEVICE PROOF BLOCKED** | Screen/controller/persistence exist and fail closed without a signer; native hardware-backed proof remains external. |
 | Realtime + command authentication | **REPOSITORY DONE** | Signed stream admission and command-nonce protection for Mission mutations. |
 | Trading Brain | **DESIGNED ONLY / BLOCKED** | Must wait for ADR-0018 exit criteria. |
@@ -178,8 +189,8 @@ No real-money execution is enabled or claimed.
 
 ## Next highest-priority sequence
 
-1. Define and implement the Windows/Desktop operator client surface against the existing Desk Mission API. It must render server Mission truth and submit orders only through `/missions/:missionId/orders`; do not create a Desktop-local trading truth store.
-2. Add Desktop reconnect/resync and failure tests, including UNKNOWN command outcomes and stale Mission state.
+1. Build the Windows/Desktop app shell around the verified Mission-bound core: native signer/key persistence, server Mission snapshot/realtime resync, and an operator surface that never creates a local trading truth store.
+2. Add Desktop reconnect/resync and stale-state tests; require complete/current Mission truth before allowing Mission-bound order entry.
 3. Once Android and Desktop actual order-entry paths are both Mission-bound, disable/remove the legacy Mission-less `POST /orders` path and add a regression test proving new internal orders require Mission ownership.
 4. Perform the final independent ADR-0018 replay/reconnect/red-team audit across server + Android + Desktop paths.
 5. Only after ADR-0018 exit criteria are met, begin ADR-0019 deterministic/versioned Trading Brain.
