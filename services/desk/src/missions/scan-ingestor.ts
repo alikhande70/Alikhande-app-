@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { MissionInvariantError, MissionService } from './service.js';
+import { MissionInvariantError, type MissionService } from './service.js';
 import type { DecisionSnapshot, MissionRecord } from './types.js';
 
 export type ScanDisposition = 'observed' | 'candidate' | 'rejected';
