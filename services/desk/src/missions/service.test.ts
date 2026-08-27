@@ -50,6 +50,16 @@ function snapshot(at = 1_100): DecisionSnapshot {
   };
 }
 
+function rejectedSnapshot(at = 1_090): DecisionSnapshot {
+  return {
+    snapshotVersion: 1,
+    asOf: at,
+    known: { filter: 'spread-too-wide' },
+    missing: ['entry', 'stop', 'target'],
+    brainVersion: 'brain-v1',
+  };
+}
+
 function review(at = 2_000): MissionReview {
   return {
     reviewVersion: 1,
@@ -92,7 +102,9 @@ describe('Trade Mission aggregate', () => {
     expect(() => missions.plan('mission-1', snapshot(1_150), 'operator:android', 1_250)).toThrow(
       MissionInvariantError,
     );
-    expect(ledger.readStream('mission-1').filter((row) => row.kind === 'mission.snapshotSealed')).toHaveLength(1);
+    expect(
+      ledger.readStream('mission-1').filter((row) => row.kind === 'mission.snapshotSealed'),
+    ).toHaveLength(1);
     ledger.close();
   });
 
@@ -110,21 +122,18 @@ describe('Trade Mission aggregate', () => {
       'brain',
       1_100,
       'filter veto',
-      {
-        ...snapshot(1_090),
-        plan: undefined,
-        known: { filter: 'spread-too-wide' },
-        missing: ['entry', 'stop', 'target'],
-      },
+      rejectedSnapshot(),
     );
     expect(abandoned.stage).toBe('ABANDONED');
     expect(abandoned.abandonedReason).toBe('filter veto');
     expect(abandoned.decisionSnapshot?.known).toEqual({ filter: 'spread-too-wide' });
 
     const reviewed = missions.review('mission-1', {
-      ...review(1_500),
-      outcome: undefined,
+      reviewVersion: 1,
+      reviewedAt: 1_500,
+      decision: { score: 20, rubricVersion: 'decision-v1' },
       counterfactual: { wouldHaveReachedTarget: false },
+      evidenceSeqs: ledger.readStream('mission-1').map((row) => row.seq),
     });
     expect(reviewed.stage).toBe('REVIEWED');
     expect(reviewed.review?.counterfactual).toEqual({ wouldHaveReachedTarget: false });
@@ -144,8 +153,12 @@ describe('Trade Mission aggregate', () => {
     );
 
     missions.linkIntent('mission-1', 'intent-abc', 1_300);
-    expect(missions.beginExecution('mission-1', 'operator:desktop', 1_310).stage).toBe('EXECUTING');
-    expect(missions.beginManaging('mission-1', 'pending-activation', 1_400).stage).toBe('MANAGING');
+    expect(missions.beginExecution('mission-1', 'operator:desktop', 1_310).stage).toBe(
+      'EXECUTING',
+    );
+    expect(missions.beginManaging('mission-1', 'pending-activation', 1_400).stage).toBe(
+      'MANAGING',
+    );
     missions.linkPosition('mission-1', 'position-9', 1_410);
     expect(missions.close('mission-1', 'operator:desktop', 1_900).stage).toBe('CLOSED');
     expect(missions.review('mission-1', review()).stage).toBe('REVIEWED');
@@ -221,6 +234,30 @@ describe('Trade Mission aggregate', () => {
         },
       ]),
     ).toThrow(/stage history diverged/);
+    ledger.close();
+  });
+
+  it('rejects a forged direct transition during replay', () => {
+    const ledger = makeLedger();
+    const missions = new MissionService(ledger);
+    missions.observe(observation());
+
+    expect(() =>
+      reduceMission([
+        ...ledger.readStream('mission-1'),
+        {
+          ts: 1_100,
+          event: {
+            kind: 'mission.stageChanged',
+            missionId: 'mission-1',
+            from: 'OBSERVED',
+            to: 'ARMED',
+            origin: 'operator:android',
+            at: 1_100,
+          },
+        },
+      ]),
+    ).toThrow(/invalid mission transition OBSERVED -> ARMED/);
     ledger.close();
   });
 
