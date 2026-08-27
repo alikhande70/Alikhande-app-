@@ -15,6 +15,7 @@ export interface DesktopMissionRealtimeOptions {
   readonly client: DesktopDeskClient;
   readonly truth: DesktopMissionTruth;
   readonly factory?: (url: string) => DesktopWebSocketLike;
+  readonly now?: () => number;
   readonly setTimeoutFn?: (fn: () => void, ms: number) => unknown;
   readonly clearTimeoutFn?: (handle: unknown) => void;
   readonly maxReconnectDelayMs?: number;
@@ -27,6 +28,7 @@ interface Frame {
   readonly payload?: unknown;
   readonly upsert?: unknown;
   readonly remove?: readonly string[];
+  readonly heartbeatIntervalMs?: number;
 }
 
 /**
@@ -36,16 +38,23 @@ interface Frame {
  * invents continuity: disconnect, malformed data, server resync, regression or
  * sequence gaps all make Mission truth unusable for orders until a fresh
  * snapshot proves completeness again.
+ *
+ * The Desk reaps clients that stop heartbeating. Desktop therefore sends ping
+ * frames on the interval announced by `welcome`; without this, a perfectly
+ * healthy Windows client would be disconnected after three server intervals.
  */
 export class DesktopMissionRealtime {
   private socket: DesktopWebSocketLike | undefined;
   private closing = false;
   private attempt = 0;
   private reconnectHandle: unknown;
+  private heartbeatHandle: unknown;
+  private readonly now: () => number;
   private readonly setT: (fn: () => void, ms: number) => unknown;
   private readonly clearT: (handle: unknown) => void;
 
   constructor(private readonly options: DesktopMissionRealtimeOptions) {
+    this.now = options.now ?? (() => Date.now());
     this.setT = options.setTimeoutFn ?? ((fn, ms) => setTimeout(fn, ms));
     this.clearT =
       options.clearTimeoutFn ?? ((handle) => clearTimeout(handle as ReturnType<typeof setTimeout>));
@@ -58,6 +67,7 @@ export class DesktopMissionRealtime {
 
   close(): void {
     this.closing = true;
+    this.clearT(this.heartbeatHandle);
     this.clearT(this.reconnectHandle);
     try {
       this.socket?.close();
@@ -90,6 +100,7 @@ export class DesktopMissionRealtime {
       // Close is authoritative for reconnect scheduling.
     };
     socket.onclose = () => {
+      this.clearT(this.heartbeatHandle);
       if (this.closing) return;
       this.options.truth.markDisconnected();
       this.scheduleReconnect();
@@ -136,6 +147,15 @@ export class DesktopMissionRealtime {
     if (frame.topic !== undefined && frame.topic !== 'missions') return;
 
     switch (frame.type) {
+      case 'welcome':
+        if (
+          typeof frame.heartbeatIntervalMs === 'number' &&
+          Number.isFinite(frame.heartbeatIntervalMs) &&
+          frame.heartbeatIntervalMs > 0
+        ) {
+          this.startHeartbeat(frame.heartbeatIntervalMs);
+        }
+        return;
       case 'snapshot':
         if (
           typeof frame.seq !== 'number' ||
@@ -154,11 +174,33 @@ export class DesktopMissionRealtime {
         }
         return;
       case 'resync':
+        // The Desk sends a fresh snapshot immediately after this frame. Until it
+        // arrives the old rows are last-known only and cannot authorise orders.
         this.options.truth.markIncomplete();
         return;
       default:
         return;
     }
+  }
+
+  private startHeartbeat(intervalMs: number): void {
+    this.clearT(this.heartbeatHandle);
+    const beat = (): void => {
+      if (this.closing) return;
+      try {
+        this.socket?.send(JSON.stringify({ type: 'ping', clientTime: this.now() }));
+      } catch {
+        this.options.truth.markDisconnected();
+        try {
+          this.socket?.close();
+        } catch {
+          // Already gone.
+        }
+        return;
+      }
+      this.heartbeatHandle = this.setT(beat, intervalMs);
+    };
+    this.heartbeatHandle = this.setT(beat, intervalMs);
   }
 
   private requestSnapshot(): void {
