@@ -28,6 +28,7 @@ import { buildServer, buildSnapshot, orderToWire } from './http/server.js';
 import { Ledger } from './ledger/ledger.js';
 import { Projector } from './ledger/projections.js';
 import { CryptoComProvider } from './marketdata/cryptocom.js';
+import { MissionRuntime } from './missions/runtime.js';
 import { RealtimeHub } from './realtime/hub.js';
 import { systemClock } from './sim/clock.js';
 
@@ -91,6 +92,7 @@ export async function startDesk(config: DeskConfig = loadConfig()): Promise<Desk
 
   const policy = defaultRiskPolicy({ accountCurrency: config.accountCurrency });
   const state = new DeskState(ledger, projector, clock, policy);
+  const missionRuntime = new MissionRuntime(ledger);
 
   // --- Broker ---------------------------------------------------------------
   const broker = buildBroker(config, clock, log);
@@ -275,7 +277,7 @@ export async function startDesk(config: DeskConfig = loadConfig()): Promise<Desk
         hub.publish('orders', buildSnapshot(serverDeps).orders);
         break;
       }
-      case 'position':
+      case 'position': {
         ledger.append({
           kind: 'position.observed',
           positionId: e.position.positionId,
@@ -295,9 +297,12 @@ export async function startDesk(config: DeskConfig = loadConfig()): Promise<Desk
             : {}),
         });
         projector.catchUp();
+        const mission = missionRuntime.observeBrokerEvent(broker.name, e);
         hub.publish('positions', buildSnapshot(serverDeps).positions);
+        if (mission !== undefined) hub.publish('missions', missionRuntime.listRecent());
         break;
-      case 'positionClosed':
+      }
+      case 'positionClosed': {
         ledger.append({
           kind: 'position.closed',
           positionId: e.positionId,
@@ -307,8 +312,11 @@ export async function startDesk(config: DeskConfig = loadConfig()): Promise<Desk
           closedAt: e.at,
         });
         projector.catchUp();
+        const mission = missionRuntime.observeBrokerEvent(broker.name, e);
         hub.publish('positions', buildSnapshot(serverDeps).positions);
+        if (mission !== undefined) hub.publish('missions', missionRuntime.listRecent());
         break;
+      }
       case 'order':
         projector.catchUp();
         hub.publish('orders', buildSnapshot(serverDeps).orders);
@@ -420,6 +428,7 @@ export async function startDesk(config: DeskConfig = loadConfig()): Promise<Desk
     alerts,
     hub,
     auth,
+    missions: missionRuntime,
     health,
     cancelOrder,
   };
@@ -429,6 +438,7 @@ export async function startDesk(config: DeskConfig = loadConfig()): Promise<Desk
   hub.registerTopic('account', () => buildSnapshot(serverDeps).account);
   hub.registerTopic('positions', () => buildSnapshot(serverDeps).positions);
   hub.registerTopic('orders', () => buildSnapshot(serverDeps).orders);
+  hub.registerTopic('missions', () => missionRuntime.listRecent());
   hub.registerTopic('divergences', () => reconciler.openDivergences);
   hub.registerTopic('drawdown', () => buildSnapshot(serverDeps).drawdown);
   hub.registerTopic('alerts', () => alerts.recentAlerts(30));
