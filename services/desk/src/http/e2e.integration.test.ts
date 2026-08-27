@@ -60,6 +60,21 @@ async function commandNonce(): Promise<string> {
   return r.json.nonce as string;
 }
 
+async function streamAuth(): Promise<Record<string, unknown>> {
+  if (deviceId.length === 0) deviceId = (await enrolThroughDesk()).deviceId;
+  const base = {
+    method: 'GET',
+    path: '/stream',
+    timestamp: Date.now(),
+    nonce: randomUUID(),
+    bodyHash: hashBody(''),
+  };
+  const signature = sign(null, Buffer.from(canonicalString(base), 'utf8'), privateKey).toString(
+    'base64',
+  );
+  return { deviceId, timestamp: base.timestamp, nonce: base.nonce, signature };
+}
+
 beforeAll(async () => {
   desk = await startDesk({
     host: '127.0.0.1',
@@ -202,6 +217,7 @@ describe('order placement over the wire', () => {
 
 describe('the realtime socket', () => {
   it('sends a welcome, then a sequenced snapshot per topic', async () => {
+    const auth = await streamAuth();
     const ws = new WebSocket(`${baseUrl.replace('http', 'ws')}/stream`);
     const frames: Record<string, unknown>[] = [];
     await new Promise<void>((resolve, reject) => {
@@ -214,6 +230,7 @@ describe('the realtime socket', () => {
             clientVersion: 'test',
             topics: ['health', 'positions'],
             resume: {},
+            auth,
           }),
         );
       });
@@ -242,10 +259,26 @@ describe('the realtime socket', () => {
   }, 20_000);
 
   it('answers a ping with the client clock echoed back', async () => {
+    const auth = await streamAuth();
     const ws = new WebSocket(`${baseUrl.replace('http', 'ws')}/stream`);
     const pong = await new Promise<Record<string, unknown> | undefined>((resolve) => {
       const timer = setTimeout(() => resolve(undefined), 8_000);
-      ws.on('open', () => ws.send(JSON.stringify({ type: 'ping', clientTime: 12345 })));
+      ws.on('open', () => {
+        ws.send(
+          JSON.stringify({
+            type: 'hello',
+            protocolVersion: 1,
+            clientVersion: 'test',
+            topics: [],
+            resume: {},
+            auth,
+          }),
+        );
+        // WebSocket frames are ordered. The server authenticates the hello
+        // before processing this ping, so no unauthenticated liveness path is
+        // required for the test or for production.
+        ws.send(JSON.stringify({ type: 'ping', clientTime: 12345 }));
+      });
       ws.on('message', (raw) => {
         const msg = JSON.parse(raw.toString()) as Record<string, unknown>;
         if (msg.type === 'pong') {
