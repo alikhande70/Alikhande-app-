@@ -1,6 +1,6 @@
 import type { SubmitCommand, SubmitOutcome } from '../engine/supervisor.js';
 import type { Ledger } from '../ledger/ledger.js';
-import { MissionInvariantError, MissionService } from './service.js';
+import { MissionInvariantError, type MissionService } from './service.js';
 import type { MissionOrigin, MissionRecord } from './types.js';
 
 interface MissionSubmitter {
@@ -186,14 +186,17 @@ export class MissionExecutionCoordinator {
     const first = rows[0]?.stream;
     if (first === undefined) return undefined;
     if (rows.some((row) => row.stream !== first)) {
-      throw new MissionInvariantError(`intent '${intentId}' is already linked to multiple missions`);
+      throw new MissionInvariantError(
+        `intent '${intentId}' is already linked to multiple missions`,
+      );
     }
     return first;
   }
 
   private requireMission(missionId: string): MissionRecord {
     const mission = this.missions.load(missionId);
-    if (mission === undefined) throw new MissionInvariantError(`mission '${missionId}' does not exist`);
+    if (mission === undefined)
+      throw new MissionInvariantError(`mission '${missionId}' does not exist`);
     return mission;
   }
 
