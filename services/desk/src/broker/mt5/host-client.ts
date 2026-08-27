@@ -8,7 +8,7 @@ import type {
   Mt5HostSnapshot,
   Mt5HostSubmitResult,
 } from './host-types.js';
-import { parseMt5MarginResponse, type Mt5MarginOutcome } from './margin.js';
+import { type Mt5MarginOutcome, parseMt5MarginResponse } from './margin.js';
 import type { Mt5MarginRequest } from './margin-wire.js';
 import { validateMt5HostReconcileResponse } from './reconcile-validation.js';
 import { validateMt5HostSnapshot } from './snapshot-validation.js';
