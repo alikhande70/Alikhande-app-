@@ -1,8 +1,8 @@
-import { DeskClient, type ClientOptions } from './client.js';
-import { clearDeskClient, installDeskClient } from './runtime.js';
-import { DeskSocket, type WebSocketLike } from './socket.js';
-import type { SecureSigner } from './signer.js';
 import { useDeskStore } from '../store/desk.js';
+import { type ClientOptions, DeskClient } from './client.js';
+import { clearDeskClient, installDeskClient } from './runtime.js';
+import type { SecureSigner } from './signer.js';
+import { DeskSocket, type WebSocketLike } from './socket.js';
 
 /** Topics that make up the operator's authoritative mobile read model. */
 export const DESK_TOPICS = [
@@ -59,7 +59,6 @@ export async function restoreDeskRuntime(
     throw new Error('paired Desk metadata exists but the device signing key is missing');
   }
 
-  const store = useDeskStore.getState();
   const client = new DeskClient({
     baseUrl: stripTrailingSlash(pairing.baseUrl),
     signer: options.signer,
