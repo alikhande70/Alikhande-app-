@@ -47,7 +47,8 @@ export class DesktopMissionRealtime {
 
   constructor(private readonly options: DesktopMissionRealtimeOptions) {
     this.setT = options.setTimeoutFn ?? ((fn, ms) => setTimeout(fn, ms));
-    this.clearT = options.clearTimeoutFn ?? ((handle) => clearTimeout(handle as ReturnType<typeof setTimeout>));
+    this.clearT =
+      options.clearTimeoutFn ?? ((handle) => clearTimeout(handle as ReturnType<typeof setTimeout>));
   }
 
   connect(): void {
@@ -106,7 +107,10 @@ export class DesktopMissionRealtime {
           protocolVersion: 1,
           clientVersion: '0.1.0',
           topics: ['missions'],
-          resume: this.options.truth.sequence === undefined ? {} : { missions: this.options.truth.sequence },
+          resume:
+            this.options.truth.sequence === undefined
+              ? {}
+              : { missions: this.options.truth.sequence },
           auth,
         }),
       );
@@ -133,7 +137,10 @@ export class DesktopMissionRealtime {
 
     switch (frame.type) {
       case 'snapshot':
-        if (typeof frame.seq !== 'number' || !this.options.truth.replaceSnapshot(frame.seq, frame.payload)) {
+        if (
+          typeof frame.seq !== 'number' ||
+          !this.options.truth.replaceSnapshot(frame.seq, frame.payload)
+        ) {
           this.options.truth.markIncomplete();
         }
         return;
