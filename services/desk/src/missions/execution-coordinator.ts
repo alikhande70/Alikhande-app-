@@ -10,6 +10,7 @@ interface MissionSubmitter {
 interface SubmitActionDetail {
   readonly intentId: string;
   readonly canonical: string;
+  readonly at: number;
 }
 
 /**
@@ -102,7 +103,10 @@ export class MissionExecutionCoordinator {
       )
       .all() as Array<{ stream: string; payload: string }>;
 
-    const claims = new Map<string, { missionId: string; canonical: string }>();
+    const claims = new Map<
+      string,
+      { missionId: string; canonical: string; at: number }
+    >();
     for (const row of rows) {
       const detail = submitDetail(row.payload);
       if (detail === undefined) continue;
@@ -112,7 +116,11 @@ export class MissionExecutionCoordinator {
           `intent '${detail.intentId}' is claimed by multiple missions: '${prior.missionId}' and '${row.stream}'`,
         );
       }
-      claims.set(detail.intentId, { missionId: row.stream, canonical: detail.canonical });
+      claims.set(detail.intentId, {
+        missionId: row.stream,
+        canonical: detail.canonical,
+        at: detail.at,
+      });
     }
 
     let repaired = 0;
@@ -124,7 +132,7 @@ export class MissionExecutionCoordinator {
           `mission submit claim for intent '${intentId}' says '${claim.canonical}', but durable intent says '${createdCanonical}'`,
         );
       }
-      if (this.linkIfIntentWasCreated(claim.missionId, intentId, createdCanonical, Date.now())) {
+      if (this.linkIfIntentWasCreated(claim.missionId, intentId, createdCanonical, claim.at)) {
         repaired++;
       }
     }
@@ -219,11 +227,16 @@ function submitDetail(payload: string): SubmitActionDetail | undefined {
   if (typeof parsed !== 'object' || parsed === null) return undefined;
   const action = (parsed as Record<string, unknown>).action;
   if (typeof action !== 'object' || action === null) return undefined;
-  const detail = (action as Record<string, unknown>).detail;
+  const actionRecord = action as Record<string, unknown>;
+  const detail = actionRecord.detail;
   if (typeof detail !== 'object' || detail === null) return undefined;
   const intentId = (detail as Record<string, unknown>).intentId;
   const canonical = (detail as Record<string, unknown>).canonical;
+  const at = actionRecord.at;
   if (typeof intentId !== 'string' || intentId.length === 0) return undefined;
   if (typeof canonical !== 'string' || canonical.length === 0) return undefined;
-  return { intentId, canonical };
+  if (typeof at !== 'number' || !Number.isFinite(at) || at < 0) {
+    throw new MissionInvariantError('mission submit action has invalid valid-time timestamp');
+  }
+  return { intentId, canonical, at };
 }
