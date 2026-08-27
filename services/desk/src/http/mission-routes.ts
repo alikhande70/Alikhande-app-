@@ -277,7 +277,8 @@ export function registerMissionRoutes(
           `review requires CLOSED or ABANDONED, found ${current.stage}`,
         );
       }
-      if (current.review !== undefined) throw new MissionInvariantError('mission is already reviewed');
+      if (current.review !== undefined)
+        throw new MissionInvariantError('mission is already reviewed');
 
       // Review data deliberately separates decision assessment from outcome.
       // Client clocks are not accepted as transaction truth; Desk time records when
