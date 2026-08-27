@@ -37,11 +37,7 @@ class ProvisionedSigner implements SecureSigner {
   lastReason = '';
   lastRequireBiometric = true;
 
-  async sign(
-    canonical: string,
-    reason: string,
-    requireBiometric: boolean,
-  ): Promise<string> {
+  async sign(canonical: string, reason: string, requireBiometric: boolean): Promise<string> {
     this.lastCanonical = canonical;
     this.lastReason = reason;
     this.lastRequireBiometric = requireBiometric;

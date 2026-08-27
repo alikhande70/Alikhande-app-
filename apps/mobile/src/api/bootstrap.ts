@@ -78,8 +78,7 @@ export async function restoreDeskRuntime(
     url: pairing.streamUrl ?? streamUrlFor(pairing.baseUrl),
     topics: DESK_TOPICS,
     authenticate: async () => {
-      const timestamp =
-        (options.now?.() ?? Date.now()) + useDeskStore.getState().clockOffsetMs;
+      const timestamp = (options.now?.() ?? Date.now()) + useDeskStore.getState().clockOffsetMs;
       const nonce = options.randomId();
       const bodyHash = await options.hashBody('');
       const signature = await options.signer.sign(
