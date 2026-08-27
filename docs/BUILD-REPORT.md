@@ -6,11 +6,11 @@ This file records implementation that actually exists on the branch. ADRs descri
 
 The repository-level MT5 foundation is substantially built and fail-closed. Real broker execution remains deliberately disabled because `OrderSend`/`OrderSendAsync` are absent.
 
-Work is on **ADR-0018 — Trade Mission**. The durable server-side Mission spine and the Mission-bound Android trade path exist. The already-paired Android restore/bootstrap path now installs the signed Desk client and realtime socket, and realtime subscription is authenticated before a client is admitted to the Desk hub. First-time pairing/native key provisioning and Desktop/Windows Mission migration remain before ADR-0018 can close.
+Work remains on **ADR-0018 — Trade Mission**. The durable Mission spine, Mission-bound Android trading path, authenticated realtime path, first-time pairing controller/screen, pairing metadata persistence, and operator abandon/review command surface now exist in repository code. Trading Brain, memory and evaluation remain blocked by the ADR-0018 exit gate.
 
-Trading Brain, memory and evaluation remain blocked by the ADR-0018 exit gate.
+The largest remaining ADR-0018 product gap is now the Windows/Desktop Mission-bound client path and retirement of the compatibility `/orders` bypass. Physical-device/native-key proof also remains external.
 
-The preserved branch `claude/personal-trading-app-atm6e1` remains outside this workstream.
+The preserved branch `claude/personal-trading-app-atm6e1` remains outside this workstream and must not be modified.
 
 ## MT5 execution foundation — implemented and repository-verified
 
@@ -29,7 +29,7 @@ The preserved branch `claude/personal-trading-app-atm6e1` remains outside this w
 - Configured tradable-symbol universe no longer depends on an existing position/order.
 - MT5 runtime is reachable through `KEEL_BROKER=mt5`.
 - Adapter capabilities describe the current build rather than theoretical MT5 capabilities.
-- Durable agent event spool replay is present for undelivered hints; reconciliation remains authoritative truth.
+- Durable agent event spool replay exists for undelivered hints; reconciliation remains authoritative truth.
 - Broker/desk clock-domain guard prevents broker-local wall-clock values from being mistaken for UTC elapsed time.
 - Request-specific Margin path exists end-to-end in repository code:
   `ExecutionSupervisor → BrokerPort → MT5 adapter → HostClient → HTTP execution host → Agent → OrderCalcMargin`.
@@ -61,15 +61,15 @@ The Mission layer is above execution truth. It may reference order intents and b
 Implemented:
 
 - Mission stages: `OBSERVED`, `CANDIDATE`, `PLANNED`, `ARMED`, `EXECUTING`, `MANAGING`, `CLOSED`, `ABANDONED`, `REVIEWED`.
-- Mission origins cover scanner, Brain observation, Android/Desktop operator action, manual MT5, pending activation and unknown external origin.
+- Mission origins cover scanner/Brain observations, Android/Desktop operator actions, manual MT5, pending activation and unknown external origin.
 - Mission facts use the existing append-only hash-chained ledger; there is no second mutable truth store.
 - Bitemporal observation spine: market valid time is stored separately from ledger transaction/recorded time.
 - Scan configuration version is stamped so statistics can remain cohort-aware.
 - Immutable `DecisionSnapshot` records both `known` and `missing` information at decision time.
-- Planned missions require a sealed snapshot; rejected/untraded setups cannot disappear without preserving their point-in-time evidence.
+- Planned missions require a sealed snapshot; rejected/untraded setups cannot disappear without preserving point-in-time evidence.
 - Execution stage requires a linked order intent; Mission never writes broker/order truth.
 - External/manual MT5 positions enter `MANAGING` without a fabricated Decision Snapshot or Brain attribution.
-- Reviews separate decision assessment from optional outcome/counterfactual evidence.
+- Reviews keep decision assessment separate from optional outcome/counterfactual evidence.
 - Lifecycle actions have stable action ids for idempotent replay.
 - Reducer replay validates transitions; malformed direct ledger histories cannot bypass service-layer rules.
 - `MissionRuntime` is assembled in the real Desk process.
@@ -78,9 +78,12 @@ Implemented:
 - Broker close events close only a Mission with a matching durable position link.
 - `missions` is a realtime topic sourced from durable Mission state.
 - `GET /missions?limit=` and `/state` expose bounded/reconnectable Mission state.
-- Authenticated commands exist for scan ingestion, planning and Mission-bound order submission.
+- Authenticated commands exist for scan ingestion, planning, Mission-bound order submission, abandonment and review.
 - `MissionExecutionCoordinator` records Mission ownership before calling `ExecutionSupervisor`, links only a durable `intent.created`, and repairs the crash gap via startup recovery.
 - Canonical contradictions fail closed with `MISSION_CONFLICT`.
+- Untraded `OBSERVED`/`CANDIDATE` Missions cannot be abandoned without first sealing point-in-time evidence.
+- Review payload validation rejects malformed/duplicate evidence references before mutating Mission review state.
+- Review is immutable after first acceptance; a second review cannot overwrite the original with hindsight.
 - Lifecycle integration tests cover both populations through reconstruction:
   `Scan → Snapshot → Intent → Position → Close → Review`
   and
@@ -89,7 +92,8 @@ Implemented:
 
 ## Android Mission/trading path — implemented so far
 
-- Android command signing recognizes scan/planning/Mission-order command paths and uses the Desk command-nonce boundary.
+- Android command signing recognizes scan/planning/abandon/review/Mission-order command paths and uses the Desk command-nonce boundary.
+- Consequence-specific biometric prompts exist for Mission planning, abandon, review and Mission-bound order submission.
 - Gap-aware mobile store consumes Mission snapshots/deltas by durable `missionId` and marks data incomplete after gaps until resync.
 - Trade entry requires complete Mission truth and a durable `PLANNED` or `ARMED` Mission for the canonical instrument.
 - Ticket receives and preserves the exact `missionId`; it no longer opens an unattributed internal ticket.
@@ -98,47 +102,42 @@ Implemented:
 - Submit uses only `/missions/:missionId/orders`; the new Ticket does not call legacy `/orders`.
 - Missing Mission or missing authenticated Desk runtime blocks locally without claiming transmission.
 - Timeout/ambiguous Desk results render as **UNKNOWN**, not failed or sent, and retain the stable intent id.
-- Already-paired restore/bootstrap is implemented: persisted pairing metadata + existing secure signer → signed `DeskClient` + `DeskSocket` → realtime truth store.
+- Already-paired restore/bootstrap exists: persisted pairing metadata + existing signer → signed `DeskClient` + `DeskSocket` → realtime truth store.
 - Restore fails closed when pairing metadata exists but the signing key is missing.
 - Transport stop preserves last-known data as stale/incomplete evidence; explicit unpair may clear it.
+- First-time Pair screen/controller now exists. It accepts only Desk address + enrolment code, delegates key creation to the installed `SecureSigner`, calls `/enrol`, persists non-secret Desk metadata, and starts the existing authenticated runtime.
+- The Pair screen does **not** generate fallback key material and does not claim hardware-backed security. If no truthful signer runtime is installed, pairing is visibly blocked.
+- Pairing failure behavior preserves a key if Desk may already have accepted it, preventing the phone from destroying the only private key for an enrolled device.
+- Pairing metadata uses a versioned secure-store adapter; corrupt/unknown metadata fails closed rather than being treated as a fresh unpaired device.
 
-## Realtime security — closed in repository code
+## Realtime and command security — repository closed
 
-A red-team review found that `/stream` was exempt from the HTTP pre-handler and previously admitted a WebSocket into `RealtimeHub` before proving device identity. That allowed an anonymous socket to request broker/Mission topics.
-
-This is now closed:
-
-- the first WebSocket frame must be a `hello` carrying a fresh signed read proof for canonical `GET /stream`;
-- the proof reuses the existing enrolled-device verifier, timestamp skew guard, nonce replay protection and Ed25519 signature verification;
-- the server does **not** call `RealtimeHub.connect()` until the proof succeeds;
-- malformed, unsigned, replayed, stale or bad-signature hello attempts are refused before subscription;
-- a second hello on an authenticated connection is rejected rather than blurring connection/resume identity;
-- Android creates a fresh stream nonce/signature on every connection attempt using the current Desk clock offset;
-- a late signing result from a dead/replaced socket cannot authenticate its replacement;
-- E2E tests use an actual generated Ed25519 key, actual enrolment, signed WebSocket hello, topic snapshots and authenticated ping/pong.
-
-Exact code head `6b945dc6ec8f384f9ed07073d5c501f9824ae5c4` passed the full GitHub Actions `verify` workflow after this change.
+- `/stream` requires a signed first-frame `hello` before a socket is admitted to `RealtimeHub`.
+- The proof reuses enrolled-device verification, clock-skew guard, nonce replay protection and Ed25519 verification.
+- Malformed, unsigned, replayed, stale or bad-signature hello attempts are refused before subscription.
+- Android creates a fresh stream nonce/signature on every connection attempt using the current Desk clock offset.
+- Mission mutations `plan`, `abandon`, `review` and `orders` are classified as commands on both Desk and Android, requiring a single-use command nonce; Android additionally requests biometric authorisation through its signer contract.
+- Regression tests lock this command-path contract so newly added lifecycle surfaces cannot silently downgrade to ordinary signed reads.
 
 ## Current ADR-0018 gaps
 
-ADR-0018 remains **IN PROGRESS**. Remaining work is narrower:
+ADR-0018 remains **IN PROGRESS**. Remaining work is now narrow:
 
-1. **First-time Android pairing ceremony** — the repository has signer abstractions and already-paired restore, but no complete `pair` screen/controller that provisions the device key, submits `/enrol`, persists returned Desk metadata and then bootstraps runtime.
-2. **Native device-key implementation / physical-device proof** — Enclave/Keychain abstractions require real platform crypto/storage integration and device verification; no fake software key should be promoted as hardware-backed.
-3. **Windows/Desktop Mission-bound order entry** — Desktop paths must carry explicit Mission identity before the bypass can be retired.
-4. **Operator abandon/review command surface** — authenticated client-facing lifecycle operations are still needed where the operator workflow requires them.
-5. **Legacy `/orders` retirement** — compatibility route still permits Mission-less internal order submission. It must remain until real client migrations are complete, then fail closed/deprecate explicitly.
-6. **Final ADR-0018 exit audit** — reconstruct/reconnect across actual client paths and confirm Mission state/ownership remains identical.
+1. **Native device-key implementation / physical-device proof** — repository abstractions/controller are present, but StrongBox/TEE/Keychain behavior and actual key persistence still require native implementation/target-device proof. No software fallback may be promoted as hardware-backed.
+2. **Windows/Desktop Mission-bound client path** — the repository currently contains no Desktop app under `apps/`; a real Windows operator surface must consume server Mission truth and carry explicit `missionId` for order entry before the compatibility bypass can be retired.
+3. **Legacy `/orders` retirement** — compatibility route still permits Mission-less internal order submission. It must remain only until every actual operator client is Mission-bound, then fail closed or be removed explicitly.
+4. **Final ADR-0018 exit audit** — reconstruct/reconnect across actual Android + Windows client paths and confirm Mission state/ownership remains identical with no hidden local source of truth.
 
-Trading Brain implementation remains blocked until these are resolved.
+Trading Brain implementation remains blocked until these are resolved or explicitly re-scoped by an accepted ADR change.
 
 ## Current repository verification
 
 - Request-specific MT5/TestClock foundation: full GitHub Actions `verify` PASS on prior foundation heads.
-- Mission HTTP/server and lifecycle/replay spine: full GitHub Actions `verify` PASS on prior Mission heads.
-- Mission-bound Android Ticket/store/bootstrap: repository verification PASS on prior heads.
-- Signed realtime security implementation + authenticated mobile/socket/E2E tests: exact code head `6b945dc6ec8f384f9ed07073d5c501f9824ae5c4` — GitHub Actions `verify` **PASS**.
-- The documentation-only head after this report update requires its own exact-head CI result before being called green.
+- Mission HTTP/server lifecycle/replay spine: repository PASS on prior Mission heads.
+- First-time Pair screen/controller + fail-closed pairing runtime/persistence: repository code exists; physical native-key proof remains external.
+- Operator abandon/review surface, immutable review behavior and lifecycle validation: exact code passed full `verify` at `e495c153d597b277474d5dfca4c47753e0fcd015`.
+- Android/Desk Mission lifecycle command-nonce contract: exact code head `285a892c22af44a34b606f6427311b45cfff89f7` — GitHub Actions `verify` **PASS**.
+- This documentation head requires its own exact-head CI result before being called green.
 
 Repository CI proves static/type/test behavior only. It does **not** prove MQL compilation, physical Android secure-key behavior or target-terminal behavior.
 
@@ -153,8 +152,9 @@ The following require Windows/device/terminal access and remain explicitly unver
 - exact LiteFinance symbol aliases, filling modes and account position model;
 - EA/host/terminal restart and reconnect against real broker state;
 - end-to-end App → Desk → execution host → EA → MT5 → LiteFinance → reconciliation;
-- physical Android native key provisioning/storage and full first-time pairing ceremony;
+- physical Android native key provisioning/storage and first-time pairing behavior on the target device;
 - physical Android background/resume socket behavior;
+- Windows/Desktop operator-client behavior, because that client surface is not yet implemented;
 - any `OrderSend` behavior, because sending is deliberately not implemented yet.
 
 No real-money execution is enabled or claimed.
@@ -165,10 +165,11 @@ No real-money execution is enabled or claimed.
 | --- | --- | --- |
 | Architecture ADR-0015–0022 | **DONE** | Accepted architecture and design review exist. |
 | Repository MT5 foundation | **SUBSTANTIALLY DONE** | Instrument truth, request-specific Margin, recovery/reconcile hardening and execution-host wiring built; target-terminal proof remains. |
-| Repository lint/typecheck/tests | **PASS at code head** | `6b945dc...` passed full `verify`; this report head needs its own result. |
+| Repository lint/typecheck/tests | **PASS at latest code head** | `285a892c...` passed full `verify`; this report head needs its own result. |
 | Simulation/chaos | **STRONG, NOT COMPLETE** | Duplicate/recovery/clock/partial-fill/margin paths covered; real EA restart boundary remains external. |
-| Trade Mission spine | **IN PROGRESS — SERVER + ANDROID RESTORE/REALTIME WIRED** | Durable lifecycle/replay and Mission-bound mobile truth path exist; first pairing, Desktop migration, lifecycle surfaces and legacy bypass retirement remain. |
-| Realtime client authentication | **REPOSITORY DONE** | Signed first-frame admission; anonymous socket never enters hub; E2E signed enrolment/socket tests pass. |
+| Trade Mission spine | **IN PROGRESS — SERVER + ANDROID MISSION PATH BUILT** | Durable lifecycle/replay, pairing/controller, Mission-bound mobile truth and operator lifecycle routes exist; Desktop migration + bypass retirement + final exit audit remain. |
+| Android first-time pairing | **REPOSITORY BUILT / DEVICE PROOF BLOCKED** | Screen/controller/persistence exist and fail closed without a signer; native hardware-backed proof remains external. |
+| Realtime + command authentication | **REPOSITORY DONE** | Signed stream admission and command-nonce protection for Mission mutations. |
 | Trading Brain | **DESIGNED ONLY / BLOCKED** | Must wait for ADR-0018 exit criteria. |
 | Memory/Evaluation | **DESIGNED ONLY / BLOCKED** | Must wait for Mission + deterministic Brain facts. |
 | MetaEditor compile | **NOT VERIFIED** | Requires Windows. |
@@ -177,11 +178,10 @@ No real-money execution is enabled or claimed.
 
 ## Next highest-priority sequence
 
-1. Build the repository-level first-time Android pairing controller/page around the existing `SecureSigner` abstraction: provision key → submit `/enrol` → persist non-secret Desk metadata → immediately call the existing restore/bootstrap path. Do not claim hardware-backed security until the native implementation proves it.
-2. Add pairing failure/rollback tests: bad/expired enrolment code, duplicate submission, key created but enrolment failed, enrolment succeeded but metadata persistence failed, missing key on restore, and unpair cleanup.
-3. Migrate Windows/Desktop order-entry flows to explicit Mission identity and Mission-bound submission.
-4. Add authenticated abandon/review lifecycle commands where operator workflows require them, preserving immutable Decision Snapshot/review rules.
-5. Once every actual client path is migrated, fail closed or explicitly deprecate the compatibility `/orders` route so new internal orders cannot bypass Mission ownership.
-6. Close ADR-0018 with independent replay/reconnect/red-team review across server + Android + Desktop paths.
-7. Only after ADR-0018 exit criteria are met, begin ADR-0019 deterministic/versioned Trading Brain.
-8. Do not enable Demo `OrderSend` until Windows/MetaEditor/real MT5 read-only validation establishes the external execution foundation.
+1. Define and implement the Windows/Desktop operator client surface against the existing Desk Mission API. It must render server Mission truth and submit orders only through `/missions/:missionId/orders`; do not create a Desktop-local trading truth store.
+2. Add Desktop reconnect/resync and failure tests, including UNKNOWN command outcomes and stale Mission state.
+3. Once Android and Desktop actual order-entry paths are both Mission-bound, disable/remove the legacy Mission-less `POST /orders` path and add a regression test proving new internal orders require Mission ownership.
+4. Perform the final independent ADR-0018 replay/reconnect/red-team audit across server + Android + Desktop paths.
+5. Only after ADR-0018 exit criteria are met, begin ADR-0019 deterministic/versioned Trading Brain.
+6. Keep native Android key behavior and MT5/LiteFinance terminal validation on the external verification ladder; do not invent repository-only proof for physical/runtime facts.
+7. Do not enable Demo `OrderSend` until Windows/MetaEditor/real MT5 read-only validation establishes the external execution foundation.
