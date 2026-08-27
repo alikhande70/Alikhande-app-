@@ -52,7 +52,9 @@ describe('Windows/Desktop Mission truth', () => {
     truth.replaceSnapshot(4, [mission]);
 
     expect(
-      truth.applyDelta(6, [{ ...mission, stage: 'EXECUTING', lastEventAt: mission.lastEventAt + 1 }]),
+      truth.applyDelta(6, [
+        { ...mission, stage: 'EXECUTING', lastEventAt: mission.lastEventAt + 1 },
+      ]),
     ).toBe(false);
     expect(truth.status).toBe('incomplete');
     expect(truth.sequence).toBeUndefined();
@@ -83,7 +85,9 @@ describe('Windows/Desktop Mission truth', () => {
   it('allows network submission only after a fresh proven snapshot', async () => {
     const fetchFn = vi
       .fn<typeof fetch>()
-      .mockResolvedValueOnce(new Response(JSON.stringify({ nonce: 'command-nonce' }), { status: 200 }))
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ nonce: 'command-nonce' }), { status: 200 }),
+      )
       .mockResolvedValueOnce(
         new Response(
           JSON.stringify({
