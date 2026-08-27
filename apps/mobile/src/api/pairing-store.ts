@@ -1,4 +1,3 @@
-import * as ExpoSecureStore from 'expo-secure-store';
 import type { PairingMetadata, PairingMetadataStore } from './pairing.js';
 
 const PAIRING_KEY = 'keel.desk.pairing.v1';
@@ -56,8 +55,6 @@ export class SecurePairingMetadataStore implements PairingMetadataStore {
   }
 
   async save(pairing: PairingMetadata): Promise<void> {
-    // Validate our own output before making it durable. This also prevents a
-    // caller from smuggling non-finite timestamps through structural typing.
     const validated = parsePairing(pairing);
     const payload = JSON.stringify({ version: FORMAT_VERSION, pairing: validated });
     try {
@@ -80,18 +77,6 @@ export class SecurePairingMetadataStore implements PairingMetadataStore {
       );
     }
   }
-}
-
-export function createExpoPairingMetadataStore(): PairingMetadataStore {
-  return new SecurePairingMetadataStore({
-    getItem: (key) => ExpoSecureStore.getItemAsync(key),
-    setItem: async (key, value) => {
-      await ExpoSecureStore.setItemAsync(key, value, {
-        keychainAccessible: ExpoSecureStore.WHEN_UNLOCKED_THIS_DEVICE_ONLY,
-      });
-    },
-    removeItem: (key) => ExpoSecureStore.deleteItemAsync(key),
-  });
 }
 
 function parseStoredPairing(value: unknown): PairingMetadata {
