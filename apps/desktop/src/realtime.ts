@@ -42,6 +42,13 @@ interface Frame {
  * The Desk reaps clients that stop heartbeating. Desktop therefore sends ping
  * frames on the interval announced by `welcome`; without this, a perfectly
  * healthy Windows client would be disconnected after three server intervals.
+ *
+ * Desktop currently asks for a full Mission snapshot on every connection.
+ * Reusing a pre-disconnect sequence without an explicit server resume-ack has a
+ * subtle dead zone: if nothing changed while offline, the Desk legitimately
+ * replays zero deltas and the client has no proof that its stale rows are
+ * current again. A full snapshot is slightly heavier and removes that
+ * ambiguity. Resume optimisation can return only with an explicit protocol ack.
  */
 export class DesktopMissionRealtime {
   private socket: DesktopWebSocketLike | undefined;
@@ -118,10 +125,9 @@ export class DesktopMissionRealtime {
           protocolVersion: 1,
           clientVersion: '0.1.0',
           topics: ['missions'],
-          resume:
-            this.options.truth.sequence === undefined
-              ? {}
-              : { missions: this.options.truth.sequence },
+          // Full snapshot on every Desktop connection until the protocol has an
+          // explicit resume acknowledgement. See class comment above.
+          resume: {},
           auth,
         }),
       );
