@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import {
-  WindowsProtectedSigner,
   type WindowsNativeEd25519Bridge,
+  WindowsProtectedSigner,
   type WindowsSignerMetadata,
   type WindowsSignerMetadataStore,
 } from '../../../desktop/src/windows-signer.js';
