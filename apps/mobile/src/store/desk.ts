@@ -58,6 +58,44 @@ export interface Order {
   readonly lastEventAt: number;
 }
 
+/**
+ * Durable ADR-0018 Mission state as projected by the Desk.
+ *
+ * This is deliberately a read model. The phone never infers Mission ownership
+ * from an order/position that merely looks similar; only the Desk's immutable
+ * Mission ledger may establish those links.
+ */
+export type MissionStage =
+  | 'OBSERVED'
+  | 'CANDIDATE'
+  | 'PLANNED'
+  | 'ARMED'
+  | 'EXECUTING'
+  | 'MANAGING'
+  | 'CLOSED'
+  | 'ABANDONED'
+  | 'REVIEWED';
+
+export interface Mission {
+  readonly missionId: string;
+  readonly origin: string;
+  readonly canonical: string;
+  readonly timeframe: string;
+  readonly trigger: string;
+  readonly scanConfigVersion: string;
+  readonly stage: MissionStage;
+  readonly observedAt: number;
+  readonly marketState: Readonly<Record<string, unknown>>;
+  readonly decisionSnapshot?: Readonly<Record<string, unknown>>;
+  readonly snapshotSealedAt?: number;
+  readonly intentIds: readonly string[];
+  readonly positionIds: readonly string[];
+  readonly actions: readonly Readonly<Record<string, unknown>>[];
+  readonly abandonedReason?: string;
+  readonly review?: Readonly<Record<string, unknown>>;
+  readonly lastEventAt: number;
+}
+
 export interface AccountView {
   readonly currency: string;
   readonly balance: string;
@@ -138,6 +176,7 @@ export interface DeskStoreState {
   account?: AccountView;
   positions: readonly Position[];
   orders: readonly Order[];
+  missions: readonly Mission[];
   divergences: readonly Divergence[];
   drawdown?: DrawdownView;
   alerts: readonly Alert[];
@@ -169,6 +208,7 @@ export const useDeskStore = create<DeskStoreState>((set, get) => ({
   clockOffsetMs: 0,
   positions: [],
   orders: [],
+  missions: [],
   divergences: [],
   alerts: [],
   quotes: {},
@@ -240,6 +280,7 @@ export const useDeskStore = create<DeskStoreState>((set, get) => ({
       connection: 'idle',
       positions: [],
       orders: [],
+      missions: [],
       divergences: [],
       alerts: [],
       quotes: {},
@@ -267,6 +308,9 @@ export function applyPayload(
   }
   if (topic === 'orders') {
     return { orders: mergeById(state.orders, payload as Order[], 'intentId', remove) };
+  }
+  if (topic === 'missions') {
+    return { missions: mergeById(state.missions, payload as Mission[], 'missionId', remove) };
   }
   if (topic === 'alerts') {
     return { alerts: mergeById(state.alerts, payload as Alert[], 'alertId', remove).slice(0, 100) };
