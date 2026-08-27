@@ -14,6 +14,13 @@ export interface DesktopClientOptions {
   readonly clockOffsetMs?: () => number;
 }
 
+export interface DesktopStreamAuthentication {
+  readonly deviceId: string;
+  readonly timestamp: number;
+  readonly nonce: string;
+  readonly signature: string;
+}
+
 export type DesktopResult<T> =
   | { readonly ok: true; readonly status: number; readonly data: T }
   | {
@@ -35,7 +42,7 @@ interface SignatureParts {
   readonly commandNonce?: string;
 }
 
-function canonicalString(parts: SignatureParts): string {
+export function canonicalString(parts: SignatureParts): string {
   return [
     'keel-v1',
     parts.method.toUpperCase(),
@@ -113,6 +120,31 @@ export class DesktopDeskClient {
 
   async preview<T>(body: unknown): Promise<DesktopResult<T>> {
     return this.request<T>('POST', '/preview', body);
+  }
+
+  /**
+   * Build the read-only proof used by the authenticated `/stream` hello.
+   *
+   * Realtime and REST deliberately share one identity, clock-offset and
+   * canonical signing contract. A reconnect always gets a fresh nonce; callers
+   * must never cache this proof across sockets.
+   */
+  async streamAuthentication(): Promise<DesktopStreamAuthentication> {
+    const timestamp = this.now() + (this.options.clockOffsetMs?.() ?? 0);
+    const nonce = this.options.randomId();
+    const bodyHash = await this.options.hashBody('');
+    const signature = await this.options.signer.sign(
+      canonicalString({
+        method: 'GET',
+        path: '/stream',
+        timestamp,
+        nonce,
+        bodyHash,
+      }),
+      'Connect to your trading desk',
+      false,
+    );
+    return { deviceId: this.options.deviceId, timestamp, nonce, signature };
   }
 
   private async request<T>(
