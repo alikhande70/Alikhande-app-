@@ -103,10 +103,7 @@ export class MissionExecutionCoordinator {
       )
       .all() as Array<{ stream: string; payload: string }>;
 
-    const claims = new Map<
-      string,
-      { missionId: string; canonical: string; at: number }
-    >();
+    const claims = new Map<string, { missionId: string; canonical: string; at: number }>();
     for (const row of rows) {
       const detail = submitDetail(row.payload);
       if (detail === undefined) continue;
