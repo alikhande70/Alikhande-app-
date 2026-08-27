@@ -186,7 +186,7 @@ describe('ADR-0018 mission lifecycle integration', () => {
       marketState: { bid: '2398.00', ask: '2398.30' },
       disposition: 'rejected',
       decisionSnapshot: {
-        ...snapshot(3_050),
+        ...snapshot(2_990),
         known: { canonical: 'XAUUSD', spread: '0.30' },
         missing: ['economic-calendar', 'higher-timeframe-confirmation'],
       },
