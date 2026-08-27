@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it } from 'vitest';
-import type { DeskHealth, DeskStoreState, Order, Position } from './desk.js';
+import type { DeskHealth, DeskStoreState, Mission, Order, Position } from './desk.js';
 import { canTrade, dataAgeMs, needsAttention, unprotectedPositions, useDeskStore } from './desk.js';
 
 /**
@@ -38,6 +38,25 @@ function order(over: Partial<Order> = {}): Order {
     certaintyText: 'Confirmed by the broker.',
     resolutionAttempts: 0,
     createdAt: T0,
+    lastEventAt: T0,
+    ...over,
+  };
+}
+
+function mission(over: Partial<Mission> = {}): Mission {
+  return {
+    missionId: 'm1',
+    origin: 'scanner',
+    canonical: 'XAUUSD',
+    timeframe: '15m',
+    trigger: 'scan',
+    scanConfigVersion: 'scan-v1',
+    stage: 'CANDIDATE',
+    observedAt: T0,
+    marketState: { bid: '2400.00', ask: '2400.20' },
+    intentIds: [],
+    positionIds: [],
+    actions: [],
     lastEventAt: T0,
     ...over,
   };
@@ -104,6 +123,31 @@ describe('applying updates', () => {
     expect(s.orders).toHaveLength(0);
     expect(s.topics.orders?.status).toBe('incomplete');
   });
+
+  it('keeps Mission snapshots and deltas on the same gap-aware path as orders', () => {
+    const store = useDeskStore.getState();
+    store.applySnapshot(
+      'missions',
+      7,
+      [mission({ missionId: 'keep' }), mission({ missionId: 'remove' })],
+      T0,
+    );
+    useDeskStore
+      .getState()
+      .applyDelta(
+        'missions',
+        8,
+        [mission({ missionId: 'keep', stage: 'PLANNED', lastEventAt: T0 + 1 })],
+        ['remove'],
+        T0 + 1,
+      );
+
+    const s = useDeskStore.getState();
+    expect(s.missions).toHaveLength(1);
+    expect(s.missions[0]?.missionId).toBe('keep');
+    expect(s.missions[0]?.stage).toBe('PLANNED');
+    expect(s.topics.missions).toEqual({ status: 'complete', seq: 8, confirmedAt: T0 + 1 });
+  });
 });
 
 describe('losing the socket changes what we can claim, not what we know', () => {
@@ -111,14 +155,17 @@ describe('losing the socket changes what we can claim, not what we know', () => 
     const store = useDeskStore.getState();
     store.applySnapshot('positions', 1, [position()], T0);
     store.applySnapshot('health', 1, health(), T0);
+    store.applySnapshot('missions', 1, [mission()], T0);
     useDeskStore.getState().setConnection('disconnected', 'socket closed');
 
     const s = useDeskStore.getState();
-    // The positions are still there — they are the last thing we knew.
+    // The positions and Missions are still there — they are the last thing we knew.
     expect(s.positions).toHaveLength(1);
+    expect(s.missions).toHaveLength(1);
     // But nothing claims they are current.
     expect(s.topics.positions?.status).toBe('incomplete');
     expect(s.topics.health?.status).toBe('incomplete');
+    expect(s.topics.missions?.status).toBe('incomplete');
   });
 
   it('does not promote a never-loaded topic to incomplete', () => {
