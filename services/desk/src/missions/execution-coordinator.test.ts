@@ -153,11 +153,7 @@ describe('MissionExecutionCoordinator', () => {
     const mission = missions.load('mission-1');
     expect(mission?.stage).toBe('ARMED');
     expect(mission?.intentIds).toEqual(['intent-1']);
-    expect(mission?.actions.map((action) => action.type)).toEqual([
-      'plan',
-      'authorise',
-      'submit',
-    ]);
+    expect(mission?.actions.map((action) => action.type)).toEqual(['plan', 'authorise', 'submit']);
     expect(ledger.verifyChain().ok).toBe(true);
     ledger.close();
   });
