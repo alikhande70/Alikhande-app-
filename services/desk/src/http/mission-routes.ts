@@ -123,7 +123,10 @@ export function registerMissionRoutes(
   const execution = new MissionExecutionCoordinator(deps.ledger, runtime.missions, deps.supervisor);
   const repaired = execution.recoverPendingLinks();
   if (repaired > 0) {
-    deps.log.info({ repaired }, 'recovered durable mission-to-intent links before serving commands');
+    deps.log.info(
+      { repaired },
+      'recovered durable mission-to-intent links before serving commands',
+    );
   }
 
   app.post('/scans', async (req, reply) => {
