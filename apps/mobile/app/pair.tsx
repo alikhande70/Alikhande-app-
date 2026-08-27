@@ -7,8 +7,8 @@ import {
   ScrollView,
   Text,
   TextInput,
-  View,
   useColorScheme,
+  View,
 } from 'react-native';
 import { PairingError, pairDesk } from '../src/api/pairing.js';
 import { getPairingRuntime } from '../src/api/pairing-runtime.js';
