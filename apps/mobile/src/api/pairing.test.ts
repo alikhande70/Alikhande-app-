@@ -126,10 +126,31 @@ describe('first-time mobile pairing', () => {
           startRuntime: async () => runtime(),
         },
       ),
-    ).rejects.toMatchObject({ code: 'ENROL_FAILED' });
+    ).rejects.toMatchObject({ code: 'ENROL_FAILED', serverAccepted: false });
 
     expect(signer.destroyed).toBe(1);
     expect(signer.provisioned).toBe(false);
+    expect(store.value).toBeUndefined();
+  });
+
+  it('preserves a newly-created key when HTTP success means the Desk accepted it but the response is malformed', async () => {
+    const signer = new FakeSigner();
+    const store = new MemoryPairingStore();
+
+    await expect(
+      pairDesk(
+        { baseUrl: 'https://desk.example.test', code: 'A1B2C3D4E5' },
+        {
+          signer,
+          store,
+          fetchFn: async () => response({ deviceId: 'device-1234' }),
+          startRuntime: async () => runtime(),
+        },
+      ),
+    ).rejects.toMatchObject({ code: 'ENROL_RESPONSE_INVALID', serverAccepted: true });
+
+    expect(signer.destroyed).toBe(0);
+    expect(signer.provisioned).toBe(true);
     expect(store.value).toBeUndefined();
   });
 
@@ -182,6 +203,7 @@ describe('first-time mobile pairing', () => {
     expect(caught).toMatchObject({
       code: 'METADATA_PERSIST_FAILED',
       enrolledDeviceId: 'device-1234',
+      serverAccepted: true,
     });
     expect(signer.destroyed).toBe(0);
     expect(signer.provisioned).toBe(true);
@@ -204,7 +226,11 @@ describe('first-time mobile pairing', () => {
           },
         },
       ),
-    ).rejects.toMatchObject({ code: 'BOOTSTRAP_FAILED', enrolledDeviceId: 'device-1234' });
+    ).rejects.toMatchObject({
+      code: 'BOOTSTRAP_FAILED',
+      enrolledDeviceId: 'device-1234',
+      serverAccepted: true,
+    });
 
     expect(store.value?.deviceId).toBe('device-1234');
     expect(signer.destroyed).toBe(0);
