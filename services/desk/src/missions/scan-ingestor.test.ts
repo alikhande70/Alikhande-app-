@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { Ledger } from '../ledger/ledger.js';
-import { ScanMissionIngestor, missionIdForScan } from './scan-ingestor.js';
+import { missionIdForScan, ScanMissionIngestor } from './scan-ingestor.js';
 import { MissionInvariantError, MissionService } from './service.js';
 import type { DecisionSnapshot } from './types.js';
 
@@ -73,9 +73,7 @@ describe('ScanMissionIngestor', () => {
     expect(mission.abandonedReason).toBe('spread filter veto');
     expect(mission.decisionSnapshot?.missing).toEqual(['economic-calendar']);
     expect(mission.decisionSnapshot?.known).toMatchObject({ spread: '2.30' });
-    expect(
-      ledger.readStream(mission.missionId).map((row) => row.event.kind),
-    ).toEqual([
+    expect(ledger.readStream(mission.missionId).map((row) => row.event.kind)).toEqual([
       'mission.observed',
       'mission.actionRecorded',
       'mission.snapshotSealed',
