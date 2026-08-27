@@ -49,6 +49,8 @@ describe('the client and the desk sign the same bytes', () => {
       '/orders/abc/cancel',
       '/scans',
       '/missions/mission-1/plan',
+      '/missions/mission-1/abandon',
+      '/missions/mission-1/review',
       '/missions/mission-1/orders',
       '/positions/PP-1/close',
       '/positions/PP-1/modify',
@@ -71,6 +73,8 @@ describe('the client and the desk sign the same bytes', () => {
 
   it('gives Mission mutations consequence-specific biometric prompts', () => {
     expect(biometricReason('/missions/mission-1/plan')).toMatch(/mission plan/i);
+    expect(biometricReason('/missions/mission-1/abandon')).toMatch(/abandon/i);
+    expect(biometricReason('/missions/mission-1/review')).toMatch(/mission review/i);
     expect(biometricReason('/missions/mission-1/orders')).toMatch(/mission order/i);
     expect(biometricReason('/scans')).toMatch(/scan/i);
   });
@@ -270,7 +274,7 @@ describe('authorisation', () => {
     expect(seen.filter((u) => u.endsWith('/command-nonce'))).toHaveLength(1);
   });
 
-  it('requests command nonces for Mission planning and Mission-bound order submission', async () => {
+  it('requests command nonces for every Mission mutation', async () => {
     const seen: string[] = [];
     const fetchFn = (async (url: string) => {
       seen.push(String(url));
@@ -282,9 +286,11 @@ describe('authorisation', () => {
 
     const client = makeClient(fetchFn);
     await client.command('/missions/mission-1/plan', { snapshot: {} });
+    await client.command('/missions/mission-1/abandon', { reason: 'invalidated' });
+    await client.command('/missions/mission-1/review', { decision: {} });
     await client.command('/missions/mission-1/orders', { intentId: 'intent-1' });
 
-    expect(seen.filter((u) => u.endsWith('/command-nonce'))).toHaveLength(2);
+    expect(seen.filter((u) => u.endsWith('/command-nonce'))).toHaveLength(4);
   });
 });
 
