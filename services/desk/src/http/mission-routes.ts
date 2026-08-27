@@ -69,7 +69,10 @@ const reviewSchema = z.object({
     .max(2000)
     .superRefine((values, ctx) => {
       if (new Set(values).size !== values.length) {
-        ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'evidenceSeqs must not contain duplicates' });
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: 'evidenceSeqs must not contain duplicates',
+        });
       }
     }),
 });
@@ -147,6 +150,23 @@ function conflict(reply: FastifyReply, error: unknown): Record<string, unknown> 
   };
 }
 
+function invalid(reply: FastifyReply, error: z.ZodError): Record<string, unknown> {
+  void reply.status(400);
+  return {
+    code: 'INVALID_MISSION_COMMAND',
+    title: 'Mission command is malformed',
+    detail: error.issues.map((issue) => issue.message).join('; '),
+    retryable: false,
+    outcomeUnknown: false,
+  };
+}
+
+function routeFailure(reply: FastifyReply, error: unknown): Record<string, unknown> | undefined {
+  if (error instanceof MissionInvariantError) return conflict(reply, error);
+  if (error instanceof z.ZodError) return invalid(reply, error);
+  return undefined;
+}
+
 /**
  * Register the durable ADR-0018 command surface.
  *
@@ -194,7 +214,8 @@ export function registerMissionRoutes(
       });
       return { mission };
     } catch (error) {
-      if (error instanceof MissionInvariantError) return conflict(reply, error);
+      const failure = routeFailure(reply, error);
+      if (failure !== undefined) return failure;
       throw error;
     }
   });
@@ -216,7 +237,8 @@ export function registerMissionRoutes(
       );
       return { mission };
     } catch (error) {
-      if (error instanceof MissionInvariantError) return conflict(reply, error);
+      const failure = routeFailure(reply, error);
+      if (failure !== undefined) return failure;
       throw error;
     }
   });
@@ -235,7 +257,8 @@ export function registerMissionRoutes(
       );
       return { mission };
     } catch (error) {
-      if (error instanceof MissionInvariantError) return conflict(reply, error);
+      const failure = routeFailure(reply, error);
+      if (failure !== undefined) return failure;
       throw error;
     }
   });
@@ -245,10 +268,21 @@ export function registerMissionRoutes(
       const { missionId } = z.object({ missionId: z.string().min(1) }).parse(req.params);
       const body = reviewSchema.parse(req.body);
       const reviewedAt = deps.clock.now();
+      const current = runtime.missions.load(missionId);
+      if (current === undefined) {
+        throw new MissionInvariantError(`mission '${missionId}' does not exist`);
+      }
+      if (current.stage !== 'CLOSED' && current.stage !== 'ABANDONED') {
+        throw new MissionInvariantError(
+          `review requires CLOSED or ABANDONED, found ${current.stage}`,
+        );
+      }
+      if (current.review !== undefined) throw new MissionInvariantError('mission is already reviewed');
 
-      // The review itself deliberately separates decision assessment from outcome.
+      // Review data deliberately separates decision assessment from outcome.
       // Client clocks are not accepted as transaction truth; Desk time records when
-      // the immutable review entered the ledger.
+      // the immutable review entered the ledger. The operator action is persisted
+      // before the review only after all route/service invariants have been checked.
       runtime.missions.recordAction(missionId, {
         actionId: `${missionId}:review:${reviewedAt}`,
         origin: body.origin as MissionOrigin,
@@ -266,7 +300,8 @@ export function registerMissionRoutes(
       });
       return { mission };
     } catch (error) {
-      if (error instanceof MissionInvariantError) return conflict(reply, error);
+      const failure = routeFailure(reply, error);
+      if (failure !== undefined) return failure;
       throw error;
     }
   });
@@ -291,7 +326,8 @@ export function registerMissionRoutes(
       void reply.status(out.accepted ? 202 : 409);
       return outcomeToWire(out, missionId);
     } catch (error) {
-      if (error instanceof MissionInvariantError) return conflict(reply, error);
+      const failure = routeFailure(reply, error);
+      if (failure !== undefined) return failure;
       throw error;
     }
   });
