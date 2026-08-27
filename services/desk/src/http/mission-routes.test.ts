@@ -33,6 +33,21 @@ function outcome(intentId: string, at: number): SubmitOutcome {
   };
 }
 
+function register(app: ReturnType<typeof Fastify>, ledger: Ledger, runtime: MissionRuntime, now: () => number) {
+  registerMissionRoutes(
+    app,
+    {
+      clock: { now },
+      log: { info: () => undefined },
+      ledger,
+      supervisor: { submit: async (cmd) => outcome(cmd.intentId, now()) },
+      missions: runtime,
+    },
+    submitCommand,
+    (out, missionId) => ({ missionId, intentId: out.intentId, accepted: out.accepted }),
+  );
+}
+
 describe('mission HTTP spine', () => {
   it('persists Scan -> Plan -> Submit ownership before linking the durable intent', async () => {
     const ledger = new Ledger({ path: ':memory:', synchronous: 'OFF' });
@@ -203,6 +218,153 @@ describe('mission HTTP spine', () => {
     });
     expect(order.statusCode).toBe(409);
     expect(order.json()).toMatchObject({ code: 'MISSION_CONFLICT', outcomeUnknown: false });
+
+    await app.close();
+    ledger.close();
+  });
+
+  it('requires point-in-time evidence before abandoning an untraded candidate, then keeps review separate from outcome', async () => {
+    const ledger = new Ledger({ path: ':memory:', synchronous: 'OFF' });
+    const runtime = new MissionRuntime(ledger);
+    let now = 30_000;
+    const app = Fastify();
+    register(app, ledger, runtime, () => now);
+
+    const scan = await app.inject({
+      method: 'POST',
+      url: '/scans',
+      payload: {
+        scanId: 'scan-http-abandon',
+        canonical: 'EURUSD',
+        timeframe: 'M15',
+        trigger: 'candidate',
+        scanConfigVersion: 'scan-v2',
+        observedAt: now,
+        marketState: { spread: '0.00010' },
+        disposition: 'candidate',
+      },
+    });
+    const missionId = (scan.json() as { mission: { missionId: string } }).mission.missionId;
+
+    now += 100;
+    const unsafe = await app.inject({
+      method: 'POST',
+      url: `/missions/${missionId}/abandon`,
+      payload: {
+        origin: 'operator:android',
+        reason: 'setup invalidated before planning',
+      },
+    });
+    expect(unsafe.statusCode).toBe(409);
+    expect(runtime.missions.load(missionId)?.stage).toBe('CANDIDATE');
+
+    const abandoned = await app.inject({
+      method: 'POST',
+      url: `/missions/${missionId}/abandon`,
+      payload: {
+        origin: 'operator:android',
+        reason: 'setup invalidated before planning',
+        snapshot: {
+          snapshotVersion: 1,
+          asOf: now,
+          known: { structure: 'failed' },
+          missing: ['news-calendar'],
+        },
+      },
+    });
+    expect(abandoned.statusCode).toBe(200);
+    expect(runtime.missions.load(missionId)).toMatchObject({
+      stage: 'ABANDONED',
+      abandonedReason: 'setup invalidated before planning',
+      decisionSnapshot: { known: { structure: 'failed' }, missing: ['news-calendar'] },
+    });
+
+    now += 100;
+    const reviewed = await app.inject({
+      method: 'POST',
+      url: `/missions/${missionId}/review`,
+      payload: {
+        origin: 'operator:android',
+        reviewVersion: 1,
+        decision: { quality: 'good', rationale: 'correctly rejected after structure failed' },
+        outcome: { wouldHaveWon: true },
+        counterfactual: { note: 'outcome does not rewrite decision quality' },
+        evidenceSeqs: [1, 2],
+      },
+    });
+    expect(reviewed.statusCode).toBe(200);
+    const durable = runtime.missions.load(missionId);
+    expect(durable?.stage).toBe('REVIEWED');
+    expect(durable?.review?.reviewedAt).toBe(now);
+    expect(durable?.review?.decision).toMatchObject({ quality: 'good' });
+    expect(durable?.review?.outcome).toMatchObject({ wouldHaveWon: true });
+    expect(durable?.review?.counterfactual).toMatchObject({
+      note: 'outcome does not rewrite decision quality',
+    });
+
+    const duplicate = await app.inject({
+      method: 'POST',
+      url: `/missions/${missionId}/review`,
+      payload: {
+        origin: 'operator:android',
+        reviewVersion: 1,
+        decision: { quality: 'changed-after-hindsight' },
+        evidenceSeqs: [3],
+      },
+    });
+    expect(duplicate.statusCode).toBe(409);
+    expect(runtime.missions.load(missionId)?.review?.decision).toMatchObject({ quality: 'good' });
+
+    await app.close();
+    ledger.close();
+  });
+
+  it('rejects duplicate evidence references in a review before touching mission state', async () => {
+    const ledger = new Ledger({ path: ':memory:', synchronous: 'OFF' });
+    const runtime = new MissionRuntime(ledger);
+    let now = 40_000;
+    const app = Fastify();
+    register(app, ledger, runtime, () => now);
+
+    const scan = await app.inject({
+      method: 'POST',
+      url: '/scans',
+      payload: {
+        scanId: 'scan-http-review-validation',
+        canonical: 'XAUUSD',
+        timeframe: 'M15',
+        trigger: 'candidate',
+        scanConfigVersion: 'scan-v2',
+        observedAt: now,
+        marketState: {},
+        disposition: 'candidate',
+      },
+    });
+    const missionId = (scan.json() as { mission: { missionId: string } }).mission.missionId;
+    now += 1;
+    await app.inject({
+      method: 'POST',
+      url: `/missions/${missionId}/abandon`,
+      payload: {
+        origin: 'operator:desktop',
+        reason: 'no longer valid',
+        snapshot: { snapshotVersion: 1, asOf: now, known: {}, missing: ['quote'] },
+      },
+    });
+
+    const badReview = await app.inject({
+      method: 'POST',
+      url: `/missions/${missionId}/review`,
+      payload: {
+        origin: 'operator:desktop',
+        reviewVersion: 1,
+        decision: { quality: 'insufficient-data' },
+        evidenceSeqs: [7, 7],
+      },
+    });
+    expect(badReview.statusCode).toBe(500);
+    expect(runtime.missions.load(missionId)?.stage).toBe('ABANDONED');
+    expect(runtime.missions.load(missionId)?.review).toBeUndefined();
 
     await app.close();
     ledger.close();
