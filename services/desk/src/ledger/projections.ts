@@ -240,6 +240,17 @@ export class Projector {
           .prepare('UPDATE alerts SET push_acknowledged_at=? WHERE alert_id=?')
           .run(e.at, e.alertId);
         break;
+      // Mission state is currently folded directly from its hash-chained stream.
+      // The high-volume list projection arrives only when the Mission HTTP/query
+      // surface needs it; these facts still advance the projector watermark so a
+      // rebuild remains complete and deterministic.
+      case 'mission.observed':
+      case 'mission.snapshotSealed':
+      case 'mission.stageChanged':
+      case 'mission.intentLinked':
+      case 'mission.positionLinked':
+      case 'mission.actionRecorded':
+      case 'mission.reviewed':
       // Events that are recorded for forensics but project no state.
       case 'desk.started':
       case 'desk.stopping':
