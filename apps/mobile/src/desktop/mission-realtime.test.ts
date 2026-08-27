@@ -65,8 +65,7 @@ describe('Windows/Desktop Mission realtime', () => {
 
     runtime.connect();
     socket.open();
-    await Promise.resolve();
-    await Promise.resolve();
+    await vi.waitFor(() => expect(socket.sent.length).toBeGreaterThan(0));
 
     expect(randomId).toHaveBeenCalledTimes(1);
     const hello = JSON.parse(socket.sent[0] ?? '{}') as Record<string, unknown>;
