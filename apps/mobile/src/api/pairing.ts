@@ -41,6 +41,8 @@ export class PairingError extends Error {
       | 'BOOTSTRAP_FAILED'
       | 'ROLLBACK_FAILED',
     readonly enrolledDeviceId?: string,
+    /** True once HTTP success proves the Desk accepted this device key. */
+    readonly serverAccepted = false,
   ) {
     super(message);
     this.name = 'PairingError';
@@ -61,8 +63,9 @@ interface EnrolResponse {
  * Security boundary:
  * - a key created for an enrolment that the Desk rejects is rolled back;
  * - once the Desk has accepted the key, it is never destroyed automatically,
- *   even if local metadata persistence/bootstrap fails. Destroying it after
- *   server acceptance would manufacture an unrecoverable enrolled device.
+ *   even if its success response is malformed or local persistence/bootstrap
+ *   fails. Destroying it after server acceptance would manufacture an
+ *   unrecoverable enrolled device.
  * - an existing local key is never destroyed by a failed pairing attempt.
  */
 export async function pairDesk(
@@ -106,7 +109,8 @@ export async function pairDesk(
   try {
     enrolled = await enrol(baseUrl, code, identity, options.fetchFn ?? fetch);
   } catch (error) {
-    if (createdKey) await rollbackNewKey(options.signer, error);
+    const accepted = error instanceof PairingError && error.serverAccepted;
+    if (createdKey && !accepted) await rollbackNewKey(options.signer, error);
     throw error;
   }
 
@@ -128,6 +132,7 @@ export async function pairDesk(
         'The device key was deliberately preserved; recover/persist this enrolment rather than creating another one.',
       'METADATA_PERSIST_FAILED',
       enrolled.deviceId,
+      true,
     );
   }
 
@@ -140,6 +145,7 @@ export async function pairDesk(
         'Keep the pairing and retry bootstrap; do not enrol a second device.',
       'BOOTSTRAP_FAILED',
       enrolled.deviceId,
+      true,
     );
   }
 }
@@ -172,6 +178,8 @@ async function enrol(
     throw new PairingError(
       `Desk enrolment returned HTTP ${response.status} with a non-JSON response`,
       response.ok ? 'ENROL_RESPONSE_INVALID' : 'ENROL_FAILED',
+      undefined,
+      response.ok,
     );
   }
 
@@ -183,12 +191,27 @@ async function enrol(
     );
   }
 
-  const enrolled = parseEnrolResponse(body);
+  let enrolled: EnrolResponse;
+  try {
+    enrolled = parseEnrolResponse(body);
+  } catch (error) {
+    if (error instanceof PairingError) {
+      throw new PairingError(error.message, error.code, error.enrolledDeviceId, true);
+    }
+    throw new PairingError(
+      `Desk accepted enrolment but returned an invalid response: ${messageOf(error)}`,
+      'ENROL_RESPONSE_INVALID',
+      undefined,
+      true,
+    );
+  }
+
   if (enrolled.keyKind !== identity.keyKind) {
     throw new PairingError(
       `Desk enrolled key kind ${enrolled.keyKind}, but the device provisioned ${identity.keyKind}`,
       'ENROL_RESPONSE_INVALID',
       enrolled.deviceId,
+      true,
     );
   }
   if (enrolled.claimsHardwareBacked !== identity.hardwareBacked) {
@@ -196,6 +219,7 @@ async function enrol(
       'Desk hardware-backed claim does not match the device identity that was submitted',
       'ENROL_RESPONSE_INVALID',
       enrolled.deviceId,
+      true,
     );
   }
   return enrolled;
