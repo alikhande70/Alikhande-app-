@@ -1,10 +1,10 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { RunningDeskRuntime } from './bootstrap.js';
 import {
-  pairDesk,
   PairingError,
   type PairingMetadata,
   type PairingMetadataStore,
+  pairDesk,
 } from './pairing.js';
 import type { SecureSigner, SignerIdentity } from './signer.js';
 
