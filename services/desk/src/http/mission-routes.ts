@@ -52,6 +52,28 @@ const snapshotSchema = z.object({
   riskVerdict: z.record(z.string(), z.unknown()).optional(),
 });
 
+const abandonSchema = z.object({
+  origin: operatorOrigin,
+  reason: z.string().trim().min(1).max(1000),
+  snapshot: snapshotSchema.optional(),
+});
+
+const reviewSchema = z.object({
+  origin: operatorOrigin,
+  reviewVersion: z.number().int().min(1),
+  decision: z.record(z.string(), z.unknown()),
+  outcome: z.record(z.string(), z.unknown()).optional(),
+  counterfactual: z.record(z.string(), z.unknown()).optional(),
+  evidenceSeqs: z
+    .array(z.number().int().nonnegative())
+    .max(2000)
+    .superRefine((values, ctx) => {
+      if (new Set(values).size !== values.length) {
+        ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'evidenceSeqs must not contain duplicates' });
+      }
+    }),
+});
+
 type ParsedSnapshot = z.infer<typeof snapshotSchema>;
 
 const scanSchema = z
@@ -192,6 +214,56 @@ export function registerMissionRoutes(
         body.origin as MissionOrigin,
         deps.clock.now(),
       );
+      return { mission };
+    } catch (error) {
+      if (error instanceof MissionInvariantError) return conflict(reply, error);
+      throw error;
+    }
+  });
+
+  app.post('/missions/:missionId/abandon', async (req, reply) => {
+    try {
+      const { missionId } = z.object({ missionId: z.string().min(1) }).parse(req.params);
+      const body = abandonSchema.parse(req.body);
+      const at = deps.clock.now();
+      const mission = runtime.missions.abandon(
+        missionId,
+        body.origin as MissionOrigin,
+        at,
+        body.reason,
+        body.snapshot === undefined ? undefined : toDecisionSnapshot(body.snapshot),
+      );
+      return { mission };
+    } catch (error) {
+      if (error instanceof MissionInvariantError) return conflict(reply, error);
+      throw error;
+    }
+  });
+
+  app.post('/missions/:missionId/review', async (req, reply) => {
+    try {
+      const { missionId } = z.object({ missionId: z.string().min(1) }).parse(req.params);
+      const body = reviewSchema.parse(req.body);
+      const reviewedAt = deps.clock.now();
+
+      // The review itself deliberately separates decision assessment from outcome.
+      // Client clocks are not accepted as transaction truth; Desk time records when
+      // the immutable review entered the ledger.
+      runtime.missions.recordAction(missionId, {
+        actionId: `${missionId}:review:${reviewedAt}`,
+        origin: body.origin as MissionOrigin,
+        type: 'note',
+        at: reviewedAt,
+        reason: 'operator review recorded',
+      });
+      const mission = runtime.missions.review(missionId, {
+        reviewVersion: body.reviewVersion,
+        reviewedAt,
+        decision: body.decision,
+        evidenceSeqs: body.evidenceSeqs,
+        ...(body.outcome === undefined ? {} : { outcome: body.outcome }),
+        ...(body.counterfactual === undefined ? {} : { counterfactual: body.counterfactual }),
+      });
       return { mission };
     } catch (error) {
       if (error instanceof MissionInvariantError) return conflict(reply, error);
