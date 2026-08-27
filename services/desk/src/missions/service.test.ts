@@ -153,12 +153,8 @@ describe('Trade Mission aggregate', () => {
     );
 
     missions.linkIntent('mission-1', 'intent-abc', 1_300);
-    expect(missions.beginExecution('mission-1', 'operator:desktop', 1_310).stage).toBe(
-      'EXECUTING',
-    );
-    expect(missions.beginManaging('mission-1', 'pending-activation', 1_400).stage).toBe(
-      'MANAGING',
-    );
+    expect(missions.beginExecution('mission-1', 'operator:desktop', 1_310).stage).toBe('EXECUTING');
+    expect(missions.beginManaging('mission-1', 'pending-activation', 1_400).stage).toBe('MANAGING');
     missions.linkPosition('mission-1', 'position-9', 1_410);
     expect(missions.close('mission-1', 'operator:desktop', 1_900).stage).toBe('CLOSED');
     expect(missions.review('mission-1', review()).stage).toBe('REVIEWED');
