@@ -60,6 +60,52 @@ async function commandNonce(): Promise<string> {
   return r.json.nonce as string;
 }
 
+async function createPlannedMission(canonical = 'XAUUSD'): Promise<string> {
+  const observedAt = Date.now();
+  const scan = await call(
+    'POST',
+    '/scans',
+    {
+      scanId: `e2e-${randomUUID()}`,
+      canonical,
+      timeframe: 'M15',
+      trigger: 'e2e-candidate',
+      scanConfigVersion: 'e2e-v1',
+      observedAt,
+      marketState: { source: 'e2e', observedAt },
+      disposition: 'candidate',
+    },
+    await commandNonce(),
+  );
+  expect(scan.status).toBe(200);
+  const mission = scan.json.mission as Record<string, unknown>;
+  const missionId = mission.missionId as string;
+  expect(missionId).toBeTypeOf('string');
+
+  const planned = await call(
+    'POST',
+    `/missions/${missionId}/plan`,
+    {
+      origin: 'operator:desktop',
+      snapshot: {
+        snapshotVersion: 1,
+        asOf: observedAt,
+        known: { canonical, source: 'e2e' },
+        missing: ['real broker execution evidence'],
+        plan: {
+          side: 'buy',
+          stop: '2395.00',
+          invalidation: ['price reaches the test stop'],
+        },
+      },
+    },
+    await commandNonce(),
+  );
+  expect(planned.status).toBe(200);
+  expect((planned.json.mission as Record<string, unknown>).stage).toBe('PLANNED');
+  return missionId;
+}
+
 async function streamAuth(): Promise<Record<string, unknown>> {
   if (deviceId.length === 0) deviceId = (await enrolThroughDesk()).deviceId;
   const base = {
@@ -140,14 +186,17 @@ describe('enrolment and signed access', () => {
   });
 });
 
-describe('order placement over the wire', () => {
-  it('refuses a command without a nonce', async () => {
-    const res = await call('POST', '/orders', {
-      intentId: randomUUID(),
+describe('mission-bound order placement over the wire', () => {
+  it('refuses a mission command without a nonce', async () => {
+    const res = await call('POST', '/scans', {
+      scanId: `nonce-${randomUUID()}`,
       canonical: 'XAUUSD',
-      side: 'buy',
-      stopPrice: '2395.00',
-      preTradeNote: 'test',
+      timeframe: 'M15',
+      trigger: 'nonce-check',
+      scanConfigVersion: 'e2e-v1',
+      observedAt: Date.now(),
+      marketState: { source: 'e2e' },
+      disposition: 'candidate',
     });
     expect(res.status).toBe(401);
     expect(res.json.code).toBe('NONCE_REQUIRED');
@@ -168,20 +217,22 @@ describe('order placement over the wire', () => {
     expect((orders.json as unknown as unknown[]).length ?? 0).toBe(0);
   });
 
-  it('accepts a signed order with a nonce, and never claims it is filled', async () => {
+  it('accepts a signed mission order with a nonce, and never claims it is filled', async () => {
+    const missionId = await createPlannedMission();
     const nonce = await commandNonce();
     const intentId = randomUUID();
     const res = await call(
       'POST',
-      '/orders',
+      `/missions/${missionId}/orders`,
       {
         intentId,
+        origin: 'operator:desktop',
         canonical: 'XAUUSD',
         side: 'buy',
         kind: 'market',
         stopPrice: '2395.00',
         riskPct: '0.005',
-        preTradeNote: 'end to end test order',
+        preTradeNote: 'end to end mission order',
       },
       nonce,
     );
@@ -189,6 +240,7 @@ describe('order placement over the wire', () => {
     // 202, not 201: nothing has been created at the venue yet, and the status
     // code must not imply otherwise.
     expect([202, 409]).toContain(res.status);
+    expect(res.json.missionId).toBe(missionId);
     expect(res.json.intentId).toBe(intentId);
     expect(res.json.risk).toBeDefined();
     // Whatever the outcome, the reply carries a risk decision and never a
@@ -197,20 +249,24 @@ describe('order placement over the wire', () => {
     expect(['pass', 'warn', 'block']).toContain(risk.verdict);
   });
 
-  it('deduplicates a replayed order intent', async () => {
+  it('deduplicates a replayed mission order intent', async () => {
+    const missionId = await createPlannedMission();
     const intentId = randomUUID();
     const body = {
       intentId,
+      origin: 'operator:desktop' as const,
       canonical: 'XAUUSD',
       side: 'buy' as const,
       kind: 'market' as const,
       stopPrice: '2395.00',
       riskPct: '0.005',
-      preTradeNote: 'dedupe test',
+      preTradeNote: 'mission dedupe test',
     };
-    const first = await call('POST', '/orders', body, await commandNonce());
-    const second = await call('POST', '/orders', body, await commandNonce());
-    // The second is recognised as the same human decision.
+    const path = `/missions/${missionId}/orders`;
+    const first = await call('POST', path, body, await commandNonce());
+    const second = await call('POST', path, body, await commandNonce());
+    // The second is recognised as the same human decision when the first made
+    // it far enough to create the durable intent.
     if (first.status === 202) expect(second.json.deduplicated).toBe(true);
   });
 });
