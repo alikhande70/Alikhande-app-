@@ -111,7 +111,9 @@ export function projectDurableMissionsForEvaluation(
       'comparison.missionKnowledgeTime',
       snapshot.brainComparison.missionKnowledgeTime,
     );
-    if (snapshot.brainEvaluation.knowledgeCutoff !== snapshot.brainComparison.missionKnowledgeTime) {
+    if (
+      snapshot.brainEvaluation.knowledgeCutoff !== snapshot.brainComparison.missionKnowledgeTime
+    ) {
       throw new Error(`mission '${mission.missionId}' has divergent Brain knowledge cutoffs`);
     }
     if (snapshot.asOf > snapshot.brainEvaluation.knowledgeCutoff) {
