@@ -1,10 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import type { VersionedMarketOutcomeLabel } from './mission-evaluation.js';
+import type { ForwardPairedScanEvidence } from './paired-evaluation.js';
 import {
   inferForwardPairedOutcomeAlignment,
   type PairedOutcomeInferencePolicy,
 } from './paired-inference.js';
-import type { ForwardPairedScanEvidence } from './paired-evaluation.js';
 
 const championHash = `sha256:${'a'.repeat(64)}`;
 const challengerHash = `sha256:${'b'.repeat(64)}`;
@@ -55,12 +55,7 @@ function label(
   };
 }
 
-const evidence = [
-  pair('m1', 1_100),
-  pair('m2', 1_200),
-  pair('m3', 1_300),
-  pair('m4', 1_400),
-];
+const evidence = [pair('m1', 1_100), pair('m2', 1_200), pair('m3', 1_300), pair('m4', 1_400)];
 
 const favourableLabels = [
   label('m1', 1_100),
@@ -95,7 +90,9 @@ describe('forward paired outcome inference', () => {
         decision: { status: 'scored' as const, score: 60 },
       },
     }));
-    const labels = evidence.map((item) => label(item.missionId, item.knowledgeTime, 'unfavourable'));
+    const labels = evidence.map((item) =>
+      label(item.missionId, item.knowledgeTime, 'unfavourable'),
+    );
 
     const report = inferForwardPairedOutcomeAlignment(challengerLower, labels, policy);
 

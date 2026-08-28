@@ -76,9 +76,7 @@ function wilson95(successes: number, trials: number): WilsonInterval95 {
   const p = successes / trials;
   const denominator = 1 + z2 / trials;
   const center = (p + z2 / (2 * trials)) / denominator;
-  const half =
-    (z / denominator) *
-    Math.sqrt((p * (1 - p)) / trials + z2 / (4 * trials * trials));
+  const half = (z / denominator) * Math.sqrt((p * (1 - p)) / trials + z2 / (4 * trials * trials));
   return {
     lower: Math.max(0, center - half),
     upper: Math.min(1, center + half),
@@ -132,7 +130,9 @@ export function inferForwardPairedOutcomeAlignment(
       throw new Error(`outcome for mission '${label.missionId}' is not strictly forward`);
     }
     if (label.recordedAt < label.validAt) {
-      throw new Error(`outcome for mission '${label.missionId}' was recorded before it became valid`);
+      throw new Error(
+        `outcome for mission '${label.missionId}' was recorded before it became valid`,
+      );
     }
     labels.set(label.missionId, label);
   }
@@ -153,7 +153,10 @@ export function inferForwardPairedOutcomeAlignment(
       flatOutcomePairs += 1;
       continue;
     }
-    if (pair.champion.decision.status !== 'scored' || pair.challenger.decision.status !== 'scored') {
+    if (
+      pair.champion.decision.status !== 'scored' ||
+      pair.challenger.decision.status !== 'scored'
+    ) {
       incompleteDecisionPairs += 1;
       continue;
     }
