@@ -101,9 +101,7 @@ export function comparisonWindowForMission(
   }
 
   const challengers = registry.records
-    .filter(
-      (record) => record.role === 'challenger' && missionKnowledgeTime > record.createdAt,
-    )
+    .filter((record) => record.role === 'challenger' && missionKnowledgeTime > record.createdAt)
     .sort((a, b) => a.contentHash.localeCompare(b.contentHash));
 
   return { missionKnowledgeTime, champion, challengers };
