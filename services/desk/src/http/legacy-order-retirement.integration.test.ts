@@ -25,11 +25,9 @@ async function signedCall(
     bodyHash: hashBody(text),
     ...(commandNonce === undefined ? {} : { commandNonce }),
   };
-  const signature = sign(
-    null,
-    Buffer.from(canonicalString(request), 'utf8'),
-    privateKey,
-  ).toString('base64');
+  const signature = sign(null, Buffer.from(canonicalString(request), 'utf8'), privateKey).toString(
+    'base64',
+  );
   const headers: Record<string, string> = {
     'content-type': 'application/json',
     'x-keel-device': deviceId,
