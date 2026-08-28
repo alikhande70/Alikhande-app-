@@ -25,6 +25,10 @@
     "./paired-inference": {
       "types": "./dist/paired-inference.d.ts",
       "default": "./dist/paired-inference.js"
+    },
+    "./pre-registered-evaluation": {
+      "types": "./dist/pre-registered-evaluation.d.ts",
+      "default": "./dist/pre-registered-evaluation.js"
     }
   },
   "scripts": {
