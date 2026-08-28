@@ -1,4 +1,27 @@
 import type { ScanDecisionEvidence, ScanOutcomeEvidence } from './evaluation.js';
+import type { ForwardPairedScanEvidence } from './paired-evaluation.js';
+
+export interface DurableBrainDecisionForEvaluation {
+  readonly status: 'scored' | 'insufficient-data';
+  readonly brainVersion: string;
+  readonly knowledgeCutoff: number;
+  readonly decisionAsOf?: number;
+  readonly score?: number;
+  readonly missing?: readonly string[];
+}
+
+export interface DurableBrainPairedEvaluationForEvaluation {
+  readonly contentHash: `sha256:${string}`;
+  readonly role: 'champion' | 'challenger';
+  readonly createdAt: number;
+  readonly evaluation: DurableBrainDecisionForEvaluation;
+}
+
+export interface DurableBrainComparisonForEvaluation {
+  readonly missionKnowledgeTime: number;
+  readonly championHash: `sha256:${string}`;
+  readonly evaluations?: readonly DurableBrainPairedEvaluationForEvaluation[];
+}
 
 export interface DurableMissionForEvaluation {
   readonly missionId: string;
@@ -19,10 +42,7 @@ export interface DurableMissionForEvaluation {
           readonly knowledgeCutoff: number;
           readonly missing: readonly string[];
         };
-    readonly brainComparison?: {
-      readonly missionKnowledgeTime: number;
-      readonly championHash: `sha256:${string}`;
-    };
+    readonly brainComparison?: DurableBrainComparisonForEvaluation;
   };
 }
 
@@ -41,6 +61,50 @@ function requireFiniteTimestamp(name: string, value: number): void {
   if (!Number.isFinite(value) || value < 0) {
     throw new Error(`${name} must be a finite non-negative timestamp`);
   }
+}
+
+function requireContentHash(name: string, value: string): void {
+  if (!/^sha256:[a-f0-9]{64}$/.test(value)) {
+    throw new Error(`${name} is not a valid content hash`);
+  }
+}
+
+function decisionFromDurable(
+  decision: DurableBrainDecisionForEvaluation,
+  label: string,
+): ScanDecisionEvidence['decision'] {
+  if (decision.brainVersion.trim().length === 0) throw new Error(`${label} Brain version is required`);
+  requireFiniteTimestamp(`${label}.knowledgeCutoff`, decision.knowledgeCutoff);
+  if (decision.decisionAsOf !== undefined) {
+    requireFiniteTimestamp(`${label}.decisionAsOf`, decision.decisionAsOf);
+    if (decision.decisionAsOf > decision.knowledgeCutoff) {
+      throw new Error(`${label} decisionAsOf is after its knowledge cutoff`);
+    }
+  }
+
+  if (decision.status === 'scored') {
+    if (decision.score === undefined || !Number.isFinite(decision.score) || decision.score < 0 || decision.score > 100) {
+      throw new Error(`${label} score must be finite and in [0,100]`);
+    }
+    return { status: 'scored', score: decision.score };
+  }
+
+  if (decision.missing === undefined || decision.missing.length === 0) {
+    throw new Error(`${label} insufficient-data evidence must name missing fields`);
+  }
+  return { status: 'insufficient-data', missing: decision.missing };
+}
+
+function sameDecision(
+  left: ScanDecisionEvidence['decision'],
+  right: ScanDecisionEvidence['decision'],
+): boolean {
+  if (left.status !== right.status) return false;
+  if (left.status === 'scored' && right.status === 'scored') return left.score === right.score;
+  if (left.status === 'insufficient-data' && right.status === 'insufficient-data') {
+    return left.missing.length === right.missing.length && left.missing.every((value, index) => value === right.missing[index]);
+  }
+  return false;
 }
 
 function outcomeForMission(
@@ -111,6 +175,7 @@ export function projectDurableMissionsForEvaluation(
       'comparison.missionKnowledgeTime',
       snapshot.brainComparison.missionKnowledgeTime,
     );
+    requireContentHash('comparison.championHash', snapshot.brainComparison.championHash);
     if (
       snapshot.brainEvaluation.knowledgeCutoff !== snapshot.brainComparison.missionKnowledgeTime
     ) {
@@ -140,4 +205,109 @@ export function projectDurableMissionsForEvaluation(
       ...(outcome === undefined ? {} : { outcome }),
     };
   });
+}
+
+/**
+ * Project durable shadow Brain evidence into forward-only paired scan evidence.
+ *
+ * This projection is deliberately stricter than the aggregate schema: it proves
+ * the champion duplicated in `brainEvaluation` still matches the champion entry
+ * in `brainComparison`, rejects duplicate immutable identities, and excludes every
+ * challenger that did not exist strictly before this Mission knowledge-time.
+ * It never selects a winner or mutates registry state.
+ */
+export function projectDurableMissionsForPairedEvaluation(
+  missions: readonly DurableMissionForEvaluation[],
+): readonly ForwardPairedScanEvidence[] {
+  const pairs: ForwardPairedScanEvidence[] = [];
+  const missionIds = new Set<string>();
+
+  for (const mission of missions) {
+    if (missionIds.has(mission.missionId)) {
+      throw new Error(`duplicate durable mission '${mission.missionId}'`);
+    }
+    missionIds.add(mission.missionId);
+    if (mission.missionId.trim().length === 0) throw new Error('missionId is required');
+    if (mission.scanConfigVersion.trim().length === 0) throw new Error('scanConfigVersion is required');
+
+    const snapshot = mission.decisionSnapshot;
+    if (snapshot?.brainEvaluation === undefined || snapshot.brainComparison === undefined) {
+      throw new Error(`mission '${mission.missionId}' lacks sealed Brain comparison evidence`);
+    }
+    const comparison = snapshot.brainComparison;
+    if (comparison.evaluations === undefined || comparison.evaluations.length === 0) {
+      throw new Error(`mission '${mission.missionId}' lacks paired Brain evaluations`);
+    }
+    requireFiniteTimestamp('snapshot.asOf', snapshot.asOf);
+    requireFiniteTimestamp('comparison.missionKnowledgeTime', comparison.missionKnowledgeTime);
+    requireContentHash('comparison.championHash', comparison.championHash);
+    if (snapshot.brainEvaluation.knowledgeCutoff !== comparison.missionKnowledgeTime) {
+      throw new Error(`mission '${mission.missionId}' has divergent Brain knowledge cutoffs`);
+    }
+
+    const seenHashes = new Set<string>();
+    let champion: DurableBrainPairedEvaluationForEvaluation | undefined;
+    const challengers: DurableBrainPairedEvaluationForEvaluation[] = [];
+
+    for (const entry of comparison.evaluations) {
+      requireContentHash('comparison evaluation hash', entry.contentHash);
+      requireFiniteTimestamp('comparison evaluation createdAt', entry.createdAt);
+      if (seenHashes.has(entry.contentHash)) {
+        throw new Error(`mission '${mission.missionId}' repeats Brain content '${entry.contentHash}'`);
+      }
+      seenHashes.add(entry.contentHash);
+      if (entry.evaluation.knowledgeCutoff !== comparison.missionKnowledgeTime) {
+        throw new Error(`mission '${mission.missionId}' paired evaluation uses a different knowledge cutoff`);
+      }
+      if (entry.createdAt > comparison.missionKnowledgeTime) {
+        throw new Error(`mission '${mission.missionId}' uses Brain content created after the decision cutoff`);
+      }
+      decisionFromDurable(entry.evaluation, `${entry.role} evaluation`);
+
+      if (entry.role === 'champion') {
+        if (champion !== undefined) throw new Error(`mission '${mission.missionId}' has multiple champions`);
+        champion = entry;
+      } else {
+        challengers.push(entry);
+      }
+    }
+
+    if (champion === undefined) throw new Error(`mission '${mission.missionId}' has no champion evaluation`);
+    if (champion.contentHash !== comparison.championHash) {
+      throw new Error(`mission '${mission.missionId}' champion hash does not match durable comparison identity`);
+    }
+
+    const primaryDecision: ScanDecisionEvidence['decision'] =
+      snapshot.brainEvaluation.status === 'scored'
+        ? { status: 'scored', score: snapshot.brainEvaluation.score }
+        : { status: 'insufficient-data', missing: snapshot.brainEvaluation.missing };
+    const championDecision = decisionFromDurable(champion.evaluation, 'champion evaluation');
+    if (champion.evaluation.brainVersion !== snapshot.brainEvaluation.brainVersion || !sameDecision(championDecision, primaryDecision)) {
+      throw new Error(`mission '${mission.missionId}' champion shadow evidence diverges from primary Brain decision`);
+    }
+
+    for (const challenger of challengers) {
+      if (comparison.missionKnowledgeTime <= challenger.createdAt) {
+        throw new Error(`mission '${mission.missionId}' is not forward-only evidence for challenger '${challenger.contentHash}'`);
+      }
+      pairs.push({
+        missionId: mission.missionId,
+        scanConfigVersion: mission.scanConfigVersion,
+        knowledgeTime: comparison.missionKnowledgeTime,
+        challengerCreatedAt: challenger.createdAt,
+        champion: {
+          brainContentHash: champion.contentHash,
+          brainVersion: champion.evaluation.brainVersion,
+          decision: championDecision,
+        },
+        challenger: {
+          brainContentHash: challenger.contentHash,
+          brainVersion: challenger.evaluation.brainVersion,
+          decision: decisionFromDurable(challenger.evaluation, 'challenger evaluation'),
+        },
+      });
+    }
+  }
+
+  return pairs;
 }
