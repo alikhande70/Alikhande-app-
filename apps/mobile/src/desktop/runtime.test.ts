@@ -61,12 +61,6 @@ function fakeSocket() {
   return { socket, sent };
 }
 
-async function flushAsync(): Promise<void> {
-  await Promise.resolve();
-  await Promise.resolve();
-  await Promise.resolve();
-}
-
 describe('paired Windows Mission runtime', () => {
   it('restores the existing device key and authenticates the Mission stream', async () => {
     const native = bridge();
@@ -88,9 +82,8 @@ describe('paired Windows Mission runtime', () => {
     expect(factory).toHaveBeenCalledWith('ws://127.0.0.1:8787/stream');
 
     socket.onopen?.();
-    await flushAsync();
+    await vi.waitFor(() => expect(sent).toHaveLength(1));
 
-    expect(sent).toHaveLength(1);
     expect(JSON.parse(sent[0] ?? '{}')).toMatchObject({
       type: 'hello',
       topics: ['missions'],
