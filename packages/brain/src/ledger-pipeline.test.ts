@@ -36,7 +36,11 @@ const bindings = [
   { sourceKey: 'spreadBps', marketStateKey: 'spreadBps' },
 ] as const;
 
-function missionRow(seq: number, recordedAt: number, marketState: Readonly<Record<string, unknown>>) {
+function missionRow(
+  seq: number,
+  recordedAt: number,
+  marketState: Readonly<Record<string, unknown>>,
+) {
   return {
     seq,
     ts: recordedAt,
@@ -93,9 +97,9 @@ describe('durable Mission ledger -> Brain pipeline', () => {
     expect(originalFeatures.evidence.find((item) => item.featureKey === 'trend')?.recordedAt).toBe(
       1_005,
     );
-    expect(laterQueryFeatures.evidence.find((item) => item.featureKey === 'trend')?.recordedAt).toBe(
-      1_200,
-    );
+    expect(
+      laterQueryFeatures.evidence.find((item) => item.featureKey === 'trend')?.recordedAt,
+    ).toBe(1_200);
   });
 
   it('propagates missing durable scan evidence to insufficient-data', () => {
