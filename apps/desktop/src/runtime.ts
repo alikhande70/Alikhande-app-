@@ -1,7 +1,11 @@
 import { DesktopDeskClient } from './client.js';
 import { DesktopMissionOperator } from './mission-operator.js';
 import { DesktopMissionRealtime, type DesktopWebSocketLike } from './realtime.js';
-import { DesktopMissionTruth, type MissionTruthState } from './mission-truth.js';
+import {
+  DesktopMissionTruth,
+  type DesktopMissionView,
+  type MissionTruthState,
+} from './mission-truth.js';
 import {
   WindowsProtectedSigner,
   type WindowsNativeEd25519Bridge,
@@ -67,22 +71,21 @@ function streamUrl(base: URL): string {
  * This is intentionally restore-only. Once a Desk device id exists, runtime
  * bootstrap may never create a replacement key behind the operator's back.
  * Missing/corrupt signer identity aborts startup and requires explicit pairing.
+ * Mission truth mutators remain private so UI code cannot manufacture a current
+ * projection and bypass realtime completeness checks.
  */
 export class DesktopMissionRuntime {
-  readonly truth: DesktopMissionTruth;
-  readonly client: DesktopDeskClient;
   readonly operator: DesktopMissionOperator;
-  readonly realtime: DesktopMissionRealtime;
+  private readonly truth: DesktopMissionTruth;
+  private readonly realtime: DesktopMissionRealtime;
   private started = false;
 
   private constructor(options: {
     readonly truth: DesktopMissionTruth;
-    readonly client: DesktopDeskClient;
     readonly operator: DesktopMissionOperator;
     readonly realtime: DesktopMissionRealtime;
   }) {
     this.truth = options.truth;
-    this.client = options.client;
     this.operator = options.operator;
     this.realtime = options.realtime;
   }
@@ -124,7 +127,7 @@ export class DesktopMissionRuntime {
         : { maxReconnectDelayMs: options.maxReconnectDelayMs }),
     });
     const operator = new DesktopMissionOperator(client, truth);
-    return new DesktopMissionRuntime({ truth, client, operator, realtime });
+    return new DesktopMissionRuntime({ truth, operator, realtime });
   }
 
   start(): void {
@@ -137,6 +140,10 @@ export class DesktopMissionRuntime {
     if (!this.started) return;
     this.started = false;
     this.realtime.close();
+  }
+
+  missions(): readonly DesktopMissionView[] {
+    return this.truth.list();
   }
 
   status(): DesktopMissionRuntimeStatus {
