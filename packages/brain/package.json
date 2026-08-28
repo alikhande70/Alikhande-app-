@@ -10,6 +10,10 @@
       "types": "./dist/index.d.ts",
       "default": "./dist/index.js"
     },
+    "./evaluation-pipeline": {
+      "types": "./dist/evaluation-pipeline.d.ts",
+      "default": "./dist/evaluation-pipeline.js"
+    },
     "./mission-evaluation": {
       "types": "./dist/mission-evaluation.d.ts",
       "default": "./dist/mission-evaluation.js"
