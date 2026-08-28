@@ -1,4 +1,5 @@
 import type { FeatureStrataEvidence, FeatureStrataPolicy } from './feature-strata-guard.js';
+import type { FixedHorizonOutcomePolicy, MarketCloseObservation } from './outcome-labeling.js';
 import {
   buildStrataAwarePreRegisteredEvaluation,
   type StrataAwareAnalysisPlan,
@@ -6,7 +7,6 @@ import {
   type StrataAwareEvaluationPopulation,
   type StrataAwareEvaluationResult,
 } from './strata-aware-evaluation.js';
-import type { FixedHorizonOutcomePolicy, MarketCloseObservation } from './outcome-labeling.js';
 
 export interface SnapshotFeatureEvidenceCoordinate {
   readonly featureKey: string;
@@ -73,7 +73,8 @@ export function projectSnapshotFeatureStrataEvidence(
   featureSetVersion: string,
 ): readonly FeatureStrataEvidence[] {
   if (featureKey.trim().length === 0) throw new Error('snapshot featureKey is required');
-  if (featureSetVersion.trim().length === 0) throw new Error('snapshot featureSetVersion is required');
+  if (featureSetVersion.trim().length === 0)
+    throw new Error('snapshot featureSetVersion is required');
 
   const seenMissions = new Set<string>();
   const projected: FeatureStrataEvidence[] = [];
@@ -103,7 +104,9 @@ export function projectSnapshotFeatureStrataEvidence(
     requireTimestamp(`snapshot '${mission.missionId}' decisionAsOf`, evaluation.decisionAsOf);
     requireTimestamp(`snapshot '${mission.missionId}' knowledgeCutoff`, evaluation.knowledgeCutoff);
     if (evaluation.decisionAsOf !== snapshot.asOf) {
-      throw new Error(`snapshot '${mission.missionId}' Brain decisionAsOf does not match snapshot asOf`);
+      throw new Error(
+        `snapshot '${mission.missionId}' Brain decisionAsOf does not match snapshot asOf`,
+      );
     }
     if (evaluation.knowledgeCutoff < evaluation.decisionAsOf) {
       throw new Error(`snapshot '${mission.missionId}' knowledgeCutoff predates decisionAsOf`);
@@ -121,16 +124,22 @@ export function projectSnapshotFeatureStrataEvidence(
         throw new Error(`snapshot '${mission.missionId}' contains empty featureKey`);
       }
       if (seenFeatures.has(item.featureKey)) {
-        throw new Error(`snapshot '${mission.missionId}' contains duplicate feature '${item.featureKey}'`);
+        throw new Error(
+          `snapshot '${mission.missionId}' contains duplicate feature '${item.featureKey}'`,
+        );
       }
       seenFeatures.add(item.featureKey);
       requireTimestamp(`snapshot '${mission.missionId}' feature validAt`, item.validAt);
       requireTimestamp(`snapshot '${mission.missionId}' feature recordedAt`, item.recordedAt);
       if (item.recordedAt < item.validAt) {
-        throw new Error(`snapshot '${mission.missionId}' feature '${item.featureKey}' was recorded before validAt`);
+        throw new Error(
+          `snapshot '${mission.missionId}' feature '${item.featureKey}' was recorded before validAt`,
+        );
       }
       if (item.validAt > snapshot.asOf) {
-        throw new Error(`snapshot '${mission.missionId}' feature '${item.featureKey}' uses future evidence`);
+        throw new Error(
+          `snapshot '${mission.missionId}' feature '${item.featureKey}' uses future evidence`,
+        );
       }
       if (item.recordedAt > evaluation.knowledgeCutoff) {
         throw new Error(
