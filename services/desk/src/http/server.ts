@@ -42,7 +42,6 @@ export interface ServerDeps {
 }
 
 const COMMAND_PATHS = [
-  /^\/orders$/,
   /^\/orders\/[^/]+\/cancel$/,
   /^\/scans$/,
   /^\/missions\/[^/]+\/(plan|abandon|review|orders)$/,
@@ -219,22 +218,6 @@ export async function buildServer(deps: ServerDeps): Promise<FastifyInstance> {
     const cmd = parseSubmit(req.body, randomUUID());
     const { risk, sizing } = await deps.supervisor.preview(cmd);
     return { risk: riskToWire(risk), sizing: sizingToWire(sizing) };
-  });
-
-  app.post('/orders', async (req, reply) => {
-    const body = req.body as Record<string, unknown>;
-    const intentId = z.string().uuid().parse(body.intentId);
-    const cmd = parseSubmit(body, intentId);
-    const out = await deps.supervisor.submit(cmd);
-    void reply.status(out.accepted ? 202 : 409);
-    return {
-      intentId: out.intentId,
-      accepted: out.accepted,
-      deduplicated: out.deduplicated,
-      risk: riskToWire(out.risk),
-      ...(out.sizing !== undefined ? { sizing: sizingToWire(out.sizing) } : {}),
-      ...(out.problem !== undefined ? { problem: out.problem } : {}),
-    };
   });
 
   app.post('/orders/:intentId/cancel', async (req, reply) => {
