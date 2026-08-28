@@ -85,6 +85,31 @@ export type BrainDecisionEvidence =
       readonly missing: readonly string[];
     };
 
+export type BrainContentHash = `sha256:${string}`;
+
+/** One immutable version's output on the exact same Mission evidence window. */
+export interface BrainPairedEvaluation {
+  readonly contentHash: BrainContentHash;
+  readonly role: 'champion' | 'challenger';
+  /** Knowledge-time when this immutable version bundle was sealed. */
+  readonly createdAt: number;
+  readonly evaluation: BrainDecisionEvidence;
+}
+
+/**
+ * Durable champion/challenger shadow evidence (ADR-0022).
+ *
+ * Every entry is evaluated against the same Mission knowledge-time. The champion
+ * remains the only evaluation copied into `brainEvaluation` and therefore the only
+ * one that can reach downstream risk/execution. Challengers are shadow evidence only.
+ */
+export interface BrainComparisonEvidence {
+  readonly comparisonVersion: 1;
+  readonly missionKnowledgeTime: number;
+  readonly championHash: BrainContentHash;
+  readonly evaluations: readonly BrainPairedEvaluation[];
+}
+
 /**
  * Frozen record of what was known at decision time.
  *
@@ -107,6 +132,8 @@ export interface DecisionSnapshot {
   readonly riskVerdict?: Readonly<Record<string, unknown>>;
   /** Full deterministic Brain evidence. Never reconstructed from current state. */
   readonly brainEvaluation?: BrainDecisionEvidence;
+  /** Paired forward-only champion/challenger evidence. Never grants execution authority. */
+  readonly brainComparison?: BrainComparisonEvidence;
   /** @deprecated Compatibility field. Prefer brainEvaluation.brainVersion. */
   readonly brainVersion?: string;
   readonly regimeVersion?: string;
