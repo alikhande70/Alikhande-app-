@@ -45,7 +45,8 @@ export class BrainSnapshotInvariantError extends Error {
 }
 
 function nonEmpty(value: string, field: string): void {
-  if (value.trim().length === 0) throw new BrainSnapshotInvariantError(`${field} must not be empty`);
+  if (value.trim().length === 0)
+    throw new BrainSnapshotInvariantError(`${field} must not be empty`);
 }
 
 function finiteTime(value: number, field: string): void {
@@ -58,7 +59,8 @@ function uniqueStrings(values: readonly string[], field: string): readonly strin
   const seen = new Set<string>();
   for (const value of values) {
     nonEmpty(value, field);
-    if (seen.has(value)) throw new BrainSnapshotInvariantError(`${field} contains duplicate '${value}'`);
+    if (seen.has(value))
+      throw new BrainSnapshotInvariantError(`${field} contains duplicate '${value}'`);
     seen.add(value);
   }
   return [...seen].sort();
@@ -97,7 +99,9 @@ export function withBrainDecisionEvidence(input: {
   finiteTime(knowledgeCutoff, 'knowledgeCutoff');
 
   if (evaluation.asOf !== snapshot.asOf || extraction.vector.asOf !== snapshot.asOf) {
-    throw new BrainSnapshotInvariantError('Brain, feature vector and decision snapshot asOf must match');
+    throw new BrainSnapshotInvariantError(
+      'Brain, feature vector and decision snapshot asOf must match',
+    );
   }
   if (knowledgeCutoff < snapshot.asOf) {
     throw new BrainSnapshotInvariantError('knowledgeCutoff cannot precede decision snapshot asOf');
@@ -106,7 +110,9 @@ export function withBrainDecisionEvidence(input: {
     throw new BrainSnapshotInvariantError('Brain and feature extraction versions do not match');
   }
   if (snapshot.brainVersion !== undefined && snapshot.brainVersion !== evaluation.brainVersion) {
-    throw new BrainSnapshotInvariantError('legacy brainVersion conflicts with deterministic evaluation');
+    throw new BrainSnapshotInvariantError(
+      'legacy brainVersion conflicts with deterministic evaluation',
+    );
   }
 
   const evidenceKeys = new Set<string>();
@@ -120,13 +126,19 @@ export function withBrainDecisionEvidence(input: {
     finiteTime(item.validAt, `feature '${item.featureKey}' validAt`);
     finiteTime(item.recordedAt, `feature '${item.featureKey}' recordedAt`);
     if (item.recordedAt < item.validAt) {
-      throw new BrainSnapshotInvariantError(`feature '${item.featureKey}' was recorded before validAt`);
+      throw new BrainSnapshotInvariantError(
+        `feature '${item.featureKey}' was recorded before validAt`,
+      );
     }
     if (item.validAt > snapshot.asOf) {
-      throw new BrainSnapshotInvariantError(`feature '${item.featureKey}' is future market evidence`);
+      throw new BrainSnapshotInvariantError(
+        `feature '${item.featureKey}' is future market evidence`,
+      );
     }
     if (item.recordedAt > knowledgeCutoff) {
-      throw new BrainSnapshotInvariantError(`feature '${item.featureKey}' was learned after knowledgeCutoff`);
+      throw new BrainSnapshotInvariantError(
+        `feature '${item.featureKey}' was learned after knowledgeCutoff`,
+      );
     }
     if (!Number.isFinite(item.rawValue)) {
       throw new BrainSnapshotInvariantError(`feature '${item.featureKey}' rawValue must be finite`);
@@ -147,19 +159,29 @@ export function withBrainDecisionEvidence(input: {
   const extractionMissing = uniqueStrings(extraction.missing, 'feature extraction missing');
   for (const missing of extractionMissing) {
     if (evidenceKeys.has(missing)) {
-      throw new BrainSnapshotInvariantError(`feature '${missing}' cannot be both evidence and missing`);
+      throw new BrainSnapshotInvariantError(
+        `feature '${missing}' cannot be both evidence and missing`,
+      );
     }
     if (extraction.vector.values[missing] !== undefined) {
-      throw new BrainSnapshotInvariantError(`missing feature '${missing}' unexpectedly has a vector value`);
+      throw new BrainSnapshotInvariantError(
+        `missing feature '${missing}' unexpectedly has a vector value`,
+      );
     }
   }
 
   let brainEvaluation: BrainDecisionEvidence;
   if (evaluation.status === 'scored') {
     if (extractionMissing.length > 0) {
-      throw new BrainSnapshotInvariantError('a scored Brain result cannot hide missing extracted features');
+      throw new BrainSnapshotInvariantError(
+        'a scored Brain result cannot hide missing extracted features',
+      );
     }
-    if (!Number.isFinite(evaluation.score.value) || evaluation.score.value < 0 || evaluation.score.value > 100) {
+    if (
+      !Number.isFinite(evaluation.score.value) ||
+      evaluation.score.value < 0 ||
+      evaluation.score.value > 100
+    ) {
       throw new BrainSnapshotInvariantError('Brain score must be finite and inside 0..100');
     }
     brainEvaluation = {
@@ -177,10 +199,14 @@ export function withBrainDecisionEvidence(input: {
   } else {
     const evaluationMissing = uniqueStrings(evaluation.missing, 'Brain missing feature');
     if (evaluationMissing.length === 0) {
-      throw new BrainSnapshotInvariantError('insufficient-data requires at least one missing feature');
+      throw new BrainSnapshotInvariantError(
+        'insufficient-data requires at least one missing feature',
+      );
     }
     if (!sameStrings(evaluationMissing, extractionMissing)) {
-      throw new BrainSnapshotInvariantError('Brain missing features differ from feature extraction evidence');
+      throw new BrainSnapshotInvariantError(
+        'Brain missing features differ from feature extraction evidence',
+      );
     }
     brainEvaluation = {
       status: 'insufficient-data',
