@@ -2,7 +2,7 @@
 
 Date: 2026-08-29  
 Branch: `gpt/trading-brain-build`  
-Verified implementation head: `1a26d154b81a36d3f09c2edcede90ff2fde1548a`
+Verified implementation head: `2268b8dc54f3a0bce03ce5229ee8d68f091ce716`
 
 ## Purpose
 
@@ -14,13 +14,15 @@ This milestone adds a conservative, deterministic dependence boundary before pai
 
 ### Deterministic market episodes
 
-`@keel/brain/dependence-guard` now groups durable scan evidence by canonical instrument and ledger knowledge-time.
+`@keel/brain/dependence-guard` now groups durable scan evidence by canonical instrument and market observation time (`observedAt`). Ledger knowledge-time (`knownAt`) is retained separately for bitemporal validity and pre-registration eligibility.
 
 - Episode membership is deterministic and independent of input ordering.
 - Only consecutive scans for the same canonical instrument may share an episode.
-- A new episode starts when the fixed time gap is exceeded.
+- A new episode starts when the fixed market-time gap is exceeded.
 - Simultaneous scans on different canonical instruments remain distinct episodes.
-- Duplicate Mission identities, missing canonical identity, impossible timestamps and invalid policy fail closed.
+- Delayed ingestion/replay cannot split one underlying market wave into several apparently independent episodes because clustering does **not** use `knownAt`.
+- `observedAt > knownAt` is impossible bitemporal evidence and fails closed.
+- Duplicate Mission identities, missing canonical identity, malformed timestamps and invalid policy fail closed.
 - The report preserves raw scan count while exposing a conservative `effectiveEvidenceUnits` count equal to the number of market episodes.
 - The implementation explicitly does **not** claim this count is an estimated statistical Neff or that separated episodes are mathematically independent. It is a readiness guard against the simpler and dangerous error of treating repeated scans in one move as independent samples.
 
@@ -29,6 +31,8 @@ This milestone adds a conservative, deterministic dependence boundary before pai
 `@keel/brain/dependence-aware-evaluation` composes the existing fixed-look durable evaluation with the episode guard.
 
 The episode gap and minimum independent episode count live inside the analysis plan. They are therefore fixed before forward evidence instead of being tuned after outcomes are visible.
+
+Ledger `knownAt` still determines whether a Scan was actually known inside the pre-registered analysis window. After that eligibility decision, market `observedAt` determines episode adjacency. This keeps the two time domains separate instead of overloading one timestamp for both leakage control and market dependence.
 
 The episode report remains hidden while the pre-registered analysis window is open. Once the fixed analysis cutoff is reached, a large raw sample from one continuing episode cannot make the top-level paired result `ready`; the result remains `insufficient-data` with a machine-readable reason.
 
@@ -54,7 +58,9 @@ The Desk durable population already carries canonical instrument identity. The d
 Tests now cover:
 
 - twenty tightly repeated same-symbol scans collapsing to one conservative evidence unit;
-- separate instruments at the same timestamp remaining separate episodes;
+- delayed ledger ingestion separated by large `knownAt` gaps still remaining one episode when `observedAt` shows one continuing market wave;
+- impossible `observedAt > knownAt` ordering failing closed;
+- separate instruments at the same market timestamp remaining separate episodes;
 - deterministic grouping under input reordering;
 - duplicate Mission inflation refusal;
 - invalid pre-registered episode policy refusal;
@@ -69,7 +75,7 @@ The first CI attempt failed only on Biome import ordering/formatting in the new 
 
 A later self-audit change initially failed on one Biome line-wrap difference in `paired-inference.ts`. The exact formatter output was applied. No statistical or safety rule was relaxed.
 
-Final implementation head `1a26d154b81a36d3f09c2edcede90ff2fde1548a` passed the repository `verify` workflow, including lint, TypeScript typecheck and the full test suite.
+A final bitemporal self-audit changed episode adjacency from ledger `knownAt` to market `observedAt`, while preserving `knownAt` for pre-registration eligibility and adding an impossible-clock refusal test. Final implementation head `2268b8dc54f3a0bce03ce5229ee8d68f091ce716` passed the repository `verify` workflow, including lint, TypeScript typecheck and the full test suite.
 
 ## Verification ladder update
 
@@ -78,7 +84,8 @@ Final implementation head `1a26d154b81a36d3f09c2edcede90ff2fde1548a` passed the 
 | Immutable scan denominator | PASS | Durable Desk population includes all internal scans, including missing comparison snapshots. |
 | Fixed-look / optional stopping guard | PASS | Pre-registered analysis cutoff prevents repeated-look evidence growth. |
 | Raw pairing coverage | PASS | Missing Challenger comparison remains in the denominator. |
-| Market-episode dependence guard | PASS — repository level | Same-instrument temporally adjacent scans cannot satisfy readiness as independent evidence. |
+| Bitemporal episode axes | PASS | `knownAt` controls evidence availability; `observedAt` controls market episode adjacency; impossible ordering fails closed. |
+| Market-episode dependence guard | PASS — repository level | Same-instrument temporally adjacent market observations cannot satisfy readiness as independent evidence. |
 | Decisive-evidence episode guard | PASS — repository level | Directional inference-driving Missions must independently satisfy episode readiness. |
 | Statistical model under residual cross-episode dependence | OPEN | Episode separation is a conservative gate, not proof of independence; cluster-balanced/robust uncertainty remains the next statistical hardening target. |
 | ADR-0020 validated memory | BLOCKED BY DESIGN | Memory remains deferred until evaluation evidence is sufficiently hardened and validated. |
