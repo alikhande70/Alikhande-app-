@@ -170,12 +170,12 @@ function routeFailure(reply: FastifyReply, error: unknown): Record<string, unkno
 /**
  * Register the durable ADR-0018 command surface.
  *
- * These routes deliberately sit beside the legacy /orders endpoint while the
- * Android/Windows clients migrate. A mission-bound order can only enter the
- * execution supervisor through MissionExecutionCoordinator, which persists the
- * ownership claim before the intent is created and repairs a crash-gap link on
- * restart. The legacy endpoint remains compatibility-only and is not used by
- * this spine.
+ * A mission-bound order can only enter the execution supervisor through
+ * MissionExecutionCoordinator, which persists the ownership claim before the
+ * intent is created and repairs a crash-gap link on restart. The old POST
+ * /orders handler still exists lower in server.ts only as dead compatibility
+ * code until it can be physically removed; the pre-handler below tombstones it
+ * with 410 before it can reach ExecutionSupervisor.
  */
 export function registerMissionRoutes(
   app: FastifyInstance,
@@ -185,6 +185,21 @@ export function registerMissionRoutes(
 ): void {
   const runtime = deps.missions;
   if (runtime === undefined) return;
+
+  // ADR-0018 exit gate: once the real Desk has MissionRuntime, a new order
+  // without a mission is not a valid operation. Keep the historical route
+  // unreachable rather than silently accepting an old Android/Desktop build.
+  app.addHook('preHandler', async (req, reply) => {
+    const path = req.url.split('?')[0] ?? req.url;
+    if (req.method !== 'POST' || path !== '/orders') return;
+    return reply.status(410).send({
+      code: 'MISSION_REQUIRED',
+      title: 'Mission-less order submission is retired',
+      detail: 'Create or select a Trade Mission and submit through /missions/:missionId/orders.',
+      retryable: false,
+      outcomeUnknown: false,
+    });
+  });
 
   const execution = new MissionExecutionCoordinator(deps.ledger, runtime.missions, deps.supervisor);
   const repaired = execution.recoverPendingLinks();
