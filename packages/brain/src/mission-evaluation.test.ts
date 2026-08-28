@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { evaluateScanPopulation } from './evaluation.js';
 import {
-  projectDurableMissionsForEvaluation,
   type DurableMissionForEvaluation,
+  projectDurableMissionsForEvaluation,
   type VersionedMarketOutcomeLabel,
 } from './mission-evaluation.js';
 
