@@ -58,6 +58,15 @@ function validateObservation(observation: MarketCloseObservation): void {
   if (observation.close <= 0) throw new Error('market.close must be greater than zero');
 }
 
+function classifyDirection(
+  counterfactualR: number,
+  flatThresholdR: number,
+): VersionedMarketOutcomeLabel['directional'] {
+  if (Math.abs(counterfactualR) <= flatThresholdR) return 'flat';
+  if (counterfactualR > 0) return 'favourable';
+  return 'unfavourable';
+}
+
 /**
  * Build an ADR-0021 future-outcome label from one fixed, versioned horizon.
  *
@@ -92,20 +101,13 @@ export function buildFixedHorizonOutcomeLabel(
   const counterfactualR = signedMove / seed.riskDistance;
   requireFinite('counterfactualR', counterfactualR);
 
-  const directional =
-    Math.abs(counterfactualR) <= policy.flatThresholdR
-      ? 'flat'
-      : counterfactualR > 0
-        ? 'favourable'
-        : 'unfavourable';
-
   return {
     labelVersion: policy.labelVersion,
     missionId: seed.missionId,
     decisionKnowledgeTime: seed.decisionKnowledgeTime,
     validAt: observation.validAt,
     recordedAt: observation.recordedAt,
-    directional,
+    directional: classifyDirection(counterfactualR, policy.flatThresholdR),
     counterfactualR,
   };
 }
