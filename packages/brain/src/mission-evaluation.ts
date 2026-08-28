@@ -73,7 +73,8 @@ function decisionFromDurable(
   decision: DurableBrainDecisionForEvaluation,
   label: string,
 ): ScanDecisionEvidence['decision'] {
-  if (decision.brainVersion.trim().length === 0) throw new Error(`${label} Brain version is required`);
+  if (decision.brainVersion.trim().length === 0)
+    throw new Error(`${label} Brain version is required`);
   requireFiniteTimestamp(`${label}.knowledgeCutoff`, decision.knowledgeCutoff);
   if (decision.decisionAsOf !== undefined) {
     requireFiniteTimestamp(`${label}.decisionAsOf`, decision.decisionAsOf);
@@ -83,7 +84,12 @@ function decisionFromDurable(
   }
 
   if (decision.status === 'scored') {
-    if (decision.score === undefined || !Number.isFinite(decision.score) || decision.score < 0 || decision.score > 100) {
+    if (
+      decision.score === undefined ||
+      !Number.isFinite(decision.score) ||
+      decision.score < 0 ||
+      decision.score > 100
+    ) {
       throw new Error(`${label} score must be finite and in [0,100]`);
     }
     return { status: 'scored', score: decision.score };
@@ -102,7 +108,10 @@ function sameDecision(
   if (left.status !== right.status) return false;
   if (left.status === 'scored' && right.status === 'scored') return left.score === right.score;
   if (left.status === 'insufficient-data' && right.status === 'insufficient-data') {
-    return left.missing.length === right.missing.length && left.missing.every((value, index) => value === right.missing[index]);
+    return (
+      left.missing.length === right.missing.length &&
+      left.missing.every((value, index) => value === right.missing[index])
+    );
   }
   return false;
 }
@@ -228,7 +237,8 @@ export function projectDurableMissionsForPairedEvaluation(
     }
     missionIds.add(mission.missionId);
     if (mission.missionId.trim().length === 0) throw new Error('missionId is required');
-    if (mission.scanConfigVersion.trim().length === 0) throw new Error('scanConfigVersion is required');
+    if (mission.scanConfigVersion.trim().length === 0)
+      throw new Error('scanConfigVersion is required');
 
     const snapshot = mission.decisionSnapshot;
     if (snapshot?.brainEvaluation === undefined || snapshot.brainComparison === undefined) {
@@ -253,28 +263,38 @@ export function projectDurableMissionsForPairedEvaluation(
       requireContentHash('comparison evaluation hash', entry.contentHash);
       requireFiniteTimestamp('comparison evaluation createdAt', entry.createdAt);
       if (seenHashes.has(entry.contentHash)) {
-        throw new Error(`mission '${mission.missionId}' repeats Brain content '${entry.contentHash}'`);
+        throw new Error(
+          `mission '${mission.missionId}' repeats Brain content '${entry.contentHash}'`,
+        );
       }
       seenHashes.add(entry.contentHash);
       if (entry.evaluation.knowledgeCutoff !== comparison.missionKnowledgeTime) {
-        throw new Error(`mission '${mission.missionId}' paired evaluation uses a different knowledge cutoff`);
+        throw new Error(
+          `mission '${mission.missionId}' paired evaluation uses a different knowledge cutoff`,
+        );
       }
       if (entry.createdAt > comparison.missionKnowledgeTime) {
-        throw new Error(`mission '${mission.missionId}' uses Brain content created after the decision cutoff`);
+        throw new Error(
+          `mission '${mission.missionId}' uses Brain content created after the decision cutoff`,
+        );
       }
       decisionFromDurable(entry.evaluation, `${entry.role} evaluation`);
 
       if (entry.role === 'champion') {
-        if (champion !== undefined) throw new Error(`mission '${mission.missionId}' has multiple champions`);
+        if (champion !== undefined)
+          throw new Error(`mission '${mission.missionId}' has multiple champions`);
         champion = entry;
       } else {
         challengers.push(entry);
       }
     }
 
-    if (champion === undefined) throw new Error(`mission '${mission.missionId}' has no champion evaluation`);
+    if (champion === undefined)
+      throw new Error(`mission '${mission.missionId}' has no champion evaluation`);
     if (champion.contentHash !== comparison.championHash) {
-      throw new Error(`mission '${mission.missionId}' champion hash does not match durable comparison identity`);
+      throw new Error(
+        `mission '${mission.missionId}' champion hash does not match durable comparison identity`,
+      );
     }
 
     const primaryDecision: ScanDecisionEvidence['decision'] =
@@ -282,13 +302,20 @@ export function projectDurableMissionsForPairedEvaluation(
         ? { status: 'scored', score: snapshot.brainEvaluation.score }
         : { status: 'insufficient-data', missing: snapshot.brainEvaluation.missing };
     const championDecision = decisionFromDurable(champion.evaluation, 'champion evaluation');
-    if (champion.evaluation.brainVersion !== snapshot.brainEvaluation.brainVersion || !sameDecision(championDecision, primaryDecision)) {
-      throw new Error(`mission '${mission.missionId}' champion shadow evidence diverges from primary Brain decision`);
+    if (
+      champion.evaluation.brainVersion !== snapshot.brainEvaluation.brainVersion ||
+      !sameDecision(championDecision, primaryDecision)
+    ) {
+      throw new Error(
+        `mission '${mission.missionId}' champion shadow evidence diverges from primary Brain decision`,
+      );
     }
 
     for (const challenger of challengers) {
       if (comparison.missionKnowledgeTime <= challenger.createdAt) {
-        throw new Error(`mission '${mission.missionId}' is not forward-only evidence for challenger '${challenger.contentHash}'`);
+        throw new Error(
+          `mission '${mission.missionId}' is not forward-only evidence for challenger '${challenger.contentHash}'`,
+        );
       }
       pairs.push({
         missionId: mission.missionId,
