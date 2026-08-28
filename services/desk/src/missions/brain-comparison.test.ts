@@ -1,9 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { Ledger } from '../ledger/ledger.js';
-import {
-  BrainComparisonInvariantError,
-  withBrainComparisonEvidence,
-} from './brain-comparison.js';
+import { BrainComparisonInvariantError, withBrainComparisonEvidence } from './brain-comparison.js';
 import { MissionService } from './service.js';
 import type { BrainContentHash, DecisionSnapshot } from './types.js';
 
@@ -155,9 +152,9 @@ describe('paired champion/challenger Mission evidence', () => {
 
     const planned = missions.plan('mission-paired-1', snapshot, 'brain', 2_005);
     expect(planned.decisionSnapshot?.brainComparison?.evaluations).toHaveLength(2);
-    expect(
-      ledger.readStream('mission-paired-1').some((row) => row.kind === 'intent.created'),
-    ).toBe(false);
+    expect(ledger.readStream('mission-paired-1').some((row) => row.kind === 'intent.created')).toBe(
+      false,
+    );
     expect(Ledger.isDurable('mission.snapshotSealed')).toBe(true);
     expect(ledger.verifyChain().ok).toBe(true);
     ledger.close();
