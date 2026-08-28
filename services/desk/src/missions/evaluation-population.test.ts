@@ -85,6 +85,7 @@ describe('Mission ledger -> ADR-0021 evaluation population', () => {
     expect(population.missions).toHaveLength(1);
     expect(population.missions[0]).toMatchObject({
       missionId: 'mission-scored',
+      canonical: 'XAUUSD',
       scanConfigVersion: 'scan-v7',
       observedAt: 1_000,
       decisionSnapshot: {
