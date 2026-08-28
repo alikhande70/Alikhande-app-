@@ -118,6 +118,15 @@ describe('scan-level evaluator', () => {
     expect(report.outcomes.meanCounterfactualR).toBe(1.2);
   });
 
+  it('fails closed when a scan itself was not yet known at the evaluation cutoff', () => {
+    expect(() =>
+      evaluateScanPopulation(
+        [scan('m1'), scan('future-scan', { knowledgeTime: 10_001, outcome: undefined })],
+        policy,
+      ),
+    ).toThrow(/was not yet known at the evaluation cutoff/);
+  });
+
   it('fails closed on hindsight, impossible bitemporal ordering, and duplicate scans', () => {
     expect(() =>
       evaluateScanPopulation(
