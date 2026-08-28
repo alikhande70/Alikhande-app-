@@ -1,0 +1,186 @@
+import { describe, expect, it } from 'vitest';
+import type { EvaluationPipelineMission } from './evaluation-pipeline.js';
+import type { MarketCloseObservation } from './outcome-labeling.js';
+import {
+  buildDependenceAwarePreRegisteredEvaluation,
+  type DependenceAwareEvaluationPolicy,
+  type DependenceAwareEvaluationPopulation,
+} from './dependence-aware-evaluation.js';
+
+const championHash = `sha256:${'a'.repeat(64)}` as const;
+const challengerHash = `sha256:${'b'.repeat(64)}` as const;
+const challengerCreatedAt = 1_000;
+const analysisCutoff = 2_000;
+
+function mission(missionId: string, knowledgeTime: number): EvaluationPipelineMission {
+  return {
+    missionId,
+    scanConfigVersion: 'scan-v1',
+    observedAt: knowledgeTime - 1,
+    canonical: 'XAUUSD',
+    decisionSnapshot: {
+      asOf: knowledgeTime - 1,
+      plan: { side: 'buy', entry: '2400', stop: '2390' },
+      brainEvaluation: {
+        status: 'scored',
+        brainVersion: 'brain-v1',
+        knowledgeCutoff: knowledgeTime,
+        score: 60,
+      },
+      brainComparison: {
+        missionKnowledgeTime: knowledgeTime,
+        championHash,
+        evaluations: [
+          {
+            contentHash: championHash,
+            role: 'champion',
+            createdAt: 0,
+            evaluation: {
+              status: 'scored',
+              brainVersion: 'brain-v1',
+              knowledgeCutoff: knowledgeTime,
+              score: 60,
+            },
+          },
+          {
+            contentHash: challengerHash,
+            role: 'challenger',
+            createdAt: challengerCreatedAt,
+            evaluation: {
+              status: 'scored',
+              brainVersion: 'brain-v2',
+              knowledgeCutoff: knowledgeTime,
+              score: 80,
+            },
+          },
+        ],
+      },
+    },
+  };
+}
+
+function population(times: readonly number[]): DependenceAwareEvaluationPopulation {
+  const missions = times.map((time, index) => mission(`m${index + 1}`, time));
+  return {
+    missions,
+    pairedEligibility: missions.map((item, index) => ({
+      missionId: item.missionId,
+      canonical: item.canonical,
+      scanConfigVersion: item.scanConfigVersion,
+      observedAt: item.observedAt,
+      knownAt: times[index] ?? 0,
+    })),
+    ledgerHead: { seq: missions.length * 2, hash: 'ledger-head-dependence-test' },
+  };
+}
+
+function observations(times: readonly number[]): MarketCloseObservation[] {
+  return times.map((time) => ({
+    symbol: 'XAUUSD',
+    validAt: time + 100,
+    recordedAt: time + 100,
+    close: 2420,
+  }));
+}
+
+function policy(episodeGapMs: number): DependenceAwareEvaluationPolicy {
+  return {
+    currentKnowledgeCutoff: analysisCutoff,
+    aggregate: {
+      minimumScans: 4,
+      minimumOutcomes: 4,
+      evaluationCutoff: analysisCutoff,
+    },
+    paired: {
+      minimumPairs: 4,
+      minimumFullyScoredPairs: 4,
+      minimumDurationMs: 30,
+      minimumOutcomeCoverage: 1,
+      minimumDirectionalComparisons: 4,
+    },
+    analysisPlan: {
+      planId: 'challenger-b-episode-aware-v1',
+      challengerContentHash: challengerHash,
+      registeredAt: challengerCreatedAt,
+      analysisCutoff,
+      minimumPairingCoverage: 1,
+      dependence: {
+        episodeGapMs,
+        minimumIndependentEpisodes: 2,
+      },
+    },
+  };
+}
+
+describe('dependence-aware pre-registered evaluation', () => {
+  it('blocks readiness when raw paired scans all belong to one continuing market episode', () => {
+    const times = [1_100, 1_110, 1_120, 1_130];
+    const result = buildDependenceAwarePreRegisteredEvaluation(
+      population(times),
+      observations(times),
+      { labelVersion: 'fixed-horizon-v1', horizonMs: 100, flatThresholdR: 0.01 },
+      policy(15),
+    );
+
+    expect(result.paired.status).toBe('insufficient-data');
+    if (result.paired.status === 'analysis-window-open') throw new Error('unreachable');
+    expect(result.paired.observedPairedPopulation).toBe(4);
+    expect(result.paired.inference?.decisiveDirectionalPairs).toBe(4);
+    expect(result.dependence?.rawScanCount).toBe(4);
+    expect(result.dependence?.effectiveEvidenceUnits).toBe(1);
+    expect(result.paired.reasons).toContain('minimum-independent-market-episodes-not-met');
+  });
+
+  it('allows the existing paired gates to decide once scans span enough separated episodes', () => {
+    const times = [1_100, 1_200, 1_300, 1_400];
+    const result = buildDependenceAwarePreRegisteredEvaluation(
+      population(times),
+      observations(times),
+      { labelVersion: 'fixed-horizon-v1', horizonMs: 100, flatThresholdR: 0.01 },
+      policy(50),
+    );
+
+    expect(result.paired.status).toBe('ready');
+    expect(result.dependence?.episodeCount).toBe(4);
+    expect(result.dependence?.largestEpisodeShare).toBe(0.25);
+  });
+
+  it('fails closed if durable eligibility rewrites the canonical instrument identity', () => {
+    const times = [1_100, 1_200, 1_300, 1_400];
+    const base = population(times);
+    const drifted: DependenceAwareEvaluationPopulation = {
+      ...base,
+      pairedEligibility: base.pairedEligibility.map((item) =>
+        item.missionId === 'm1' ? { ...item, canonical: 'EURUSD' } : item,
+      ),
+    };
+
+    expect(() =>
+      buildDependenceAwarePreRegisteredEvaluation(
+        drifted,
+        observations(times),
+        { labelVersion: 'fixed-horizon-v1', horizonMs: 100, flatThresholdR: 0.01 },
+        policy(50),
+      ),
+    ).toThrow(/canonical identity drift/);
+  });
+
+  it('does not reveal episode diagnostics before the fixed analysis window closes', () => {
+    const times = [1_100, 1_200, 1_300, 1_400];
+    const configured = policy(50);
+    const early: DependenceAwareEvaluationPolicy = {
+      ...configured,
+      currentKnowledgeCutoff: 1_500,
+      aggregate: { ...configured.aggregate, evaluationCutoff: 1_500 },
+    };
+    const result = buildDependenceAwarePreRegisteredEvaluation(
+      population(times),
+      observations(times),
+      { labelVersion: 'fixed-horizon-v1', horizonMs: 100, flatThresholdR: 0.01 },
+      early,
+    );
+
+    expect(result.paired.status).toBe('analysis-window-open');
+    expect(result.dependence).toBeNull();
+  });
+});
