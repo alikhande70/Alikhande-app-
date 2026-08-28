@@ -35,6 +35,8 @@ export interface DependenceAwareEvaluationPolicy
 export interface DependenceAwareEvaluationResult extends PreRegisteredEvaluationResult {
   /** Hidden while the fixed analysis window is still open. */
   readonly dependence: ScanDependenceReport | null;
+  /** Same guard restricted to the Mission IDs that actually drive directional inference. */
+  readonly directionalDependence: ScanDependenceReport | null;
 }
 
 function validateCanonicalIdentity(population: DependenceAwareEvaluationPopulation): void {
@@ -58,8 +60,9 @@ function validateCanonicalIdentity(population: DependenceAwareEvaluationPopulati
  * scan identity, canonical instrument and ledger knowledge-time. A large number of scans in
  * one continuing market episode can therefore never make the overall paired result `ready`.
  *
- * The nested scan-level inference is retained as a diagnostic and must not be interpreted as
- * promotion eligibility when the returned paired status is `insufficient-data`.
+ * Both the full eligible population and the subset that actually drives directional inference
+ * must span the pre-registered minimum number of episodes. This prevents many quiet/tied scans
+ * from disguising the fact that all decisive evidence came from one market move.
  */
 export function buildDependenceAwarePreRegisteredEvaluation(
   population: DependenceAwareEvaluationPopulation,
@@ -76,28 +79,40 @@ export function buildDependenceAwarePreRegisteredEvaluation(
   );
 
   if (base.paired.status === 'analysis-window-open') {
-    return { ...base, dependence: null };
+    return { ...base, dependence: null, directionalDependence: null };
   }
 
   const plan = policy.analysisPlan;
   const eligible = population.pairedEligibility.filter(
     (item) => item.knownAt > plan.registeredAt && item.knownAt <= plan.analysisCutoff,
   );
-  const dependence = buildScanDependenceReport(
-    eligible.map((item) => ({
-      missionId: item.missionId,
-      canonical: item.canonical,
-      knownAt: item.knownAt,
-    })),
+  const dependenceEvidence = eligible.map((item) => ({
+    missionId: item.missionId,
+    canonical: item.canonical,
+    knownAt: item.knownAt,
+  }));
+  const dependence = buildScanDependenceReport(dependenceEvidence, plan.dependence);
+  const decisiveIds = new Set(base.paired.inference?.decisiveDirectionalMissionIds ?? []);
+  const directionalDependence = buildScanDependenceReport(
+    dependenceEvidence.filter((item) => decisiveIds.has(item.missionId)),
     plan.dependence,
   );
 
-  if (dependence.status === 'ready') return { ...base, dependence };
+  if (dependence.status === 'ready' && directionalDependence.status === 'ready') {
+    return { ...base, dependence, directionalDependence };
+  }
 
-  const reasons = [...new Set([...base.paired.reasons, ...dependence.reasons])];
+  const reasons = [
+    ...new Set([
+      ...base.paired.reasons,
+      ...dependence.reasons,
+      ...directionalDependence.reasons.map((reason) => `directional-${reason}`),
+    ]),
+  ];
   return {
     ...base,
     dependence,
+    directionalDependence,
     paired: {
       ...base.paired,
       status: 'insufficient-data',
