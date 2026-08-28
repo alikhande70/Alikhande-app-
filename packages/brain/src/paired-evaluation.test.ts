@@ -8,7 +8,11 @@ import {
 const championHash = `sha256:${'a'.repeat(64)}`;
 const challengerHash = `sha256:${'b'.repeat(64)}`;
 const challengerCreatedAt = 1_000;
-const policy: PairedEvaluationPolicy = { minimumPairs: 2, minimumDurationMs: 100 };
+const policy: PairedEvaluationPolicy = {
+  minimumPairs: 2,
+  minimumFullyScoredPairs: 1,
+  minimumDurationMs: 100,
+};
 
 function pair(
   missionId: string,
@@ -72,9 +76,29 @@ describe('forward-only paired evaluation cohort', () => {
     expect(report.pairsWithInsufficientData).toBe(1);
   });
 
+  it('does not become ready when population exists but no pair is fully scored', () => {
+    const missingChallenger = {
+      brainContentHash: challengerHash,
+      brainVersion: 'brain-v2',
+      decision: { status: 'insufficient-data' as const, missing: ['spread'] },
+    };
+    const report = buildForwardPairedCohort(
+      [
+        pair('m1', 1_100, { challenger: missingChallenger }),
+        pair('m2', 1_250, { challenger: missingChallenger }),
+      ],
+      policy,
+    );
+
+    expect(report.status).toBe('insufficient-data');
+    expect(report.reasons).toContain('minimum-fully-scored-pairs-not-met');
+    expect(report.fullyScoredPairs).toBe(0);
+  });
+
   it('returns insufficient-data when sample or duration gates are not met', () => {
     const report = buildForwardPairedCohort([pair('m1', 1_010), pair('m2', 1_020)], {
       minimumPairs: 3,
+      minimumFullyScoredPairs: 2,
       minimumDurationMs: 100,
     });
 
