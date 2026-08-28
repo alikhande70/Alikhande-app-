@@ -90,8 +90,15 @@ describe('buildMissionEvaluationPipeline', () => {
   });
 
   it('surfaces missing directional plans without manufacturing counterfactuals', () => {
+    const withoutPlan = mission('m-1', 1_000);
     const result = buildMissionEvaluationPipeline(
-      [mission('m-1', 1_000, undefined), mission('m-2', 1_100)],
+      [
+        {
+          ...withoutPlan,
+          decisionSnapshot: { ...withoutPlan.decisionSnapshot, plan: undefined },
+        },
+        mission('m-2', 1_100),
+      ],
       [market(1_400, 103)],
       outcomePolicy,
       evaluationPolicy,
