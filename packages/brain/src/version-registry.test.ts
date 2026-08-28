@@ -1,10 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import type { BrainVersion } from './index.js';
 import {
-  comparisonWindowForMission,
-  isForwardPromotionEvidence,
   type BrainVersionRecord,
   type BrainVersionRegistry,
+  comparisonWindowForMission,
+  isForwardPromotionEvidence,
   validateVersionRegistry,
 } from './version-registry.js';
 
@@ -33,7 +33,9 @@ const challenger: BrainVersionRecord = {
   hypothesisId: 'hypothesis-trend-001',
 };
 
-function registry(records: readonly BrainVersionRecord[] = [champion, challenger]): BrainVersionRegistry {
+function registry(
+  records: readonly BrainVersionRecord[] = [champion, challenger],
+): BrainVersionRegistry {
   return { championHash: champion.contentHash, records };
 }
 
@@ -52,9 +54,7 @@ describe('Brain champion/challenger registry', () => {
     const after = comparisonWindowForMission(registry(), challenger.createdAt + 1);
 
     expect(after.champion.contentHash).toBe(champion.contentHash);
-    expect(after.challengers.map((record) => record.contentHash)).toEqual([
-      challenger.contentHash,
-    ]);
+    expect(after.challengers.map((record) => record.contentHash)).toEqual([challenger.contentHash]);
     expect(isForwardPromotionEvidence(challenger, challenger.createdAt + 1)).toBe(true);
   });
 
@@ -75,9 +75,7 @@ describe('Brain champion/challenger registry', () => {
 
   it('fails closed for ambiguous champion or duplicate immutable identities', () => {
     expect(() =>
-      validateVersionRegistry(
-        registry([{ ...champion, role: 'challenger' }, challenger]),
-      ),
+      validateVersionRegistry(registry([{ ...champion, role: 'challenger' }, challenger])),
     ).toThrow(/exactly one champion/);
 
     expect(() =>
