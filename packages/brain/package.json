@@ -26,6 +26,10 @@
       "types": "./dist/evaluation-pipeline.d.ts",
       "default": "./dist/evaluation-pipeline.js"
     },
+    "./feature-strata-guard": {
+      "types": "./dist/feature-strata-guard.d.ts",
+      "default": "./dist/feature-strata-guard.js"
+    },
     "./longitudinal-maturity": {
       "types": "./dist/longitudinal-maturity.d.ts",
       "default": "./dist/longitudinal-maturity.js"
@@ -45,6 +49,10 @@
     "./pre-registered-evaluation": {
       "types": "./dist/pre-registered-evaluation.d.ts",
       "default": "./dist/pre-registered-evaluation.js"
+    },
+    "./strata-aware-evaluation": {
+      "types": "./dist/strata-aware-evaluation.d.ts",
+      "default": "./dist/strata-aware-evaluation.js"
     }
   },
   "scripts": {
