@@ -1,14 +1,14 @@
 import { DesktopDeskClient } from './client.js';
 import { DesktopMissionOperator } from './mission-operator.js';
-import { DesktopMissionRealtime, type DesktopWebSocketLike } from './realtime.js';
 import {
   DesktopMissionTruth,
   type DesktopMissionView,
   type MissionTruthState,
 } from './mission-truth.js';
+import { DesktopMissionRealtime, type DesktopWebSocketLike } from './realtime.js';
 import {
-  WindowsProtectedSigner,
   type WindowsNativeEd25519Bridge,
+  WindowsProtectedSigner,
   type WindowsSignerMetadataStore,
 } from './windows-signer.js';
 
