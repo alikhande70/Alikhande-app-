@@ -148,7 +148,8 @@ function validateEligibility(
 ): void {
   const byMissionId = new Map<string, DurablePairedEligibility>();
   for (const item of eligibility) {
-    if (item.missionId.trim().length === 0) throw new Error('paired eligibility missionId is required');
+    if (item.missionId.trim().length === 0)
+      throw new Error('paired eligibility missionId is required');
     if (item.scanConfigVersion.trim().length === 0)
       throw new Error(`paired eligibility scanConfigVersion is required for '${item.missionId}'`);
     requireTimestamp('paired eligibility observedAt', item.observedAt);
@@ -241,7 +242,8 @@ function composePreRegisteredEvaluation(
   const eligibleIds = new Set(eligible.map((item) => item.missionId));
   const pairedMissions = missions.filter(
     (mission) =>
-      eligibleIds.has(mission.missionId) && hasTargetChallenger(mission, plan.challengerContentHash),
+      eligibleIds.has(mission.missionId) &&
+      hasTargetChallenger(mission, plan.challengerContentHash),
   );
   const pairedIds = new Set(pairedMissions.map((mission) => mission.missionId));
   const missingPairedMissionIds = eligible
