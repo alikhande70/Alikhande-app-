@@ -146,7 +146,7 @@ function validateEligibility(
   eligibility: readonly DurablePairedEligibility[],
   missions: readonly EvaluationPipelineMission[],
 ): void {
-  const seen = new Set<string>();
+  const byMissionId = new Map<string, DurablePairedEligibility>();
   for (const item of eligibility) {
     if (item.missionId.trim().length === 0) throw new Error('paired eligibility missionId is required');
     if (item.scanConfigVersion.trim().length === 0)
@@ -156,13 +156,22 @@ function validateEligibility(
     if (item.knownAt < item.observedAt) {
       throw new Error(`paired eligibility '${item.missionId}' was known before it was valid`);
     }
-    if (seen.has(item.missionId)) throw new Error(`duplicate paired eligibility '${item.missionId}'`);
-    seen.add(item.missionId);
+    if (byMissionId.has(item.missionId)) {
+      throw new Error(`duplicate paired eligibility '${item.missionId}'`);
+    }
+    byMissionId.set(item.missionId, item);
   }
 
   for (const mission of missions) {
-    if (!seen.has(mission.missionId)) {
+    const item = byMissionId.get(mission.missionId);
+    if (item === undefined) {
       throw new Error(`evaluated mission '${mission.missionId}' is absent from paired eligibility`);
+    }
+    if (item.scanConfigVersion !== mission.scanConfigVersion) {
+      throw new Error(`paired eligibility scan configuration drift for '${mission.missionId}'`);
+    }
+    if (item.observedAt !== mission.observedAt) {
+      throw new Error(`paired eligibility observation-time drift for '${mission.missionId}'`);
     }
   }
 }
@@ -224,6 +233,11 @@ function composePreRegisteredEvaluation(
   const eligible = eligibility.filter(
     (item) => item.knownAt > plan.registeredAt && item.knownAt <= plan.analysisCutoff,
   );
+  const eligibleScanConfigs = new Set(eligible.map((item) => item.scanConfigVersion));
+  if (eligibleScanConfigs.size > 1) {
+    throw new Error('paired eligibility requires one scan configuration cohort');
+  }
+
   const eligibleIds = new Set(eligible.map((item) => item.missionId));
   const pairedMissions = missions.filter(
     (mission) =>
