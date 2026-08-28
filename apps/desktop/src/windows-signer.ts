@@ -91,6 +91,34 @@ export class WindowsProtectedSigner implements DesktopSigner {
     private readonly metadata: WindowsSignerMetadata,
   ) {}
 
+  /**
+   * Restore an identity that has already been paired with the Desk.
+   *
+   * This path never generates a key. Runtime bootstrap must use it so missing
+   * local identity cannot silently become a different key while the Desk still
+   * trusts the old public key.
+   */
+  static async restore(options: {
+    readonly bridge: WindowsNativeEd25519Bridge;
+    readonly store: WindowsSignerMetadataStore;
+  }): Promise<WindowsProtectedSigner> {
+    const existing = parseMetadata(await options.store.load());
+    if (existing === undefined) {
+      throw new Error('Windows signer metadata is missing; explicit pairing is required');
+    }
+    if (!(await options.bridge.hasKey(existing.keyName))) {
+      throw new Error(
+        'Windows signer metadata exists but its native private key is missing; explicit re-pairing is required',
+      );
+    }
+    return new WindowsProtectedSigner(options.bridge, existing);
+  }
+
+  /**
+   * First-time local provisioning helper. Pairing code may use this before the
+   * public key is enrolled with the Desk; normal runtime bootstrap must use
+   * restore() instead.
+   */
   static async restoreOrProvision(options: {
     readonly bridge: WindowsNativeEd25519Bridge;
     readonly store: WindowsSignerMetadataStore;
