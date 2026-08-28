@@ -106,8 +106,8 @@ describe('ADR-0019 point-in-time feature extraction', () => {
         observation('trendStrength', 0.7, 900, 900),
         observation('spreadBps', 3, 900, 900),
       ],
-      decisionAsOf: 10_000,
-      knowledgeCutoff: 10_000,
+      decisionAsOf: 100_000,
+      knowledgeCutoff: 100_000,
     });
 
     expect(result.missing).toEqual(['spread', 'trend']);
