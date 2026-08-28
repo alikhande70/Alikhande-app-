@@ -15,7 +15,7 @@ async function signedCall(
   path: string,
   body?: unknown,
   commandNonce?: string,
-): Promise<{ status: number; json: Record<string, unknown> }> {
+): Promise<{ status: number; json: unknown }> {
   const text = body === undefined ? '' : JSON.stringify(body);
   const request = {
     method,
@@ -43,7 +43,7 @@ async function signedCall(
   });
   return {
     status: response.status,
-    json: (await response.json()) as Record<string, unknown>,
+    json: (await response.json()) as unknown,
   };
 }
 
@@ -81,7 +81,7 @@ afterAll(async () => {
 describe('ADR-0018 missionless order retirement', () => {
   it('returns 410 before the legacy handler can create an intent', async () => {
     const nonceResponse = await signedCall('GET', '/command-nonce');
-    const commandNonce = nonceResponse.json.nonce as string;
+    const commandNonce = (nonceResponse.json as Record<string, unknown>).nonce as string;
     const intentId = randomUUID();
 
     const response = await signedCall(
@@ -99,13 +99,16 @@ describe('ADR-0018 missionless order retirement', () => {
       commandNonce,
     );
 
+    const problem = response.json as Record<string, unknown>;
     expect(response.status).toBe(410);
-    expect(response.json.code).toBe('MISSION_REQUIRED');
-    expect(response.json.outcomeUnknown).toBe(false);
+    expect(problem.code).toBe('MISSION_REQUIRED');
+    expect(problem.outcomeUnknown).toBe(false);
 
-    const row = desk.ledger.db
-      .prepare("SELECT COUNT(*) AS count FROM ledger WHERE stream = ? AND kind = 'intent.created'")
-      .get(intentId) as { count: number };
-    expect(row.count).toBe(0);
+    // Verify through the same authenticated truth surface clients use. The
+    // retired command must not leave behind even a projected order/intent.
+    const ordersResponse = await signedCall('GET', '/orders');
+    expect(ordersResponse.status).toBe(200);
+    const orders = ordersResponse.json as Array<Record<string, unknown>>;
+    expect(orders.some((order) => order.intentId === intentId)).toBe(false);
   });
 });
