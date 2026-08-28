@@ -172,10 +172,10 @@ function routeFailure(reply: FastifyReply, error: unknown): Record<string, unkno
  *
  * A mission-bound order can only enter the execution supervisor through
  * MissionExecutionCoordinator, which persists the ownership claim before the
- * intent is created and repairs a crash-gap link on restart. The old POST
- * /orders handler still exists lower in server.ts only as dead compatibility
- * code until it can be physically removed; the pre-handler below tombstones it
- * with 410 before it can reach ExecutionSupervisor.
+ * intent is created and repairs a crash-gap link on restart. Mission-less
+ * POST /orders is tombstoned unconditionally, including isolated server
+ * fixtures where MissionRuntime is absent, so configuration cannot re-enable
+ * the historical direct-to-supervisor path.
  */
 export function registerMissionRoutes(
   app: FastifyInstance,
@@ -183,12 +183,9 @@ export function registerMissionRoutes(
   parseSubmit: SubmitParser,
   outcomeToWire: OutcomeWire,
 ): void {
-  const runtime = deps.missions;
-  if (runtime === undefined) return;
-
-  // ADR-0018 exit gate: once the real Desk has MissionRuntime, a new order
-  // without a mission is not a valid operation. Keep the historical route
-  // unreachable rather than silently accepting an old Android/Desktop build.
+  // ADR-0018 exit gate: a new order without a Mission is never a valid
+  // operation. Install this before examining optional MissionRuntime so an
+  // isolated/legacy server configuration cannot resurrect the old route.
   app.addHook('preHandler', async (req, reply) => {
     const path = req.url.split('?')[0] ?? req.url;
     if (req.method !== 'POST' || path !== '/orders') return;
@@ -200,6 +197,9 @@ export function registerMissionRoutes(
       outcomeUnknown: false,
     });
   });
+
+  const runtime = deps.missions;
+  if (runtime === undefined) return;
 
   const execution = new MissionExecutionCoordinator(deps.ledger, runtime.missions, deps.supervisor);
   const repaired = execution.recoverPendingLinks();
