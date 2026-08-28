@@ -44,7 +44,11 @@ function readAllRows(ledger: Ledger): ReturnType<Ledger['read']> {
       throw new Error(`ledger read stopped at seq ${cursor} before head ${targetHead}`);
     }
     rows.push(...page);
-    cursor = page[page.length - 1]!.seq;
+    const tail = page[page.length - 1];
+    if (tail === undefined) {
+      throw new Error(`ledger page unexpectedly empty after non-empty check at seq ${cursor}`);
+    }
+    cursor = tail.seq;
   }
 
   return rows;
@@ -81,7 +85,9 @@ export function buildMissionEvaluationPopulation(ledger: Ledger): MissionEvaluat
       throw new Error(`duplicate durable mission observation '${missionId}'`);
     }
     if (event.observation.observedAt > row.ts) {
-      throw new Error(`mission '${missionId}' was recorded before its market observation was valid`);
+      throw new Error(
+        `mission '${missionId}' was recorded before its market observation was valid`,
+      );
     }
     observed.set(missionId, row.seq);
   }
@@ -114,9 +120,13 @@ export function buildMissionEvaluationPopulation(ledger: Ledger): MissionEvaluat
       throw new Error(`mission '${missionId}' snapshot is from after its durable seal time`);
     }
     if (snapshot.brainEvaluation.knowledgeCutoff < snapshot.asOf) {
-      throw new Error(`mission '${missionId}' Brain knowledge cutoff predates its decision snapshot`);
+      throw new Error(
+        `mission '${missionId}' Brain knowledge cutoff predates its decision snapshot`,
+      );
     }
-    if (snapshot.brainComparison.missionKnowledgeTime !== snapshot.brainEvaluation.knowledgeCutoff) {
+    if (
+      snapshot.brainComparison.missionKnowledgeTime !== snapshot.brainEvaluation.knowledgeCutoff
+    ) {
       throw new Error(`mission '${missionId}' has divergent Brain knowledge cutoffs`);
     }
 
