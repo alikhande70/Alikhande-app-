@@ -1,11 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import type { EvaluationPipelineMission } from './evaluation-pipeline.js';
-import type { MarketCloseObservation } from './outcome-labeling.js';
 import {
   buildDependenceAwarePreRegisteredEvaluation,
   type DependenceAwareEvaluationPolicy,
   type DependenceAwareEvaluationPopulation,
 } from './dependence-aware-evaluation.js';
+import type { EvaluationPipelineMission } from './evaluation-pipeline.js';
+import type { MarketCloseObservation } from './outcome-labeling.js';
 
 const championHash = `sha256:${'a'.repeat(64)}` as const;
 const challengerHash = `sha256:${'b'.repeat(64)}` as const;
