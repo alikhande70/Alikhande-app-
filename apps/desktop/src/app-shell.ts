@@ -13,7 +13,9 @@ export interface WindowsMissionShellView {
   readonly missions: readonly DesktopMissionView[];
 }
 
-function connectionState(status: DesktopMissionRuntimeStatus): WindowsMissionShellView['connection'] {
+function connectionState(
+  status: DesktopMissionRuntimeStatus,
+): WindowsMissionShellView['connection'] {
   if (!status.started) return 'stopped';
   if (status.actionable) return 'ready';
   if (status.missionTruth === 'empty') return 'syncing';
