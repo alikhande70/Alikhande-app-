@@ -182,6 +182,36 @@ describe('pre-registered evaluation composition', () => {
     ).toThrow(/registered after forward Challenger evidence began/);
   });
 
+  it('treats an unpaired durable scan as forward evidence for pre-registration timing', () => {
+    const base = durablePopulation();
+    const withEarlyUnpairedScan: DurableEvaluationPopulation = {
+      ...base,
+      pairedEligibility: [
+        {
+          missionId: 'm0-no-comparison',
+          scanConfigVersion: 'scan-v1',
+          observedAt: 1_020,
+          knownAt: 1_025,
+        },
+        ...base.pairedEligibility,
+      ],
+    };
+    const configured = policy(analysisCutoff);
+    const latePolicy: PreRegisteredEvaluationPolicy = {
+      ...configured,
+      analysisPlan: { ...configured.analysisPlan, registeredAt: 1_050 },
+    };
+
+    expect(() =>
+      buildPreRegisteredEvaluationFromDurablePopulation(
+        withEarlyUnpairedScan,
+        observations,
+        { labelVersion: 'fixed-horizon-v1', horizonMs: 100, flatThresholdR: 0.01 },
+        latePolicy,
+      ),
+    ).toThrow(/registered after forward Challenger evidence began/);
+  });
+
   it('keeps missing Challenger shadow scans in the pairing denominator', () => {
     const population = [
       mission('m1', 1_100),
