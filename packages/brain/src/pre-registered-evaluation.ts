@@ -16,15 +16,10 @@ import {
 } from './paired-inference.js';
 
 export interface PreRegisteredPairedAnalysisPlan {
-  /** Stable immutable identifier for the analysis plan. */
   readonly planId: string;
-  /** Challenger content hash fixed by the plan. */
   readonly challengerContentHash: `sha256:${string}`;
-  /** Time the analysis plan became durable. */
   readonly registeredAt: number;
-  /** Fixed evidence cutoff. Re-runs after this time must not accumulate new evidence. */
   readonly analysisCutoff: number;
-  /** Required fraction of eligible scans that contain the target Challenger shadow decision. */
   readonly minimumPairingCoverage: number;
 }
 
@@ -33,6 +28,25 @@ export interface PreRegisteredEvaluationPolicy {
   readonly aggregate: EvaluationPolicy;
   readonly paired: Omit<PairedOutcomeInferencePolicy, 'evaluationCutoff'>;
   readonly analysisPlan: PreRegisteredPairedAnalysisPlan;
+}
+
+/** Structural input emitted by Desk's hash-verified Mission ledger projection. */
+export interface DurablePairedEligibility {
+  readonly missionId: string;
+  readonly scanConfigVersion: string;
+  readonly observedAt: number;
+  /** Knowledge-time when the scan became durable/known to the system. */
+  readonly knownAt: number;
+}
+
+/**
+ * Structural population contract. Brain deliberately does not import Desk code;
+ * Desk remains execution truth owner while this package consumes immutable facts.
+ */
+export interface DurableEvaluationPopulation {
+  readonly missions: readonly EvaluationPipelineMission[];
+  readonly pairedEligibility: readonly DurablePairedEligibility[];
+  readonly ledgerHead: Readonly<{ seq: number; hash: string }>;
 }
 
 export type PreRegisteredPairedResult =
@@ -54,7 +68,6 @@ export type PreRegisteredPairedResult =
     };
 
 export interface PreRegisteredEvaluationResult {
-  /** Aggregate scan report only. Raw future labels are intentionally not exposed here. */
   readonly aggregateReport: ScanEvaluationReport;
   readonly outcomeEvidenceGaps: readonly OutcomeEvidenceGap[];
   readonly paired: PreRegisteredPairedResult;
@@ -129,24 +142,51 @@ function challengerCreationTime(
   return [...createdTimes][0] ?? 0;
 }
 
-/**
- * Compose aggregate scan evaluation and Champion/Challenger inference under one
- * pre-registered, fixed-cutoff analysis plan.
- *
- * The paired result is deliberately hidden until the fixed analysis cutoff is
- * reached. After that time every re-run uses the same cutoff, preventing evidence
- * accumulation from turning repeated hourly looks into optional stopping. The plan
- * must also be durable before the first forward Mission after Challenger creation.
- * Missing Challenger shadow decisions remain in the denominator via pairingCoverage.
- * This function never promotes a Brain, mutates a registry, or emits execution truth.
- */
-export function buildPreRegisteredEvaluation(
+function validateEligibility(
+  eligibility: readonly DurablePairedEligibility[],
   missions: readonly EvaluationPipelineMission[],
+): void {
+  const seen = new Set<string>();
+  for (const item of eligibility) {
+    if (item.missionId.trim().length === 0) throw new Error('paired eligibility missionId is required');
+    if (item.scanConfigVersion.trim().length === 0)
+      throw new Error(`paired eligibility scanConfigVersion is required for '${item.missionId}'`);
+    requireTimestamp('paired eligibility observedAt', item.observedAt);
+    requireTimestamp('paired eligibility knownAt', item.knownAt);
+    if (item.knownAt < item.observedAt) {
+      throw new Error(`paired eligibility '${item.missionId}' was known before it was valid`);
+    }
+    if (seen.has(item.missionId)) throw new Error(`duplicate paired eligibility '${item.missionId}'`);
+    seen.add(item.missionId);
+  }
+
+  for (const mission of missions) {
+    if (!seen.has(mission.missionId)) {
+      throw new Error(`evaluated mission '${mission.missionId}' is absent from paired eligibility`);
+    }
+  }
+}
+
+function deriveEligibility(
+  missions: readonly EvaluationPipelineMission[],
+): readonly DurablePairedEligibility[] {
+  return missions.map((mission) => ({
+    missionId: mission.missionId,
+    scanConfigVersion: mission.scanConfigVersion,
+    observedAt: mission.observedAt,
+    knownAt: missionKnowledgeTime(mission) ?? mission.observedAt,
+  }));
+}
+
+function composePreRegisteredEvaluation(
+  missions: readonly EvaluationPipelineMission[],
+  eligibility: readonly DurablePairedEligibility[],
   observations: readonly MarketCloseObservation[],
   outcomePolicy: FixedHorizonOutcomePolicy,
   policy: PreRegisteredEvaluationPolicy,
 ): PreRegisteredEvaluationResult {
   validatePolicy(policy);
+  validateEligibility(eligibility, missions);
   const pipeline = buildMissionEvaluationPipeline(
     missions,
     observations,
@@ -181,20 +221,19 @@ export function buildPreRegisteredEvaluation(
     };
   }
 
-  const eligible = missions.filter((mission) => {
-    const knowledgeTime = missionKnowledgeTime(mission);
-    return (
-      knowledgeTime !== undefined &&
-      knowledgeTime > plan.registeredAt &&
-      knowledgeTime <= plan.analysisCutoff
-    );
-  });
-  const pairedMissions = eligible.filter((mission) =>
-    hasTargetChallenger(mission, plan.challengerContentHash),
+  const eligible = eligibility.filter(
+    (item) => item.knownAt > plan.registeredAt && item.knownAt <= plan.analysisCutoff,
   );
+  const eligibleIds = new Set(eligible.map((item) => item.missionId));
+  const pairedMissions = missions.filter(
+    (mission) =>
+      eligibleIds.has(mission.missionId) && hasTargetChallenger(mission, plan.challengerContentHash),
+  );
+  const pairedIds = new Set(pairedMissions.map((mission) => mission.missionId));
   const missingPairedMissionIds = eligible
-    .filter((mission) => !hasTargetChallenger(mission, plan.challengerContentHash))
-    .map((mission) => mission.missionId);
+    .filter((item) => !pairedIds.has(item.missionId))
+    .map((item) => item.missionId)
+    .sort();
   const pairingCoverage = eligible.length === 0 ? 0 : pairedMissions.length / eligible.length;
   const reasons: string[] = [];
   if (pairingCoverage < plan.minimumPairingCoverage)
@@ -238,4 +277,55 @@ export function buildPreRegisteredEvaluation(
       inference,
     },
   };
+}
+
+/**
+ * Backward-compatible composition for callers that only possess sealed Mission
+ * decisions. Prefer `buildPreRegisteredEvaluationFromDurablePopulation` when a
+ * hash-verified Desk population is available so missing comparison scans remain in
+ * the denominator.
+ */
+export function buildPreRegisteredEvaluation(
+  missions: readonly EvaluationPipelineMission[],
+  observations: readonly MarketCloseObservation[],
+  outcomePolicy: FixedHorizonOutcomePolicy,
+  policy: PreRegisteredEvaluationPolicy,
+): PreRegisteredEvaluationResult {
+  return composePreRegisteredEvaluation(
+    missions,
+    deriveEligibility(missions),
+    observations,
+    outcomePolicy,
+    policy,
+  );
+}
+
+/**
+ * Preferred ADR-0021 composition boundary.
+ *
+ * The denominator comes from every internal scan in Desk's verified ledger
+ * projection, not only Missions that successfully persisted `brainComparison`.
+ * Missing/failed Challenger shadow decisions therefore reduce pairing coverage
+ * instead of disappearing. No score, comparison, broker truth, or AI conclusion is
+ * synthesized for those scans.
+ */
+export function buildPreRegisteredEvaluationFromDurablePopulation(
+  population: DurableEvaluationPopulation,
+  observations: readonly MarketCloseObservation[],
+  outcomePolicy: FixedHorizonOutcomePolicy,
+  policy: PreRegisteredEvaluationPolicy,
+): PreRegisteredEvaluationResult {
+  if (!Number.isInteger(population.ledgerHead.seq) || population.ledgerHead.seq < 0) {
+    throw new Error('durable population ledger head seq must be a non-negative integer');
+  }
+  if (population.ledgerHead.hash.trim().length === 0) {
+    throw new Error('durable population ledger head hash is required');
+  }
+  return composePreRegisteredEvaluation(
+    population.missions,
+    population.pairedEligibility,
+    observations,
+    outcomePolicy,
+    policy,
+  );
 }
