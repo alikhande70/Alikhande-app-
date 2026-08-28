@@ -21,6 +21,10 @@
     "./outcome-labeling": {
       "types": "./dist/outcome-labeling.d.ts",
       "default": "./dist/outcome-labeling.js"
+    },
+    "./paired-inference": {
+      "types": "./dist/paired-inference.d.ts",
+      "default": "./dist/paired-inference.js"
     }
   },
   "scripts": {

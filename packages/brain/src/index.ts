@@ -188,4 +188,5 @@ export * from './evaluation.js';
 export * from './features.js';
 export * from './ledger-observations.js';
 export * from './paired-evaluation.js';
+export * from './paired-inference.js';
 export * from './version-registry.js';
