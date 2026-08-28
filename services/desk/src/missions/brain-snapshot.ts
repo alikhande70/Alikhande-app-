@@ -157,15 +157,59 @@ export function withBrainDecisionEvidence(input: {
   evidence.sort((a, b) => a.featureKey.localeCompare(b.featureKey));
 
   const extractionMissing = uniqueStrings(extraction.missing, 'feature extraction missing');
+  const missingSet = new Set(extractionMissing);
+  const evidenceByKey = new Map(evidence.map((item) => [item.featureKey, item]));
+
   for (const missing of extractionMissing) {
     if (evidenceKeys.has(missing)) {
       throw new BrainSnapshotInvariantError(
         `feature '${missing}' cannot be both evidence and missing`,
       );
     }
+    if (!(missing in extraction.vector.values)) {
+      throw new BrainSnapshotInvariantError(
+        `missing feature '${missing}' is absent from the scored feature vector`,
+      );
+    }
     if (extraction.vector.values[missing] !== undefined) {
       throw new BrainSnapshotInvariantError(
         `missing feature '${missing}' unexpectedly has a vector value`,
+      );
+    }
+  }
+
+  for (const [featureKey, vectorValue] of Object.entries(extraction.vector.values)) {
+    nonEmpty(featureKey, 'feature vector key');
+    if (vectorValue === undefined) {
+      if (!missingSet.has(featureKey)) {
+        throw new BrainSnapshotInvariantError(
+          `undefined vector feature '${featureKey}' is not recorded as missing`,
+        );
+      }
+      continue;
+    }
+    if (!Number.isFinite(vectorValue) || vectorValue < 0 || vectorValue > 1) {
+      throw new BrainSnapshotInvariantError(
+        `vector feature '${featureKey}' must be a finite normalized value in [0,1]`,
+      );
+    }
+    const item = evidenceByKey.get(featureKey);
+    if (item === undefined) {
+      throw new BrainSnapshotInvariantError(
+        `vector feature '${featureKey}' has no persisted evidence coordinate`,
+      );
+    }
+    if (item.normalizedValue !== vectorValue) {
+      throw new BrainSnapshotInvariantError(
+        `vector feature '${featureKey}' does not match persisted normalized evidence`,
+      );
+    }
+  }
+
+  for (const evidenceItem of evidence) {
+    if (!(evidenceItem.featureKey in extraction.vector.values)) {
+      throw new BrainSnapshotInvariantError(
+        `persisted evidence '${evidenceItem.featureKey}' is absent from the scored feature vector`,
       );
     }
   }
