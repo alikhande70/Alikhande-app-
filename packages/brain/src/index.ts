@@ -186,3 +186,4 @@ export function evaluate(
 
 export * from './features.js';
 export * from './ledger-observations.js';
+export * from './version-registry.js';
