@@ -9,7 +9,8 @@ const EXTERNAL_ORIGINS: ReadonlySet<MissionOrigin> = new Set([
 ]);
 
 /**
- * Structural boundary consumed by @keel/brain/mission-evaluation.
+ * Structural boundary consumed by @keel/brain/mission-evaluation and
+ * @keel/brain/outcome-labeling.
  *
  * Desk deliberately owns only the durable Mission facts. The Brain package owns
  * scoring/evaluation semantics. Keeping this as a structural contract avoids a
@@ -17,6 +18,7 @@ const EXTERNAL_ORIGINS: ReadonlySet<MissionOrigin> = new Set([
  */
 export interface DurableMissionEvaluationView {
   readonly missionId: string;
+  readonly canonical: string;
   readonly scanConfigVersion: string;
   readonly observedAt: number;
   readonly decisionSnapshot: DecisionSnapshot;
@@ -132,6 +134,7 @@ export function buildMissionEvaluationPopulation(ledger: Ledger): MissionEvaluat
 
     missions.push({
       missionId: record.missionId,
+      canonical: record.canonical,
       scanConfigVersion: record.scanConfigVersion,
       observedAt: record.observedAt,
       decisionSnapshot: snapshot,
