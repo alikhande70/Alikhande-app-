@@ -1,19 +1,19 @@
 import {
   type EvaluationPolicy,
+  evaluateScanPopulation,
   type ScanDecisionEvidence,
   type ScanEvaluationReport,
-  evaluateScanPopulation,
 } from './evaluation.js';
 import {
   type DurableMissionForEvaluation,
-  type VersionedMarketOutcomeLabel,
   projectDurableMissionsForEvaluation,
+  type VersionedMarketOutcomeLabel,
 } from './mission-evaluation.js';
 import {
+  buildFixedHorizonOutcomeLabel,
   type DurableOutcomeSeedMission,
   type FixedHorizonOutcomePolicy,
   type MarketCloseObservation,
-  buildFixedHorizonOutcomeLabel,
   projectOutcomeSeedFromDecisionSnapshot,
 } from './outcome-labeling.js';
 
@@ -115,7 +115,9 @@ export function buildMissionEvaluationPipeline(
 
     const targetValidAt = projection.seed.decisionKnowledgeTime + outcomePolicy.horizonMs;
     if (!Number.isSafeInteger(targetValidAt)) {
-      throw new Error(`outcome target timestamp exceeds safe integer range for '${mission.missionId}'`);
+      throw new Error(
+        `outcome target timestamp exceeds safe integer range for '${mission.missionId}'`,
+      );
     }
     const observation = market.get(observationKey(projection.seed.symbol, targetValidAt));
     if (observation === undefined) {
