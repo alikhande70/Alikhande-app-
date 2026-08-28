@@ -1,14 +1,14 @@
+import type { EvaluationPolicy, ScanEvaluationReport } from './evaluation.js';
 import {
   buildMissionEvaluationPipeline,
   type EvaluationPipelineMission,
   type OutcomeEvidenceGap,
 } from './evaluation-pipeline.js';
-import type { EvaluationPolicy, ScanEvaluationReport } from './evaluation.js';
-import type { FixedHorizonOutcomePolicy, MarketCloseObservation } from './outcome-labeling.js';
 import {
   projectDurableMissionsForPairedEvaluation,
   type VersionedMarketOutcomeLabel,
 } from './mission-evaluation.js';
+import type { FixedHorizonOutcomePolicy, MarketCloseObservation } from './outcome-labeling.js';
 import {
   inferForwardPairedOutcomeAlignment,
   type PairedOutcomeInferencePolicy,
@@ -122,8 +122,10 @@ function challengerCreationTime(
       }
     }
   }
-  if (createdTimes.size === 0) throw new Error('analysis Challenger is absent from durable Mission evidence');
-  if (createdTimes.size !== 1) throw new Error('analysis Challenger has inconsistent creation boundaries');
+  if (createdTimes.size === 0)
+    throw new Error('analysis Challenger is absent from durable Mission evidence');
+  if (createdTimes.size !== 1)
+    throw new Error('analysis Challenger has inconsistent creation boundaries');
   return [...createdTimes][0] ?? 0;
 }
 
@@ -195,7 +197,8 @@ export function buildPreRegisteredEvaluation(
     .map((mission) => mission.missionId);
   const pairingCoverage = eligible.length === 0 ? 0 : pairedMissions.length / eligible.length;
   const reasons: string[] = [];
-  if (pairingCoverage < plan.minimumPairingCoverage) reasons.push('minimum-pairing-coverage-not-met');
+  if (pairingCoverage < plan.minimumPairingCoverage)
+    reasons.push('minimum-pairing-coverage-not-met');
   if (pairedMissions.length === 0) reasons.push('paired-population-empty');
 
   let inference: PairedOutcomeInferenceReport | null = null;
@@ -205,7 +208,9 @@ export function buildPreRegisteredEvaluation(
       (pair) => pair.challenger.brainContentHash === plan.challengerContentHash,
     );
     if (pairs.length !== pairedMissions.length) {
-      throw new Error('target Challenger projection is not one-to-one with paired Mission evidence');
+      throw new Error(
+        'target Challenger projection is not one-to-one with paired Mission evidence',
+      );
     }
     const pairedMissionIds = new Set(pairs.map((pair) => pair.missionId));
     const labels: VersionedMarketOutcomeLabel[] = pipeline.labels.filter((label) =>
