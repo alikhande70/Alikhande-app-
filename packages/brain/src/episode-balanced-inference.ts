@@ -1,8 +1,5 @@
 import type { MarketEpisode } from './dependence-guard.js';
-import type {
-  PairedDirectionalAlignmentEvidence,
-  WilsonInterval95,
-} from './paired-inference.js';
+import type { PairedDirectionalAlignmentEvidence, WilsonInterval95 } from './paired-inference.js';
 
 export interface EpisodeBalancedInferencePolicy {
   /** Minimum non-tied market episodes required for interval-based direction. */
@@ -52,8 +49,7 @@ function wilson95(successes: number, trials: number): WilsonInterval95 {
   const p = successes / trials;
   const denominator = 1 + z2 / trials;
   const center = (p + z2 / (2 * trials)) / denominator;
-  const half =
-    (z / denominator) * Math.sqrt((p * (1 - p)) / trials + z2 / (4 * trials * trials));
+  const half = (z / denominator) * Math.sqrt((p * (1 - p)) / trials + z2 / (4 * trials * trials));
   return {
     lower: Math.max(0, center - half),
     upper: Math.min(1, center + half),
@@ -80,7 +76,8 @@ export function inferEpisodeBalancedAlignment(
   const episodeIds = new Set<string>();
   for (const episode of episodes) {
     if (episode.episodeId.trim().length === 0) throw new Error('episodeId is required');
-    if (episodeIds.has(episode.episodeId)) throw new Error(`duplicate episode '${episode.episodeId}'`);
+    if (episodeIds.has(episode.episodeId))
+      throw new Error(`duplicate episode '${episode.episodeId}'`);
     episodeIds.add(episode.episodeId);
     for (const missionId of episode.missionIds) {
       if (missionToEpisode.has(missionId)) {

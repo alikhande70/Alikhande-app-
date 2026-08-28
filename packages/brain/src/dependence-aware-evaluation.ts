@@ -4,8 +4,8 @@ import {
   type ScanDependenceReport,
 } from './dependence-guard.js';
 import {
-  inferEpisodeBalancedAlignment,
   type EpisodeBalancedInferenceReport,
+  inferEpisodeBalancedAlignment,
 } from './episode-balanced-inference.js';
 import type { FixedHorizonOutcomePolicy, MarketCloseObservation } from './outcome-labeling.js';
 import {

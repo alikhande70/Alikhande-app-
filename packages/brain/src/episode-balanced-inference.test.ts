@@ -24,7 +24,10 @@ describe('episode-balanced inference', () => {
     const result = inferEpisodeBalancedAlignment(
       evidence,
       [
-        episode('burst', evidence.slice(0, 20).map((item) => item.missionId)),
+        episode(
+          'burst',
+          evidence.slice(0, 20).map((item) => item.missionId),
+        ),
         episode('later-1', ['later-1']),
         episode('later-2', ['later-2']),
       ],
