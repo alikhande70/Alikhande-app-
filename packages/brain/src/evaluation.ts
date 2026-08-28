@@ -134,6 +134,9 @@ export function evaluateScanPopulation(
   const seen = new Set<string>();
   for (const scan of scans) {
     validateScan(scan);
+    if (scan.knowledgeTime > policy.evaluationCutoff) {
+      throw new Error(`mission '${scan.missionId}' was not yet known at the evaluation cutoff`);
+    }
     if (seen.has(scan.missionId)) throw new Error(`duplicate mission '${scan.missionId}'`);
     seen.add(scan.missionId);
   }
