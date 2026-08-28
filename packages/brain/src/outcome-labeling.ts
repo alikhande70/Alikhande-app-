@@ -9,6 +9,26 @@ export interface OutcomeMissionSeed {
   readonly riskDistance: number;
 }
 
+export interface DurableOutcomeSeedMission {
+  readonly missionId: string;
+  readonly canonical: string;
+  readonly decisionSnapshot: {
+    readonly asOf: number;
+    readonly brainEvaluation?: {
+      readonly knowledgeCutoff: number;
+    };
+    readonly plan?: {
+      readonly side: 'buy' | 'sell';
+      readonly entry?: string;
+      readonly stop?: string;
+    };
+  };
+}
+
+export type OutcomeSeedProjection =
+  | { readonly status: 'ready'; readonly seed: OutcomeMissionSeed }
+  | { readonly status: 'insufficient-data'; readonly missing: readonly string[] };
+
 export interface MarketCloseObservation {
   readonly symbol: string;
   readonly validAt: number;
@@ -58,6 +78,72 @@ function validateObservation(observation: MarketCloseObservation): void {
   }
   requireFinite('market.close', observation.close);
   if (observation.close <= 0) throw new Error('market.close must be greater than zero');
+}
+
+function parseSnapshotPrice(field: string, value: string): number {
+  const trimmed = value.trim();
+  if (!/^(?:\d+(?:\.\d*)?|\.\d+)$/.test(trimmed)) {
+    throw new Error(`${field} is not a canonical positive decimal`);
+  }
+  const parsed = Number(trimmed);
+  requireFinite(field, parsed);
+  if (parsed <= 0) throw new Error(`${field} must be greater than zero`);
+  return parsed;
+}
+
+/**
+ * Derive fixed-horizon label inputs from the immutable Mission decision snapshot.
+ *
+ * This deliberately refuses caller-supplied direction, price or risk. A Mission
+ * without a sealed directional plan remains first-class insufficient data instead
+ * of receiving a guessed counterfactual. Invalid persisted numeric/timeline data
+ * is treated as corruption and fails closed.
+ */
+export function projectOutcomeSeedFromDecisionSnapshot(
+  mission: DurableOutcomeSeedMission,
+): OutcomeSeedProjection {
+  if (mission.missionId.trim().length === 0) throw new Error('missionId is required');
+  if (mission.canonical.trim().length === 0) throw new Error('mission canonical is required');
+
+  const snapshot = mission.decisionSnapshot;
+  requireFiniteTimestamp('snapshot.asOf', snapshot.asOf);
+  const evaluation = snapshot.brainEvaluation;
+  if (evaluation === undefined) {
+    return { status: 'insufficient-data', missing: ['brainEvaluation'] };
+  }
+  requireFiniteTimestamp('brain.knowledgeCutoff', evaluation.knowledgeCutoff);
+  if (snapshot.asOf > evaluation.knowledgeCutoff) {
+    throw new Error('decision snapshot is after its Brain knowledge cutoff');
+  }
+
+  const plan = snapshot.plan;
+  if (plan === undefined) {
+    return { status: 'insufficient-data', missing: ['plan'] };
+  }
+  const missing: string[] = [];
+  if (plan.entry === undefined) missing.push('plan.entry');
+  if (plan.stop === undefined) missing.push('plan.stop');
+  if (missing.length > 0) return { status: 'insufficient-data', missing };
+
+  const entry = parseSnapshotPrice('plan.entry', plan.entry ?? '');
+  const stop = parseSnapshotPrice('plan.stop', plan.stop ?? '');
+  if (plan.side === 'buy' && stop >= entry) {
+    throw new Error('buy plan stop must be below entry for outcome risk normalisation');
+  }
+  if (plan.side === 'sell' && stop <= entry) {
+    throw new Error('sell plan stop must be above entry for outcome risk normalisation');
+  }
+
+  const seed: OutcomeMissionSeed = {
+    missionId: mission.missionId,
+    symbol: mission.canonical,
+    decisionKnowledgeTime: evaluation.knowledgeCutoff,
+    direction: plan.side === 'buy' ? 'long' : 'short',
+    referencePrice: entry,
+    riskDistance: Math.abs(entry - stop),
+  };
+  validateSeed(seed);
+  return { status: 'ready', seed };
 }
 
 function classifyDirection(
