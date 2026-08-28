@@ -1,10 +1,6 @@
 import { describe, expect, it } from 'vitest';
+import type { BitemporalFeatureObservation, BrainVersion, FeatureSetVersion } from './index.js';
 import { evaluate, extractFeatureVector } from './index.js';
-import type {
-  BitemporalFeatureObservation,
-  BrainVersion,
-  FeatureSetVersion,
-} from './index.js';
 
 const featureSet: FeatureSetVersion = {
   id: 'pit-pipeline-v1',
