@@ -47,7 +47,10 @@ function validatePolicy(policy: ScanDependencePolicy): void {
   if (!Number.isFinite(policy.episodeGapMs) || policy.episodeGapMs < 0) {
     throw new Error('episodeGapMs must be finite and non-negative');
   }
-  if (!Number.isInteger(policy.minimumIndependentEpisodes) || policy.minimumIndependentEpisodes < 1) {
+  if (
+    !Number.isInteger(policy.minimumIndependentEpisodes) ||
+    policy.minimumIndependentEpisodes < 1
+  ) {
     throw new Error('minimumIndependentEpisodes must be a positive integer');
   }
 }
