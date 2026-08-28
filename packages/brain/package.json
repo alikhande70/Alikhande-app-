@@ -12,14 +12,9 @@
     }
   },
   "scripts": {
-    "build": "tsc -b",
-    "typecheck": "tsc -b --pretty",
-    "test": "vitest run",
-    "test:watch": "vitest"
-  },
-  "devDependencies": {
-    "typescript": "^5.9.3",
-    "vitest": "^3.2.4",
-    "fast-check": "^4.1.1"
+    "build": "pnpm exec tsc -b",
+    "typecheck": "pnpm exec tsc -b --pretty",
+    "test": "pnpm exec vitest run",
+    "test:watch": "pnpm exec vitest"
   }
 }
