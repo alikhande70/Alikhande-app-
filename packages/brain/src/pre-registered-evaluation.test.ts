@@ -73,7 +73,7 @@ function close(mission: EvaluationPipelineMission, knowledgeTime: number): Marke
     symbol: mission.canonical,
     validAt: knowledgeTime + 100,
     recordedAt: knowledgeTime + 100,
-    close: 1.1200,
+    close: 1.12,
   };
 }
 
@@ -136,10 +136,7 @@ describe('pre-registered evaluation composition', () => {
     );
     const muchLater = buildPreRegisteredEvaluation(
       missions,
-      [
-        ...observations,
-        { symbol: 'EURUSD', validAt: 9_999, recordedAt: 9_999, close: 0.5 },
-      ],
+      [...observations, { symbol: 'EURUSD', validAt: 9_999, recordedAt: 9_999, close: 0.5 }],
       { labelVersion: 'fixed-horizon-v1', horizonMs: 100, flatThresholdR: 0.01 },
       policy(10_000),
     );
