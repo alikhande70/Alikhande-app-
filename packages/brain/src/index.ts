@@ -42,17 +42,17 @@ export interface BrainVersion {
   readonly id: BrainVersionId;
   readonly featureSetVersion: string;
   readonly rubricVersion: string;
-  readonly features: readonly RubricFeature[];
-  /** Missing required evidence is never silently imputed. */
   readonly missingFeaturePolicy: 'insufficient-data';
+  readonly features: readonly RubricFeature[];
 }
 
 export interface BrainScore {
+  /** Deterministic normalized score. This is not a probability. */
   readonly value: number;
   readonly rationaleCodes: readonly RationaleCode[];
 }
 
-export type BrainOutput =
+export type BrainResult =
   | {
       readonly status: 'scored';
       readonly brainVersion: BrainVersionId;
@@ -73,22 +73,28 @@ export type BrainOutput =
 
 function validateVersion(version: BrainVersion): void {
   if (version.id.trim().length === 0) throw new Error('brain version id is required');
-  if (version.featureSetVersion.trim().length === 0)
-    throw new Error('feature set version is required');
+  if (version.featureSetVersion.trim().length === 0) throw new Error('feature set version is required');
   if (version.rubricVersion.trim().length === 0) throw new Error('rubric version is required');
-  if (version.features.length === 0) throw new Error('brain rubric must contain features');
+  if (version.features.length === 0) throw new Error('brain version must define features');
 
-  const keys = new Set<string>();
-  let totalWeight = 0;
+  const seen = new Set<string>();
+  let positiveWeight = 0;
   for (const feature of version.features) {
-    if (feature.key.trim().length === 0) throw new Error('rubric feature key is required');
-    if (keys.has(feature.key)) throw new Error(`duplicate rubric feature '${feature.key}'`);
-    keys.add(feature.key);
-    if (!Number.isFinite(feature.weight) || feature.weight < 0)
-      throw new Error(`rubric feature '${feature.key}' has invalid weight`);
-    totalWeight += feature.weight;
+    if (feature.key.trim().length === 0) throw new Error('feature key is required');
+    if (seen.has(feature.key)) throw new Error(`duplicate feature '${feature.key}'`);
+    seen.add(feature.key);
+    if (!Number.isFinite(feature.weight) || feature.weight < 0) {
+      throw new Error(`feature '${feature.key}' has invalid weight`);
+    }
+    positiveWeight += feature.weight;
   }
-  if (!(totalWeight > 0)) throw new Error('brain rubric must have positive total weight');
+  if (!(positiveWeight > 0)) throw new Error('brain version must have positive total feature weight');
+}
+
+function validateContext(context: BrainContext): void {
+  if (context.canonical.trim().length === 0) throw new Error('canonical is required');
+  if (context.timeframe.trim().length === 0) throw new Error('timeframe is required');
+  if (context.session.trim().length === 0) throw new Error('session is required');
 }
 
 function validateFeatureValue(key: string, value: number): void {
@@ -98,25 +104,33 @@ function validateFeatureValue(key: string, value: number): void {
 }
 
 /**
- * Pure deterministic evaluation required by ADR-0019.
+ * Pure deterministic ADR-0019 evaluator.
  *
- * Same version + same feature vector + same context always returns identical JSON.
- * Context is accepted explicitly so future rubric versions may use it without
- * introducing hidden environment dependencies; v1 intentionally does not branch on it.
+ * This function performs no IO and has no hidden mutable state. Given the same
+ * BrainVersion, FeatureVector and BrainContext it returns byte-for-byte stable
+ * JSON output. It cannot place orders or mutate trading truth.
  */
 export function evaluate(
   version: BrainVersion,
   features: FeatureVector,
-  _context: BrainContext,
-): BrainOutput {
+  context: BrainContext,
+): BrainResult {
   validateVersion(version);
+  validateContext(context);
+  if (!Number.isFinite(features.asOf) || features.asOf < 0) {
+    throw new Error('feature vector asOf must be a finite non-negative timestamp');
+  }
   if (features.featureSetVersion !== version.featureSetVersion) {
     throw new Error(
-      `feature set mismatch: brain expects '${version.featureSetVersion}', received '${features.featureSetVersion}'`,
+      `feature set mismatch: Brain expects '${version.featureSetVersion}', received '${features.featureSetVersion}'`,
     );
   }
-  if (!Number.isFinite(features.asOf) || features.asOf < 0)
-    throw new Error('feature vector asOf must be a non-negative finite timestamp');
+
+  const allowed = new Set(version.features.map((feature) => feature.key));
+  for (const [key, value] of Object.entries(features.values)) {
+    if (!allowed.has(key)) throw new Error(`unexpected feature '${key}'`);
+    if (value !== undefined) validateFeatureValue(key, value);
+  }
 
   const missing: string[] = [];
   for (const feature of version.features) {
@@ -169,3 +183,4 @@ export function evaluate(
 }
 
 export * from './features.js';
+export * from './ledger-observations.js';
