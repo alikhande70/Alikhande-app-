@@ -17,6 +17,7 @@ export interface ForwardPairedScanEvidence {
 
 export interface PairedEvaluationPolicy {
   readonly minimumPairs: number;
+  readonly minimumFullyScoredPairs: number;
   readonly minimumDurationMs: number;
 }
 
@@ -62,6 +63,12 @@ function validateDecision(side: PairedDecisionSide, label: string): void {
 function validatePolicy(policy: PairedEvaluationPolicy): void {
   if (!Number.isInteger(policy.minimumPairs) || policy.minimumPairs < 1) {
     throw new Error('minimumPairs must be a positive integer');
+  }
+  if (!Number.isInteger(policy.minimumFullyScoredPairs) || policy.minimumFullyScoredPairs < 1) {
+    throw new Error('minimumFullyScoredPairs must be a positive integer');
+  }
+  if (policy.minimumFullyScoredPairs > policy.minimumPairs) {
+    throw new Error('minimumFullyScoredPairs cannot exceed minimumPairs');
   }
   if (!Number.isFinite(policy.minimumDurationMs) || policy.minimumDurationMs < 0) {
     throw new Error('minimumDurationMs must be finite and non-negative');
@@ -138,6 +145,8 @@ export function buildForwardPairedCohort(
   const durationMs = Math.max(0, latest - earliest);
   const reasons: string[] = [];
   if (evidence.length < policy.minimumPairs) reasons.push('minimum-paired-scan-population-not-met');
+  if (fullyScoredPairs < policy.minimumFullyScoredPairs)
+    reasons.push('minimum-fully-scored-pairs-not-met');
   if (durationMs < policy.minimumDurationMs) reasons.push('minimum-forward-duration-not-met');
 
   return {
