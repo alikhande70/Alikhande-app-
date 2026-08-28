@@ -7,7 +7,9 @@ import {
 const FEATURE_KEY = 'trend-alignment';
 const FEATURE_SET = 'features:v3';
 
-function mission(overrides: Partial<SnapshotMissionForFeatureStrata> = {}): SnapshotMissionForFeatureStrata {
+function mission(
+  overrides: Partial<SnapshotMissionForFeatureStrata> = {},
+): SnapshotMissionForFeatureStrata {
   return {
     missionId: 'mission-1',
     observedAt: 100,
@@ -69,9 +71,9 @@ describe('projectSnapshotFeatureStrataEvidence', () => {
       },
     });
 
-    expect(projectSnapshotFeatureStrataEvidence([missingFeature], FEATURE_KEY, FEATURE_SET)).toEqual(
-      [],
-    );
+    expect(
+      projectSnapshotFeatureStrataEvidence([missingFeature], FEATURE_KEY, FEATURE_SET),
+    ).toEqual([]);
   });
 
   it('fails closed when an older feature schema is mixed into the registered cohort', () => {
