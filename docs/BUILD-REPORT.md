@@ -1,188 +1,159 @@
 # Build report — `gpt/trading-brain-build`
 
-This report records what is actually implemented and verified on the branch. ADRs describe intended architecture; this file separates repository evidence from Windows/MetaEditor/MT5/LiteFinance and physical-device evidence.
+This report records repository evidence separately from external Windows, MetaEditor, MT5, LiteFinance and physical-device evidence. ADRs describe the intended architecture; this file records only what is actually implemented or still blocked.
 
 ## Current state — 2026-08-28
 
-The repository-level MT5 execution foundation is substantially built and remains fail-closed. Real broker execution is deliberately not enabled or claimed. ADR-0018 — Trade Mission has a substantially closed repository ownership path, but its final independent audit/native runtime proof remains open.
+The repository-level MT5 foundation is substantially built and remains fail-closed. Real-money execution is not enabled or claimed.
 
-A **non-integrated ADR-0019 foundation** now exists as `packages/brain`: a pure deterministic/versioned rubric evaluator with explicit insufficient-data handling. It has no clock, network, I/O, LLM dependency, Mission wiring or execution access. No further Brain runtime integration is permitted until the remaining ADR-0018 audit items are resolved.
+ADR-0018 — Trade Mission now has a hardened repository ownership path: scans, rejected setups, Mission lifecycle, Mission-bound intents, broker positions, external/manual positions, close/review and client realtime state are durable and reconstructable. The historical direct Mission-less `POST /orders` execution handler has now been physically removed from `server.ts`; the deterministic `410 MISSION_REQUIRED` tombstone remains, and a source-level regression test prevents direct handler reintroduction.
 
-The preserved branch `claude/personal-trading-app-atm6e1` remains outside this workstream and must not be modified.
+ADR-0019 has a non-integrated deterministic foundation in `packages/brain`. It now includes both the versioned pure scoring rubric and a pure bitemporal point-in-time feature extractor. Brain runtime/execution wiring remains intentionally absent.
 
-## Repository MT5 foundation — implemented
+The preserved branch `claude/personal-trading-app-atm6e1` is outside this workstream and must remain untouched.
 
-- Loopback-only Windows execution host ↔ `KeelAgent.mq5` protocol with authenticated agent sessions.
-- Durable command lifecycle and ambiguity handling; post-send uncertainty is reconciled rather than automatically retried.
-- Strict snapshot/reconciliation parsing; broker/order truth is never inferred from UI state.
-- MT5 64-bit identifiers stay decimal strings across JavaScript boundaries.
-- Reconciliation distinguishes orders, deals and positions; order-only evidence cannot prove a fill.
-- Historical rejected/cancelled/expired orders cannot masquerade as execution.
-- Multi-deal fills aggregate correctly; multiple distinct executions under one intent are contradiction/duplicate evidence.
-- Broker-local wall clock and UTC are separated and guarded.
-- Explicit venue-symbol ↔ canonical mapping with collision rejection; no suffix-stripping/fuzzy identity guessing.
-- `instrumentFacts` feed the binding layer; semantic metadata MT5 cannot prove must be configured explicitly or the instrument is refused.
-- Tradable symbol universe is configured explicitly rather than inferred from current positions/orders.
-- MT5 runtime is selectable with `KEEL_BROKER=mt5`.
-- Adapter capabilities describe the current build, not theoretical MT5 capability.
-- Durable event spool/replay exists for undelivered hints; reconciliation remains authoritative.
-- Request-specific margin path exists in repository code:
+## MT5 execution foundation — repository evidence
+
+Implemented and covered by repository tests:
+
+- Loopback Windows execution-host ↔ `KeelAgent.mq5` protocol with authenticated agent sessions.
+- Durable command lifecycle, ambiguity handling and reconciliation rather than unsafe automatic retry.
+- Strict distinction among MT5 orders, deals and positions.
+- 64-bit broker identifiers kept as decimal strings across JavaScript boundaries.
+- Partial-fill aggregation and duplicate/contradictory execution detection.
+- Separate broker-local and UTC clock domains with freshness guards.
+- Explicit venue-symbol ↔ canonical mapping with collision rejection; no fuzzy suffix guessing.
+- Explicit tradable-symbol universe and instrument-facts binding.
+- Runtime-selectable MT5 broker adapter with truthful capabilities.
+- Durable event spool/replay while reconciliation remains authoritative.
+- Request-specific margin path:
   `ExecutionSupervisor → BrokerPort → MT5 adapter → HostClient → execution host → KeelAgent → OrderCalcMargin`.
-- Margin is request-bound and freshness/fingerprint validated. Missing, stale, malformed or unavailable margin is **BLOCK**, never zero, and is not waivable.
-- Real-account safety remains explicitly gated.
+- Margin is fingerprint/freshness validated; missing, malformed, stale, mismatched or unavailable margin is **BLOCK**, never zero and never waivable.
+- Real-account safety remains hard-gated.
 
-### Important safety defects already closed
+Important previously closed defects include unknown-margin-to-zero, UTC/broker-time mixing, future heartbeat liveness, partial-fill understatement, venue-symbol collisions, duplicate execution collapse and incomplete MT5 rejection handling.
 
-| Severity | Defect |
-| --- | --- |
-| P0 | Multiple distinct executions under one magic could collapse into one clean fill. |
-| P0 | Broker-local and UTC clock domains were mixed. |
-| P0 | Future-dated heartbeat could make a dead agent appear live. |
-| P0 | Unknown margin could become `0.00`. |
-| P0 | Evidence grouping could collide identifier namespaces. |
-| P1 | Partial multi-deal fills could understate size. |
-| P1 | Venue-symbol collisions could contaminate canonical quote/sizing identity. |
-| P1 | Definitive MT5 rejection retcodes could fall through to permanent UNKNOWN. |
-| P1 | Instrument facts existed without an operational instrument path. |
-| P1 | MT5 adapter existed but was unreachable from normal Desk runtime. |
-| P1 | Capability reporting was aspirational rather than truthful. |
+## ADR-0018 Trade Mission — repository evidence
 
-## Trade Mission spine — repository state
-
-Mission is the durable aggregate above execution truth. It references intents and broker positions but never replaces broker/order truth.
+Mission is the durable aggregate above execution truth; it references intents/positions but never replaces broker truth.
 
 Implemented:
 
-- Mission stages: `OBSERVED → CANDIDATE → PLANNED → ARMED → EXECUTING → MANAGING → CLOSED/ABANDONED → REVIEWED`.
-- Scanner, Brain observation, operator, manual/external MT5 and unknown-external origins are distinguished.
-- Mission facts use the existing append-only hash-chained ledger; no second mutable truth database exists.
-- Bitemporal market valid-time and ledger recorded-time are distinct.
-- Scan configuration version is recorded for cohort-aware statistics.
-- Immutable `DecisionSnapshot` records both what was **known** and what was **missing** at decision time.
-- Rejected/untraded setups remain complete durable records rather than disappearing.
-- Execution stage requires a linked order intent.
-- External/manual MT5 positions enter Mission management without fabricated Brain attribution or Decision Snapshot.
-- Reviews keep decision assessment separate from optional outcome/counterfactual evidence.
-- Lifecycle action ids and reducer rules make replay idempotent and fail-closed.
-- `MissionRuntime` is assembled in the real Desk process.
+- Stages: `OBSERVED → CANDIDATE → PLANNED → ARMED → EXECUTING → MANAGING → CLOSED/ABANDONED → REVIEWED`.
+- Distinct origins for scanner, Brain observation, operator and external/manual/unknown MT5 activity.
+- Mission facts stored in the existing append-only hash-chained ledger; no second mutable truth database.
+- Bitemporal valid-time and recorded-time separation.
+- Scanner configuration version recorded for cohort-aware analysis.
+- Immutable `DecisionSnapshot` records both what was known and what was missing at decision time.
+- Rejected/untraded setups remain durable data.
+- External/manual MT5 positions enter management without fabricated Brain attribution or fabricated decision snapshots.
 - Internal position ownership is proven only through durable identity (`clientOrderId → intent.created → mission.intentLinked`), never symbol/side/volume/time similarity.
-- Unowned broker positions are deterministically adopted as `external:unknown`.
-- Broker close events close only a durably linked Mission.
-- `missions` is a realtime topic backed by durable Mission state.
-- Bounded Mission state is exposed through `/state` and `GET /missions?limit=`.
-- Authenticated command surfaces exist for scan ingestion, plan, Mission-bound order submission, abandon and review.
-- `MissionExecutionCoordinator` records Mission ownership before order intent creation and repairs the crash gap on startup.
+- `MissionExecutionCoordinator` records Mission ownership before order-intent creation and repairs the crash gap from durable facts after restart.
 - Canonical contradictions fail closed.
-- Review evidence is validated before mutation and first accepted review is immutable.
-- Lifecycle reconstruction tests cover both executed and rejected populations:
-  - `Scan → Snapshot → Intent → Position → Close → Review`
-  - `Scan → rejected/ABANDONED → Review`
-- Ledger hash-chain integrity is checked after reconstruction.
-- The primary HTTP E2E harness creates a real candidate Scan, plans its Mission and submits only through `/missions/:missionId/orders`.
-- Mission-less `POST /orders` is retired with deterministic `410 MISSION_REQUIRED` before the historical handler can reach `ExecutionSupervisor`.
-- **Red-team hardening:** the 410 tombstone is installed even when `MissionRuntime` is absent. A dedicated regression test proves an isolated/legacy server configuration cannot resurrect direct Mission-less submission.
+- Broker close events close only durably linked Missions.
+- Review keeps decision assessment separate from outcome/counterfactual evidence; accepted review is immutable.
+- Replay/idempotency and ledger hash-chain reconstruction cover both executed and rejected populations.
+- Realtime `missions` topic and bounded `/state` / `/missions` snapshots use durable Mission state.
+- Authenticated command surfaces exist for scan ingestion, planning, Mission-bound order submission, abandon and review.
+- Primary HTTP E2E uses `Scan → Mission → Decision Snapshot/Plan → /missions/:missionId/orders`.
+- Mission-less `POST /orders` remains deterministically retired with `410 MISSION_REQUIRED`, including server fixtures without `MissionRuntime`.
+- **Red-team hardening completed in this run:** the old direct `app.post('/orders') → ExecutionSupervisor.submit()` handler was physically deleted from `server.ts`.
+- A source-level regression test now fails CI if a direct `POST /orders` handler is reintroduced; order creation remains delegated to Mission routes.
 
-### Remaining repository audit note
+Repository-level remaining ADR-0018 work:
 
-The historical direct `POST /orders` handler still physically exists in `server.ts`, but an unconditional Mission-route pre-handler makes it unreachable and regression tests prove it cannot create an intent, including when `MissionRuntime` is absent. This dead compatibility code should still be removed when a safe source edit can be made, because deleting dangerous dead code is stronger than relying indefinitely on interception.
+1. Continue independent replay/reconnect/bypass audit across Desk, Android and Desktop.
+2. Keep native Android/Windows key claims external until target-device proof exists.
+3. Bind/package the real Windows UI around the single `WindowsMissionAppShell` without creating Desktop-local trading truth.
 
-## Android path — repository state
+## Android path — repository evidence
 
-- Mission mutation/order paths use the Desk command-nonce boundary and Android signer/biometric contract.
-- Gap-aware store consumes Mission snapshots/deltas by durable `missionId`.
-- Trade entry requires complete Mission truth and a `PLANNED`/`ARMED` Mission for the exact canonical instrument.
-- Ticket preserves the exact `missionId`; local fake-success messaging was removed.
-- Preview uses Desk preview; client-side sizing is not execution truth.
-- Submit uses `/missions/:missionId/orders`; new Ticket does not use legacy `/orders`.
-- Timeout/ambiguous command results render **UNKNOWN**, not failed/sent, and are never automatically retried.
-- Already-paired bootstrap restores signed REST + realtime Desk truth.
-- Pair screen/controller and versioned secure metadata persistence exist.
-- Pairing remains visibly blocked without a truthful signer; no fallback key is promoted as hardware-backed.
-- Native StrongBox/TEE/key persistence still requires actual device implementation/proof.
+- Mission mutation/order paths use signed requests, command nonce and biometric signer contract.
+- Gap-aware Mission store retains last-known state but blocks consequential use after a gap until resync.
+- Trade entry requires a current `PLANNED`/`ARMED` Mission for the exact canonical instrument.
+- Ticket preserves exact `missionId`; fake local success messaging was removed.
+- Preview comes from Desk; client sizing is not execution truth.
+- Submit uses `/missions/:missionId/orders` only.
+- Timeout/ambiguous submit is **UNKNOWN**, never silently retried or reported as sent.
+- Already-paired bootstrap restores signed REST + authenticated realtime.
+- Pair controller/screen and versioned secure metadata persistence exist.
+- StrongBox/TEE and native key persistence still require physical-device proof.
 
-## Windows/Desktop path — repository state
+## Windows/Desktop path — repository evidence
 
-The repository now has a platform-neutral Mission-bound Windows operator core, a hardened Mission realtime projection, a fail-closed native-signer adapter boundary and a headless application shell. It is **not yet a packaged/native Windows application**, and no repository test is treated as proof of Windows hardware-backed key protection.
+- Signed Desktop transport uses the same identity/command-nonce contract.
+- Desktop locally refuses Mission-less order submission before network access.
+- `DesktopMissionOperator` can submit only through `/missions/:missionId/orders` and requires `DesktopMissionTruth`.
+- Last-known Mission rows remain displayable after disconnect/gap but cannot authorize a new order.
+- Fresh authenticated reconnect requests a full Mission snapshot before action is re-enabled.
+- Heartbeat, sequence-gap and resync behavior have regression coverage.
+- `WindowsProtectedSigner` uses an opaque native Ed25519-provider boundary; private key material is not stored in repository metadata.
+- Missing-key/orphan-key/malformed-metadata states fail closed rather than silently regenerating identity.
+- Hardware protection reported by a bridge is not promoted to `hardwareBackedVerified` without target-Windows evidence.
+- `WindowsMissionAppShell` composes the single Mission runtime and owns no separate trading truth.
 
-Implemented:
+Still external/native:
 
-- Signed Desktop Desk transport with the same request identity and command-nonce contract.
-- Legacy Mission-less `POST /orders` is refused locally by Desktop transport before any network call, while the Desk independently tombstones the same path.
-- Commands are never automatically retried; post-authorisation network uncertainty becomes **UNKNOWN**.
-- `DesktopMissionOperator` sends only `/missions/:missionId/orders` with explicit `origin: operator:windows`.
-- `DesktopMissionTruth` retains last-known rows after disconnect/gap but blocks consequential use until completeness is re-proven.
-- Mission order entry requires the exact Mission, exact canonical and orderable stage (`PLANNED` or `ARMED`).
-- MissionTruth is mandatory in `DesktopMissionOperator`; callers cannot construct an actionable operator that bypasses the stale-state gate.
-- Authenticated Desktop realtime uses a fresh signed hello on each socket and refuses late auth proof from a replaced socket.
-- Desktop realtime subscribes only to `missions`.
-- Sequence gaps preserve old rows as incomplete and trigger a fresh snapshot request instead of applying an unproven delta.
-- Server `resync` marks Mission rows incomplete until the immediately-following snapshot is validated.
-- Desktop honours the Desk-advertised heartbeat interval and sends `ping` frames.
-- Every Desktop reconnect requests a full Mission snapshot (`resume: {}`), deliberately preferring proof over resume bandwidth optimisation.
-- Reconnect tests prove a pre-disconnect sequence cannot re-enable order entry; only a fresh server snapshot restores current truth.
-- `WindowsProtectedSigner` implements the repository-side signer boundary over an opaque native Ed25519 key provider. Private key material never enters repository metadata.
-- Persisted signer metadata is versioned and public-only (`keyName`, public key, protection class, creation time).
-- Metadata-with-missing-key, orphan-native-key and malformed-metadata states fail closed instead of silently regenerating a new Desk identity.
-- A native bridge report of hardware protection is recorded only as `hardware-backed-reported`; repository status remains `hardwareBackedVerified: false` until target-Windows evidence exists.
-- Metadata persistence failure intentionally leaves an orphan key visible so later startup fails closed rather than guessing identity continuity.
-- `WindowsMissionAppShell` composes the single existing Mission runtime for UI binding. It owns no mutable trading truth and exposes actions only while runtime Mission truth is proven current.
-- App-shell regression coverage proves cached/last-known Mission rows remain displayable after stop/disconnect but cannot re-enable a network order; a fresh server snapshot is required.
+- Actual Windows native key-provider + protected persistence implementation/proof.
+- Packaged/native Windows UI binding and runtime verification.
 
-Remaining Desktop work:
+## Realtime and command security — repository evidence
 
-1. Implement the actual native Windows key-provider bridge and protected storage primitive behind `WindowsNativeEd25519Bridge`; prove behavior on target Windows and classify security truthfully.
-2. Bind a packaged/native Windows UI to `WindowsMissionAppShell` without introducing a Desktop-local trading truth store.
-3. Packaging and target-Windows runtime verification.
-
-## Realtime and command security — repository state
-
-- `/stream` admits a socket to `RealtimeHub` only after a signed first-frame hello is verified.
+- `/stream` admits clients only after a signed first-frame hello.
 - Stream auth reuses enrolled-device verification, clock-skew protection, nonce replay protection and Ed25519 verification.
-- Malformed, unsigned, replayed, stale or bad-signature hello attempts are refused before subscription.
-- Mission mutations and Mission orders are consequential command paths requiring a single-use command nonce.
-- Android additionally requests biometric authorisation through its signer contract.
-- Desk reaps clients that stop heartbeating; both Android and Desktop have heartbeat paths in repository code.
-- Mission-less `POST /orders` is retired at the server boundary with a deterministic non-ambiguous 410 response.
-- The retirement guard no longer depends on MissionRuntime being present, closing a configuration-dependent bypass found during the ADR-0018 red-team audit.
+- Malformed/unsigned/replayed/stale/bad-signature hello attempts are rejected before subscription.
+- Consequential Mission commands require one-time command nonce.
+- Desk reaps clients that stop heartbeating; Android and Desktop heartbeat paths exist.
+- Mission-less `POST /orders` has no direct execution handler and remains a deterministic retired endpoint.
 
-## ADR-0019 Trading Brain foundation — repository state
+## ADR-0019 Trading Brain — deterministic foundation
 
-A deliberately narrow foundation is now implemented in `packages/brain` and is **not wired into runtime execution**.
+Implemented in `packages/brain` and still isolated from runtime execution:
 
-Implemented:
-
-- Independent `@keel/brain` package boundary.
-- Pure `evaluate(BrainVersion, FeatureVector, Context)` function with no clock, network, filesystem, broker, account, LLM or environment access.
-- Explicit `brainVersion`, `featureSetVersion` and `rubricVersion` provenance in every output.
+- Pure `evaluate(BrainVersion, FeatureVector, Context)` function with no clock, network, filesystem, broker, account, environment or LLM dependency.
+- Explicit `brainVersion`, `featureSetVersion` and `rubricVersion` provenance.
 - Transparent weighted rubric over normalized explicit features.
-- Deterministic machine-readable rationale codes rather than prose.
-- Feature-set mismatch is rejected rather than silently compared across incompatible populations.
-- Missing required features produce `insufficient-data` with an explicit sorted missing-feature list; values are never imputed.
-- Malformed normalized features and invalid rubrics fail closed.
-- Integer-basis-point rounding provides stable deterministic score representation.
-- Regression tests prove byte-equivalent same-input output, wall-clock independence and score bounds over a deterministic grid of feature combinations.
-- No LLM code exists in this package and no Brain output has a privileged execution path.
+- Machine-readable rationale codes; no AI prose in scoring truth.
+- Feature-set mismatch fails closed.
+- Missing required features produce `insufficient-data`; values are never imputed.
+- Invalid normalized values/rubrics fail closed.
+- Deterministic integer-basis-point score representation.
+- Same input/version produces byte-equivalent output and is independent of wall-clock time.
 
-Not yet implemented/wired:
+### Point-in-time feature extraction — added
 
-- Versioned point-in-time feature extraction from actual scan data.
-- Brain → Mission candidate/planning integration.
-- Champion/challenger registry or forward-only evaluation.
-- LLM explanation edge.
-- Memory/evaluation layers.
+A pure bitemporal extractor now exists in the Brain package:
 
-No further runtime integration should occur until the remaining ADR-0018 repository audit items are resolved.
+- Versioned `FeatureSetVersion` definitions map stable scanner/source keys to normalized Brain features.
+- Every observation carries market `validAt` and system `recordedAt`.
+- Historical extraction sees only facts with `validAt <= decisionAsOf` **and** `recordedAt <= knowledgeCutoff`.
+- Later corrections cannot leak into an earlier historical decision replay.
+- Feature freshness limits turn stale evidence into explicit missing data rather than silently carrying it forward.
+- Contradictory facts at identical bitemporal coordinates fail closed.
+- Impossible clock-domain evidence (`recordedAt < validAt`), NaN/infinite values and out-of-contract normalization ranges fail closed.
+- Extraction is deterministic regardless of input observation ordering.
+- Pipeline regression proves `point-in-time extraction → deterministic evaluate` exactly replays the original historical score with the original knowledge cutoff.
+- The same test proves a later correction may change a later hindsight query, but cannot retroactively alter the original decision replay.
+- Missing point-in-time evidence flows through to Brain as `insufficient-data` rather than a fabricated score.
+
+Not yet wired:
+
+- Adapter from actual immutable scan/Mission ledger observations into `BitemporalFeatureObservation`.
+- Brain output persistence into Mission decision facts.
+- Brain → Mission candidate/planning runtime integration.
+- Champion/challenger registry and forward-only paired evaluation.
+- LLM explanation/query/hypothesis edge.
+- ADR-0020 memory and ADR-0021 evaluation runtime layers.
+
+The LLM remains outside actionable scoring and broker/account truth.
 
 ## ADR-0018 exit status
 
-ADR-0018 remains **IN PROGRESS**, but the repository-level Mission ownership path is substantially closed. Current remaining gaps are explicit:
+**IN PROGRESS — repository ownership boundary substantially hardened.**
 
-1. **Dead compatibility removal** — remove the physically present historical direct `/orders` execution handler after confirming no fixture/tool requires it; the current unconditional tombstone and regression tests already prevent execution.
-2. **Native device-key proof** — Android hardware-backed behavior and Windows native key-provider/protected persistence require target-device/runtime proof. Repository abstractions deliberately do not claim this evidence.
-3. **Native Windows product completion** — package/bind the Windows UI to the existing single `WindowsMissionAppShell`; no local source of trading truth is permitted.
-4. **Final independent audit continuation** — continue replay/reconnect/bypass inspection across server, Android and Desktop.
+The dead direct `/orders` compatibility handler is now removed. Remaining blockers are no longer a known server-side Mission-less execution path; they are final cross-client audit and external/native runtime proof/product packaging.
 
-The pure Brain package may be developed in isolation, but Brain-to-Mission/runtime integration remains blocked until these repository exit items are closed. External Windows/MT5/device proofs remain on the verification ladder and must not be converted into repository claims.
+Brain pure-library work may continue in isolation. Brain-to-Mission/execution integration must remain controlled and cannot create a privileged execution path.
 
 ## Verification ladder
 
@@ -190,42 +161,41 @@ The pure Brain package may be developed in isolation, but Brain-to-Mission/runti
 | --- | --- | --- |
 | Architecture ADR-0015–0022 | **DONE** | Accepted ADRs + `docs/BRAIN-DESIGN-REVIEW.md`. |
 | Repository MT5 foundation | **SUBSTANTIALLY DONE** | Deterministic execution truth, instrument/margin/recovery wiring built; target-terminal proof remains external. |
-| Repository lint/typecheck/tests | **PASS** | Exact code head `59fc311cb1213f6eee6402030c4f50731e284ab1` passed GitHub Actions `verify`, including the new `@keel/brain` package. This documentation commit requires its own exact-head run before being called green. |
-| Simulation/chaos | **STRONG, NOT COMPLETE** | Duplicate/recovery/clock/partial-fill/margin and Mission replay paths covered; real terminal/device restart remains external. |
-| Trade Mission spine | **IN PROGRESS — REPOSITORY OWNERSHIP PATH HARDENED** | Durable lifecycle + server/Android/Desktop Mission truth paths exist; config-dependent legacy-order bypass closed; dead-handler cleanup/native/runtime proof + final audit remain. |
-| Android first-time pairing | **REPOSITORY BUILT / DEVICE PROOF BLOCKED** | Controller/screen/persistence fail closed without signer; hardware-backed proof external. |
-| Windows Mission app shell | **REPOSITORY BUILT / NATIVE PACKAGING BLOCKED** | Single-runtime shell built; stale UI cannot submit; native bridge/packaging proof remains external. |
-| Windows protected signer | **ADAPTER BUILT / TARGET PROOF BLOCKED** | Repository adapter preserves identity and keeps private key opaque; native provider implementation and Windows proof remain external. |
-| Realtime + command authentication | **REPOSITORY DONE** | Signed stream admission, replay guard, command nonce; Desktop heartbeat/reconnect proof covered. |
-| Trading Brain | **FOUNDATION BUILT / RUNTIME WIRING BLOCKED** | Pure deterministic/versioned evaluator exists and is green; no Mission/execution integration yet. |
-| Memory/Evaluation | **DESIGNED ONLY / BLOCKED** | Must wait for Mission + deterministic/versioned Brain facts. |
+| Repository lint/typecheck/tests | **PASS** | Exact code head `3c1cbf5ab8c9ef4826f394e59be1ee424603b468` passed GitHub Actions `verify` after Mission handler removal, bitemporal feature extraction and point-in-time Brain pipeline tests. This documentation commit needs its own exact-head CI before being called green. |
+| Simulation/chaos | **STRONG, NOT COMPLETE** | Duplicate/recovery/clock/partial-fill/margin/Mission replay covered; target terminal/device restart remains external. |
+| Trade Mission spine | **IN PROGRESS — OWNERSHIP BOUNDARY HARDENED** | Durable lifecycle + server/Android/Desktop Mission truth exist; direct Mission-less POST handler physically removed; final cross-client/native audit remains. |
+| Android pairing | **REPOSITORY BUILT / DEVICE PROOF BLOCKED** | Controller/screen/persistence fail closed; native hardware-backed proof external. |
+| Windows Mission shell | **REPOSITORY BUILT / NATIVE PACKAGING BLOCKED** | Single-runtime shell and stale-state guard built; native bridge/packaging proof external. |
+| Realtime + command auth | **REPOSITORY DONE** | Signed stream admission, replay guard, command nonce, heartbeat/resync coverage. |
+| Trading Brain | **DETERMINISTIC FOUNDATION + PIT EXTRACTION BUILT** | Pure versioned scoring and bitemporal feature extraction built; actual ledger/Mission runtime adapter not yet wired. |
+| Memory/Evaluation | **DESIGNED / BLOCKED** | Must derive from immutable Mission/Brain facts; no AI conclusions as memory truth. |
 | MetaEditor compile | **NOT VERIFIED** | Requires Windows/MetaEditor. |
 | Real MT5 terminal | **NOT VERIFIED** | Requires target terminal. |
-| LiteFinance Demo E2E | **NOT VERIFIED** | Requires external stages above. |
+| LiteFinance Demo E2E | **NOT VERIFIED** | Requires Windows + MT5 + broker Demo. |
 
 ## External verification boundary — NOT VERIFIED
 
-Repository CI does **not** prove:
+Repository CI does not prove:
 
 - MetaEditor compilation of `KeelAgent.mq5` and included `.mqh` files;
-- actual EA attach/runtime inside target MT5;
-- target-terminal `TimeGMT`, `TimeTradeServer`, `SymbolSelect`, spool/file durability behavior;
+- EA attach/runtime in target MT5;
+- target-terminal `TimeGMT`, `TimeTradeServer`, symbol selection and spool durability;
 - real `OrderCheck` / `OrderCalcMargin` behavior on LiteFinance Demo;
 - actual LiteFinance symbol aliases, filling modes and account position model;
-- EA/host/terminal restart and reconnect against real broker state;
-- end-to-end App → Desk → host → EA → MT5 → LiteFinance → reconciliation;
-- physical Android native key provisioning/storage and background/resume behavior;
-- actual Windows native key provider, protected private-key persistence, hardware-backed classification, packaging and target-Windows runtime behavior;
+- host/EA/terminal restart and reconnect against broker truth;
+- App → Desk → host → EA → MT5 → LiteFinance end-to-end runtime;
+- physical Android key provisioning/storage/background behavior;
+- actual Windows native key provider, protected key persistence, hardware-backed classification, packaging/runtime;
 - any real-money execution.
 
 No real-money execution is enabled or claimed.
 
 ## Next highest-priority sequence
 
-1. Continue the independent ADR-0018 red-team audit and safely remove the physically present dead direct `/orders` handler while preserving the deterministic 410 tombstone.
-2. Implement/integrate the actual Windows native key-provider + protected persistence bridge; do not claim hardware-backed protection without target proof.
-3. Bind/package the real Windows UI around the **single** `WindowsMissionAppShell` path and add restart/reconnect tests at that boundary.
-4. Perform target Windows + physical-device verification and keep failures on the verification ladder rather than converting assumptions into facts.
-5. After the repository ADR-0018 exit audit closes, wire the already-pure `@keel/brain` foundation into versioned point-in-time scan features and Trade Missions.
-6. Then implement ADR-0021 evaluation and ADR-0020 memory in the accepted order, with ADR-0022 version/challenger rules and no automatic promotion.
-7. Keep MT5/LiteFinance facts on the external verification ladder; do not substitute repository tests for physical/runtime proof.
+1. Continue the ADR-0018 independent replay/reconnect/bypass audit and remove any remaining client/server path that can create consequential state without durable Mission provenance.
+2. Implement the actual immutable scan-ledger → bitemporal Brain observation adapter; preserve original valid-time/recorded-time and reject hindsight leakage.
+3. Persist versioned deterministic Brain observations/outputs as durable Mission evidence without granting Brain execution authority.
+4. Add champion/challenger registry with challenger creation time and forward-only paired evidence; never auto-promote.
+5. Implement ADR-0021 evaluation before ADR-0020 derived memory so memory is built only from validated evidence.
+6. Keep LLM work quarantined to explanation/query/hypothesis generation and validate all displayed figures against deterministic fields.
+7. Keep Windows/Android native security, MetaEditor, MT5 and LiteFinance Demo on the external verification ladder until physically proven.
