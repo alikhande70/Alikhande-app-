@@ -51,7 +51,8 @@ export function observationsFromMissionLedger(
   request: LedgerObservationRequest,
 ): readonly BitemporalFeatureObservation[] {
   required(request.missionId, 'missionId');
-  if (request.bindings.length === 0) throw new Error('at least one ledger feature binding is required');
+  if (request.bindings.length === 0)
+    throw new Error('at least one ledger feature binding is required');
 
   const sourceKeys = new Set<string>();
   const marketKeys = new Set<string>();
@@ -68,13 +69,17 @@ export function observationsFromMissionLedger(
     marketKeys.add(binding.marketStateKey);
   }
 
-  const rows = request.rows.filter((row) => row.payload.observation.missionId === request.missionId);
+  const rows = request.rows.filter(
+    (row) => row.payload.observation.missionId === request.missionId,
+  );
   let previousSeq = 0;
   const observations: BitemporalFeatureObservation[] = [];
 
   for (const row of rows) {
-    if (!Number.isSafeInteger(row.seq) || row.seq <= 0) throw new Error('ledger seq must be a positive safe integer');
-    if (row.seq <= previousSeq) throw new Error('ledger rows must be supplied in strictly increasing seq order');
+    if (!Number.isSafeInteger(row.seq) || row.seq <= 0)
+      throw new Error('ledger seq must be a positive safe integer');
+    if (row.seq <= previousSeq)
+      throw new Error('ledger rows must be supplied in strictly increasing seq order');
     previousSeq = row.seq;
 
     finiteTimestamp(row.ts, 'ledger recorded time');
