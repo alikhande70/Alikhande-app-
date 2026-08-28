@@ -104,11 +104,11 @@ describe('ADR-0018 missionless order retirement', () => {
     expect(problem.code).toBe('MISSION_REQUIRED');
     expect(problem.outcomeUnknown).toBe(false);
 
-    // Verify through the same authenticated truth surface clients use. The
-    // retired command must not leave behind even a projected order/intent.
-    const ordersResponse = await signedCall('GET', '/orders');
-    expect(ordersResponse.status).toBe(200);
-    const orders = ordersResponse.json as Array<Record<string, unknown>>;
-    expect(orders.some((order) => order.intentId === intentId)).toBe(false);
+    // Verify through the normal read-only Desk truth surface. The retired
+    // command must not leave behind even a projected order/intent.
+    const stateResponse = await signedCall('GET', '/state');
+    expect(stateResponse.status).toBe(200);
+    const state = stateResponse.json as { orders: Array<Record<string, unknown>> };
+    expect(state.orders.some((order) => order.intentId === intentId)).toBe(false);
   });
 });
