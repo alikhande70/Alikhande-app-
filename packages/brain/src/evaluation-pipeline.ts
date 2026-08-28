@@ -37,6 +37,15 @@ function requireFiniteTimestamp(name: string, value: number): void {
   }
 }
 
+function validateOutcomePolicy(policy: FixedHorizonOutcomePolicy): void {
+  if (policy.labelVersion.trim().length === 0) throw new Error('labelVersion is required');
+  requireFiniteTimestamp('horizonMs', policy.horizonMs);
+  if (policy.horizonMs <= 0) throw new Error('horizonMs must be greater than zero');
+  if (!Number.isFinite(policy.flatThresholdR) || policy.flatThresholdR < 0) {
+    throw new Error('flatThresholdR must be finite and non-negative');
+  }
+}
+
 function observationKey(symbol: string, validAt: number): string {
   return `${symbol}\u0000${validAt}`;
 }
@@ -83,6 +92,7 @@ export function buildMissionEvaluationPipeline(
   evaluationPolicy: EvaluationPolicy,
 ): EvaluationPipelineResult {
   if (missions.length === 0) throw new Error('mission population is required');
+  validateOutcomePolicy(outcomePolicy);
 
   const missionIds = new Set<string>();
   for (const mission of missions) {
