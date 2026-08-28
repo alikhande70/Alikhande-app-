@@ -41,6 +41,50 @@ export interface MissionObservation {
   readonly marketState: Readonly<Record<string, unknown>>;
 }
 
+/** Exact bitemporal coordinates used by one deterministic Brain feature. */
+export interface BrainFeatureEvidence {
+  readonly featureKey: string;
+  readonly sourceKey: string;
+  readonly validAt: number;
+  readonly recordedAt: number;
+  readonly rawValue: number;
+  readonly normalizedValue: number;
+}
+
+/**
+ * Durable output of one deterministic Brain evaluation (ADR-0019/0022).
+ *
+ * This is evidence, not execution authority. It records the exact versions,
+ * bitemporal cutoffs, rationale codes, evidence coordinates and missing fields
+ * that existed when the decision snapshot was sealed. LLM text is deliberately
+ * absent: AI explanations may consume this record, but may never become part of
+ * the actionable score or broker/account truth.
+ */
+export type BrainDecisionEvidence =
+  | {
+      readonly status: 'scored';
+      readonly brainVersion: string;
+      readonly featureSetVersion: string;
+      readonly rubricVersion: string;
+      readonly decisionAsOf: number;
+      readonly knowledgeCutoff: number;
+      readonly score: number;
+      readonly rationaleCodes: readonly string[];
+      readonly evidence: readonly BrainFeatureEvidence[];
+      readonly missing: readonly [];
+    }
+  | {
+      readonly status: 'insufficient-data';
+      readonly brainVersion: string;
+      readonly featureSetVersion: string;
+      readonly rubricVersion: string;
+      readonly decisionAsOf: number;
+      readonly knowledgeCutoff: number;
+      readonly rationaleCodes: readonly string[];
+      readonly evidence: readonly BrainFeatureEvidence[];
+      readonly missing: readonly string[];
+    };
+
 /**
  * Frozen record of what was known at decision time.
  *
@@ -61,6 +105,9 @@ export interface DecisionSnapshot {
     readonly invalidation: readonly string[];
   };
   readonly riskVerdict?: Readonly<Record<string, unknown>>;
+  /** Full deterministic Brain evidence. Never reconstructed from current state. */
+  readonly brainEvaluation?: BrainDecisionEvidence;
+  /** @deprecated Compatibility field. Prefer brainEvaluation.brainVersion. */
   readonly brainVersion?: string;
   readonly regimeVersion?: string;
 }
