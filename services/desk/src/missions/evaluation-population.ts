@@ -24,10 +24,27 @@ export interface DurableMissionEvaluationView {
   readonly decisionSnapshot: DecisionSnapshot;
 }
 
+/**
+ * Every internal scan that can belong to a future Champion/Challenger denominator.
+ *
+ * `knownAt` is the ledger record time, not a reconstructed Brain decision time. This
+ * keeps scans with missing/failed comparison snapshots visible without inventing AI
+ * or Brain evidence. External/manual MT5 Missions are deliberately excluded.
+ */
+export interface DurablePairedEligibilityView {
+  readonly missionId: string;
+  readonly canonical: string;
+  readonly scanConfigVersion: string;
+  readonly observedAt: number;
+  readonly knownAt: number;
+}
+
 export interface MissionEvaluationPopulation {
   /** Finalised internal Mission decisions eligible for deterministic evaluation. */
   readonly missions: readonly DurableMissionEvaluationView[];
-  /** Internal Missions that exist durably but have not sealed a decision yet. */
+  /** All internal durable scans, including scans whose decision/comparison is missing. */
+  readonly pairedEligibility: readonly DurablePairedEligibilityView[];
+  /** Internal Missions that exist durably but have not sealed a complete Brain decision yet. */
   readonly pendingDecisionMissionIds: readonly string[];
   /** Broker/manual Missions remain durable truth but are never credited to a Brain. */
   readonly externalMissionIds: readonly string[];
@@ -62,8 +79,8 @@ function readAllRows(ledger: Ledger): ReturnType<Ledger['read']> {
  * No mutable Mission table, cache or current Brain registry participates. External
  * MT5 positions stay visible as an explicit excluded population rather than being
  * silently mixed into Brain statistics. Internal Missions without a sealed Brain
- * decision are also surfaced explicitly so a caller cannot mistake an incomplete
- * population for complete evidence.
+ * decision are surfaced both as pending and in `pairedEligibility`, so missing
+ * Challenger shadow work cannot disappear from the statistical denominator.
  */
 export function buildMissionEvaluationPopulation(ledger: Ledger): MissionEvaluationPopulation {
   const integrity = ledger.verifyChain();
@@ -74,7 +91,7 @@ export function buildMissionEvaluationPopulation(ledger: Ledger): MissionEvaluat
   }
 
   const head = ledger.head;
-  const observed = new Map<string, number>();
+  const observed = new Map<string, Readonly<{ seq: number; recordedAt: number }>>();
 
   for (const row of readAllRows(ledger)) {
     if (row.kind !== 'mission.observed') continue;
@@ -91,10 +108,11 @@ export function buildMissionEvaluationPopulation(ledger: Ledger): MissionEvaluat
         `mission '${missionId}' was recorded before its market observation was valid`,
       );
     }
-    observed.set(missionId, row.seq);
+    observed.set(missionId, { seq: row.seq, recordedAt: row.ts });
   }
 
   const missions: DurableMissionEvaluationView[] = [];
+  const pairedEligibility: DurablePairedEligibilityView[] = [];
   const pendingDecisionMissionIds: string[] = [];
   const externalMissionIds: string[] = [];
 
@@ -108,6 +126,18 @@ export function buildMissionEvaluationPopulation(ledger: Ledger): MissionEvaluat
       externalMissionIds.push(missionId);
       continue;
     }
+
+    const observationBoundary = observed.get(missionId);
+    if (observationBoundary === undefined) {
+      throw new Error(`mission '${missionId}' lost its durable observation boundary`);
+    }
+    pairedEligibility.push({
+      missionId: record.missionId,
+      canonical: record.canonical,
+      scanConfigVersion: record.scanConfigVersion,
+      observedAt: record.observedAt,
+      knownAt: observationBoundary.recordedAt,
+    });
 
     const snapshot = record.decisionSnapshot;
     if (snapshot?.brainEvaluation === undefined || snapshot.brainComparison === undefined) {
@@ -143,6 +173,7 @@ export function buildMissionEvaluationPopulation(ledger: Ledger): MissionEvaluat
 
   return {
     missions,
+    pairedEligibility,
     pendingDecisionMissionIds,
     externalMissionIds,
     ledgerHead: head,
