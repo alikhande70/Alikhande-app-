@@ -13,6 +13,10 @@
     "./mission-evaluation": {
       "types": "./dist/mission-evaluation.d.ts",
       "default": "./dist/mission-evaluation.js"
+    },
+    "./outcome-labeling": {
+      "types": "./dist/outcome-labeling.d.ts",
+      "default": "./dist/outcome-labeling.js"
     }
   },
   "scripts": {
