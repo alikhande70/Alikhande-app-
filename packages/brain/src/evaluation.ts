@@ -56,7 +56,8 @@ export interface ScanEvaluationReport {
 }
 
 function requireFiniteTimestamp(name: string, value: number): void {
-  if (!Number.isFinite(value) || value < 0) throw new Error(`${name} must be a finite non-negative timestamp`);
+  if (!Number.isFinite(value) || value < 0)
+    throw new Error(`${name} must be a finite non-negative timestamp`);
 }
 
 function mean(values: readonly number[]): number | null {
@@ -84,7 +85,11 @@ function validateScan(scan: ScanDecisionEvidence): void {
   requireFiniteTimestamp('knowledgeTime', scan.knowledgeTime);
 
   if (scan.decision.status === 'scored') {
-    if (!Number.isFinite(scan.decision.score) || scan.decision.score < 0 || scan.decision.score > 100) {
+    if (
+      !Number.isFinite(scan.decision.score) ||
+      scan.decision.score < 0 ||
+      scan.decision.score > 100
+    ) {
       throw new Error(`invalid score for mission '${scan.missionId}'`);
     }
   } else if (scan.decision.missing.length === 0) {
@@ -134,7 +139,8 @@ export function evaluateScanPopulation(
   }
 
   const scanConfigVersions = new Set(scans.map((scan) => scan.scanConfigVersion));
-  if (scanConfigVersions.size !== 1) throw new Error('evaluation requires one scan configuration cohort');
+  if (scanConfigVersions.size !== 1)
+    throw new Error('evaluation requires one scan configuration cohort');
   const hashes = new Set(scans.map((scan) => scan.brainContentHash));
   if (hashes.size !== 1) throw new Error('evaluation requires one immutable Brain content hash');
 
@@ -145,7 +151,9 @@ export function evaluateScanPopulation(
   });
 
   const eligibleOutcomes = scans
-    .filter((scan) => scan.outcome !== undefined && scan.outcome.recordedAt <= policy.evaluationCutoff)
+    .filter(
+      (scan) => scan.outcome !== undefined && scan.outcome.recordedAt <= policy.evaluationCutoff,
+    )
     .map((scan) => scan.outcome as ScanOutcomeEvidence);
   const counterfactualR = eligibleOutcomes.flatMap((outcome) =>
     outcome.counterfactualR === undefined ? [] : [outcome.counterfactualR],
@@ -156,7 +164,8 @@ export function evaluateScanPopulation(
 
   const reasons: string[] = [];
   if (scans.length < policy.minimumScans) reasons.push('minimum-scan-population-not-met');
-  if (eligibleOutcomes.length < policy.minimumOutcomes) reasons.push('minimum-forward-outcomes-not-met');
+  if (eligibleOutcomes.length < policy.minimumOutcomes)
+    reasons.push('minimum-forward-outcomes-not-met');
 
   return {
     status: reasons.length === 0 ? 'ready' : 'insufficient-data',
@@ -175,7 +184,8 @@ export function evaluateScanPopulation(
     outcomes: {
       eligibleOutcomes: eligibleOutcomes.length,
       favourable: eligibleOutcomes.filter((outcome) => outcome.directional === 'favourable').length,
-      unfavourable: eligibleOutcomes.filter((outcome) => outcome.directional === 'unfavourable').length,
+      unfavourable: eligibleOutcomes.filter((outcome) => outcome.directional === 'unfavourable')
+        .length,
       flat: eligibleOutcomes.filter((outcome) => outcome.directional === 'flat').length,
       meanCounterfactualR: mean(counterfactualR),
       realisedTrades: realisedTradeR.length,
