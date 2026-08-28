@@ -62,7 +62,9 @@ export function withBrainComparisonEvidence(input: {
   finiteTime(missionKnowledgeTime, 'missionKnowledgeTime');
   validateHash(championHash);
   if (versions.length === 0) {
-    throw new BrainComparisonInvariantError('paired Brain comparison requires at least one version');
+    throw new BrainComparisonInvariantError(
+      'paired Brain comparison requires at least one version',
+    );
   }
 
   const hashes = new Set<BrainContentHash>();
@@ -73,7 +75,9 @@ export function withBrainComparisonEvidence(input: {
     validateHash(version.contentHash);
     finiteTime(version.createdAt, 'Brain version createdAt');
     if (hashes.has(version.contentHash)) {
-      throw new BrainComparisonInvariantError(`duplicate Brain content hash '${version.contentHash}'`);
+      throw new BrainComparisonInvariantError(
+        `duplicate Brain content hash '${version.contentHash}'`,
+      );
     }
     hashes.add(version.contentHash);
     if (versionIds.has(version.evaluation.brainVersion)) {
@@ -96,7 +100,9 @@ export function withBrainComparisonEvidence(input: {
   }
 
   if (championCount !== 1) {
-    throw new BrainComparisonInvariantError('paired Brain comparison requires exactly one champion');
+    throw new BrainComparisonInvariantError(
+      'paired Brain comparison requires exactly one champion',
+    );
   }
   const champion = versions.find((version) => version.contentHash === championHash);
   if (champion === undefined) {
