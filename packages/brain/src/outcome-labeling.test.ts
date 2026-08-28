@@ -1,9 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import {
   buildFixedHorizonOutcomeLabel,
+  type DurableOutcomeSeedMission,
   type FixedHorizonOutcomePolicy,
   type MarketCloseObservation,
   type OutcomeMissionSeed,
+  projectOutcomeSeedFromDecisionSnapshot,
 } from './outcome-labeling.js';
 
 const seed: OutcomeMissionSeed = {
@@ -13,6 +15,16 @@ const seed: OutcomeMissionSeed = {
   direction: 'long',
   referencePrice: 100,
   riskDistance: 2,
+};
+
+const durableMission: DurableOutcomeSeedMission = {
+  missionId: 'mission-1',
+  canonical: 'SIM-XAUUSD',
+  decisionSnapshot: {
+    asOf: 990,
+    brainEvaluation: { knowledgeCutoff: 1_000 },
+    plan: { side: 'buy', entry: '100', stop: '98' },
+  },
 };
 
 const policy: FixedHorizonOutcomePolicy = {
@@ -27,6 +39,94 @@ const observation: MarketCloseObservation = {
   recordedAt: 1_305,
   close: 103,
 };
+
+describe('projectOutcomeSeedFromDecisionSnapshot', () => {
+  it('derives direction, reference price and risk only from the sealed Mission snapshot', () => {
+    expect(projectOutcomeSeedFromDecisionSnapshot(durableMission)).toEqual({
+      status: 'ready',
+      seed,
+    });
+  });
+
+  it('keeps rejected or unplanned scans as first-class insufficient data', () => {
+    expect(
+      projectOutcomeSeedFromDecisionSnapshot({
+        ...durableMission,
+        decisionSnapshot: { ...durableMission.decisionSnapshot, plan: undefined },
+      }),
+    ).toEqual({ status: 'insufficient-data', missing: ['plan'] });
+
+    expect(
+      projectOutcomeSeedFromDecisionSnapshot({
+        ...durableMission,
+        decisionSnapshot: {
+          ...durableMission.decisionSnapshot,
+          plan: { side: 'buy', stop: '98' },
+        },
+      }),
+    ).toEqual({ status: 'insufficient-data', missing: ['plan.entry'] });
+  });
+
+  it('fails closed on impossible historical timing or a stop on the profitable side', () => {
+    expect(() =>
+      projectOutcomeSeedFromDecisionSnapshot({
+        ...durableMission,
+        decisionSnapshot: {
+          ...durableMission.decisionSnapshot,
+          asOf: 1_001,
+        },
+      }),
+    ).toThrow(/after its Brain knowledge cutoff/);
+
+    expect(() =>
+      projectOutcomeSeedFromDecisionSnapshot({
+        ...durableMission,
+        decisionSnapshot: {
+          ...durableMission.decisionSnapshot,
+          plan: { side: 'buy', entry: '100', stop: '101' },
+        },
+      }),
+    ).toThrow(/buy plan stop must be below entry/);
+
+    expect(() =>
+      projectOutcomeSeedFromDecisionSnapshot({
+        ...durableMission,
+        decisionSnapshot: {
+          ...durableMission.decisionSnapshot,
+          plan: { side: 'sell', entry: '100', stop: '99' },
+        },
+      }),
+    ).toThrow(/sell plan stop must be above entry/);
+  });
+
+  it('refuses non-price plan strings instead of silently manufacturing an evaluation basis', () => {
+    expect(() =>
+      projectOutcomeSeedFromDecisionSnapshot({
+        ...durableMission,
+        decisionSnapshot: {
+          ...durableMission.decisionSnapshot,
+          plan: { side: 'buy', entry: 'market', stop: '98' },
+        },
+      }),
+    ).toThrow(/plan.entry is not a canonical positive decimal/);
+  });
+
+  it('composes snapshot truth directly into a deterministic future label', () => {
+    const projected = projectOutcomeSeedFromDecisionSnapshot(durableMission);
+    expect(projected.status).toBe('ready');
+    if (projected.status !== 'ready') throw new Error('expected a ready outcome seed');
+
+    expect(buildFixedHorizonOutcomeLabel(projected.seed, observation, policy)).toEqual({
+      labelVersion: 'fixed-close-r-v1',
+      missionId: 'mission-1',
+      decisionKnowledgeTime: 1_000,
+      validAt: 1_300,
+      recordedAt: 1_305,
+      directional: 'favourable',
+      counterfactualR: 1.5,
+    });
+  });
+});
 
 describe('buildFixedHorizonOutcomeLabel', () => {
   it('builds a deterministic long counterfactual label at the exact horizon', () => {
