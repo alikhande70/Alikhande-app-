@@ -8,6 +8,7 @@ import {
 
 const seed: OutcomeMissionSeed = {
   missionId: 'mission-1',
+  symbol: 'SIM-XAUUSD',
   decisionKnowledgeTime: 1_000,
   direction: 'long',
   referencePrice: 100,
@@ -58,6 +59,12 @@ describe('buildFixedHorizonOutcomeLabel', () => {
     );
     expect(result.directional).toBe('flat');
     expect(result.counterfactualR).toBeCloseTo(0.05);
+  });
+
+  it('rejects market evidence from a different symbol', () => {
+    expect(() =>
+      buildFixedHorizonOutcomeLabel(seed, { ...observation, symbol: 'SIM-EURUSD' }, policy),
+    ).toThrow(/does not match mission symbol/);
   });
 
   it('refuses nearest-bar substitution so data availability cannot move the horizon', () => {
