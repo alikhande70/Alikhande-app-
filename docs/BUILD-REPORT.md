@@ -8,7 +8,7 @@ The repository-level MT5 foundation is substantially built and remains fail-clos
 
 ADR-0018 — Trade Mission now has a hardened repository ownership path: scans, rejected setups, Mission lifecycle, Mission-bound intents, broker positions, external/manual positions, close/review and client realtime state are durable and reconstructable. The historical direct Mission-less `POST /orders` execution handler has now been physically removed from `server.ts`; the deterministic `410 MISSION_REQUIRED` tombstone remains, and a source-level regression test prevents direct handler reintroduction.
 
-ADR-0019 has a non-integrated deterministic foundation in `packages/brain`. It now includes both the versioned pure scoring rubric and a pure bitemporal point-in-time feature extractor. Brain runtime/execution wiring remains intentionally absent.
+ADR-0019 has a deterministic foundation in `packages/brain`, an immutable Mission-ledger-to-bitemporal-observation bridge, and a Desk boundary that seals deterministic Brain output plus exact point-in-time evidence into the existing immutable Mission decision snapshot. Brain runtime/execution authority remains intentionally absent.
 
 The preserved branch `claude/personal-trading-app-atm6e1` is outside this workstream and must remain untouched.
 
@@ -57,8 +57,8 @@ Implemented:
 - Authenticated command surfaces exist for scan ingestion, planning, Mission-bound order submission, abandon and review.
 - Primary HTTP E2E uses `Scan → Mission → Decision Snapshot/Plan → /missions/:missionId/orders`.
 - Mission-less `POST /orders` remains deterministically retired with `410 MISSION_REQUIRED`, including server fixtures without `MissionRuntime`.
-- **Red-team hardening completed in this run:** the old direct `app.post('/orders') → ExecutionSupervisor.submit()` handler was physically deleted from `server.ts`.
-- A source-level regression test now fails CI if a direct `POST /orders` handler is reintroduced; order creation remains delegated to Mission routes.
+- The old direct `app.post('/orders') → ExecutionSupervisor.submit()` handler was physically deleted from `server.ts`.
+- A source-level regression test fails CI if a direct `POST /orders` handler is reintroduced; order creation remains delegated to Mission routes.
 
 Repository-level remaining ADR-0018 work:
 
@@ -120,9 +120,9 @@ Implemented in `packages/brain` and still isolated from runtime execution:
 - Deterministic integer-basis-point score representation.
 - Same input/version produces byte-equivalent output and is independent of wall-clock time.
 
-### Point-in-time feature extraction — added
+### Point-in-time feature extraction and Mission-ledger bridge
 
-A pure bitemporal extractor now exists in the Brain package:
+A pure bitemporal extractor and durable-ledger bridge now exist:
 
 - Versioned `FeatureSetVersion` definitions map stable scanner/source keys to normalized Brain features.
 - Every observation carries market `validAt` and system `recordedAt`.
@@ -132,15 +132,30 @@ A pure bitemporal extractor now exists in the Brain package:
 - Contradictory facts at identical bitemporal coordinates fail closed.
 - Impossible clock-domain evidence (`recordedAt < validAt`), NaN/infinite values and out-of-contract normalization ranges fail closed.
 - Extraction is deterministic regardless of input observation ordering.
-- Pipeline regression proves `point-in-time extraction → deterministic evaluate` exactly replays the original historical score with the original knowledge cutoff.
-- The same test proves a later correction may change a later hindsight query, but cannot retroactively alter the original decision replay.
+- `observationsFromMissionLedger()` converts immutable `mission.observed` rows into Brain observations without consulting current projections or AI output.
+- The bridge uses an explicit field allow-list and preserves ledger `ts` as recorded-time and Mission `observedAt` as market valid-time.
+- Pipeline regression proves `immutable Mission ledger → bitemporal extraction → deterministic evaluate` exactly replays the original historical score with the original knowledge cutoff.
+- A later correction may change a later hindsight query, but cannot retroactively alter the original decision replay.
 - Missing point-in-time evidence flows through to Brain as `insufficient-data` rather than a fabricated score.
+
+### Durable deterministic Brain decision evidence — added
+
+The existing immutable `mission.snapshotSealed` fact now carries optional full deterministic Brain evidence rather than only a version label:
+
+- `brainVersion`, `featureSetVersion` and `rubricVersion` are recorded together.
+- The decision market time and recorded-time `knowledgeCutoff` are both frozen.
+- A scored result persists the deterministic score and machine-readable rationale codes.
+- An insufficient-data result persists explicit missing features and never fabricates a score.
+- Each used feature persists its `featureKey`, `sourceKey`, `validAt`, `recordedAt`, raw value and normalized value.
+- Evidence learned after the knowledge cutoff or valid only after decision time is rejected before the Mission snapshot can be sealed.
+- Evidence cannot simultaneously be marked present and missing; duplicate feature evidence and version contradictions fail closed.
+- Brain missing fields are merged into the outer Decision Snapshot missing set, preserving what was unavailable at decision time.
+- The bridge performs no clock/network/market/LLM reads and creates no order intent; Brain evidence remains forensic decision evidence, not execution authority.
+- Regression tests prove scored and insufficient-data snapshots survive the durable hash-chained Mission ledger and that hindsight evidence is rejected before persistence.
 
 Not yet wired:
 
-- Adapter from actual immutable scan/Mission ledger observations into `BitemporalFeatureObservation`.
-- Brain output persistence into Mission decision facts.
-- Brain → Mission candidate/planning runtime integration.
+- Automatic runtime orchestration from new closed-bar scans through feature extraction/Brain evaluation into candidate/planning commands.
 - Champion/challenger registry and forward-only paired evaluation.
 - LLM explanation/query/hypothesis edge.
 - ADR-0020 memory and ADR-0021 evaluation runtime layers.
@@ -151,9 +166,9 @@ The LLM remains outside actionable scoring and broker/account truth.
 
 **IN PROGRESS — repository ownership boundary substantially hardened.**
 
-The dead direct `/orders` compatibility handler is now removed. Remaining blockers are no longer a known server-side Mission-less execution path; they are final cross-client audit and external/native runtime proof/product packaging.
+The dead direct `/orders` compatibility handler is removed. Remaining blockers are no longer a known server-side Mission-less execution path; they are final cross-client audit and external/native runtime proof/product packaging.
 
-Brain pure-library work may continue in isolation. Brain-to-Mission/execution integration must remain controlled and cannot create a privileged execution path.
+Brain pure-library and evidence-recording work may continue in isolation. Brain-to-execution integration must remain controlled and cannot create a privileged execution path.
 
 ## Verification ladder
 
@@ -161,13 +176,13 @@ Brain pure-library work may continue in isolation. Brain-to-Mission/execution in
 | --- | --- | --- |
 | Architecture ADR-0015–0022 | **DONE** | Accepted ADRs + `docs/BRAIN-DESIGN-REVIEW.md`. |
 | Repository MT5 foundation | **SUBSTANTIALLY DONE** | Deterministic execution truth, instrument/margin/recovery wiring built; target-terminal proof remains external. |
-| Repository lint/typecheck/tests | **PASS** | Exact code head `3c1cbf5ab8c9ef4826f394e59be1ee424603b468` passed GitHub Actions `verify` after Mission handler removal, bitemporal feature extraction and point-in-time Brain pipeline tests. This documentation commit needs its own exact-head CI before being called green. |
+| Repository lint/typecheck/tests | **PASS** | GitHub Actions `verify` passes after the immutable Mission-ledger Brain bridge, point-in-time pipeline, durable Brain decision evidence and hindsight-rejection tests. |
 | Simulation/chaos | **STRONG, NOT COMPLETE** | Duplicate/recovery/clock/partial-fill/margin/Mission replay covered; target terminal/device restart remains external. |
 | Trade Mission spine | **IN PROGRESS — OWNERSHIP BOUNDARY HARDENED** | Durable lifecycle + server/Android/Desktop Mission truth exist; direct Mission-less POST handler physically removed; final cross-client/native audit remains. |
 | Android pairing | **REPOSITORY BUILT / DEVICE PROOF BLOCKED** | Controller/screen/persistence fail closed; native hardware-backed proof external. |
 | Windows Mission shell | **REPOSITORY BUILT / NATIVE PACKAGING BLOCKED** | Single-runtime shell and stale-state guard built; native bridge/packaging proof external. |
 | Realtime + command auth | **REPOSITORY DONE** | Signed stream admission, replay guard, command nonce, heartbeat/resync coverage. |
-| Trading Brain | **DETERMINISTIC FOUNDATION + PIT EXTRACTION BUILT** | Pure versioned scoring and bitemporal feature extraction built; actual ledger/Mission runtime adapter not yet wired. |
+| Trading Brain | **DETERMINISTIC FOUNDATION + PIT LEDGER EVIDENCE BUILT** | Pure scoring, bitemporal extraction, immutable Mission-ledger observation adapter and durable decision evidence built; automatic scan-to-Brain orchestration not yet wired. |
 | Memory/Evaluation | **DESIGNED / BLOCKED** | Must derive from immutable Mission/Brain facts; no AI conclusions as memory truth. |
 | MetaEditor compile | **NOT VERIFIED** | Requires Windows/MetaEditor. |
 | Real MT5 terminal | **NOT VERIFIED** | Requires target terminal. |
@@ -193,9 +208,8 @@ No real-money execution is enabled or claimed.
 ## Next highest-priority sequence
 
 1. Continue the ADR-0018 independent replay/reconnect/bypass audit and remove any remaining client/server path that can create consequential state without durable Mission provenance.
-2. Implement the actual immutable scan-ledger → bitemporal Brain observation adapter; preserve original valid-time/recorded-time and reject hindsight leakage.
-3. Persist versioned deterministic Brain observations/outputs as durable Mission evidence without granting Brain execution authority.
-4. Add champion/challenger registry with challenger creation time and forward-only paired evidence; never auto-promote.
-5. Implement ADR-0021 evaluation before ADR-0020 derived memory so memory is built only from validated evidence.
-6. Keep LLM work quarantined to explanation/query/hypothesis generation and validate all displayed figures against deterministic fields.
-7. Keep Windows/Android native security, MetaEditor, MT5 and LiteFinance Demo on the external verification ladder until physically proven.
+2. Add a versioned champion/challenger registry that records challenger creation time and admits only forward-only paired evidence collected after that instant; never auto-promote.
+3. Implement ADR-0021 scan-level evaluation with explicit insufficient-data states and separate decision-quality/outcome measures before derived memory.
+4. Implement ADR-0020 memory only from validated immutable bitemporal facts/statistics, never from AI conclusions.
+5. Keep LLM work quarantined to explanation/query/hypothesis generation and validate all displayed figures against deterministic fields.
+6. Keep Windows/Android native security, MetaEditor, MT5 and LiteFinance Demo on the external verification ladder until physically proven.
