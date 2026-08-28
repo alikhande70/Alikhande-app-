@@ -52,11 +52,7 @@ describe('buildFixedHorizonOutcomeLabel', () => {
   });
 
   it('classifies small moves as flat without changing the R value', () => {
-    const result = buildFixedHorizonOutcomeLabel(
-      seed,
-      { ...observation, close: 100.1 },
-      policy,
-    );
+    const result = buildFixedHorizonOutcomeLabel(seed, { ...observation, close: 100.1 }, policy);
     expect(result.directional).toBe('flat');
     expect(result.counterfactualR).toBeCloseTo(0.05);
   });
