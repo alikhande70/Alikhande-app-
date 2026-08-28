@@ -137,7 +137,9 @@ describe('Mission ledger -> ADR-0021 evaluation population', () => {
 
     ledger.db.prepare("UPDATE ledger SET payload = '{}' WHERE seq = 1").run();
 
-    expect(() => buildMissionEvaluationPopulation(ledger)).toThrow(/cannot evaluate an untrusted ledger/);
+    expect(() => buildMissionEvaluationPopulation(ledger)).toThrow(
+      /cannot evaluate an untrusted ledger/,
+    );
     ledger.close();
   });
 });
