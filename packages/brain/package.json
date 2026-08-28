@@ -50,6 +50,10 @@
       "types": "./dist/pre-registered-evaluation.d.ts",
       "default": "./dist/pre-registered-evaluation.js"
     },
+    "./snapshot-feature-strata": {
+      "types": "./dist/snapshot-feature-strata.d.ts",
+      "default": "./dist/snapshot-feature-strata.js"
+    },
     "./strata-aware-evaluation": {
       "types": "./dist/strata-aware-evaluation.d.ts",
       "default": "./dist/strata-aware-evaluation.js"
