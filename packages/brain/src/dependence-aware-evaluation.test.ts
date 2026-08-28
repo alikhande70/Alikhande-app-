@@ -12,7 +12,11 @@ const challengerHash = `sha256:${'b'.repeat(64)}` as const;
 const challengerCreatedAt = 1_000;
 const analysisCutoff = 2_000;
 
-function mission(missionId: string, knowledgeTime: number): EvaluationPipelineMission {
+function mission(
+  missionId: string,
+  knowledgeTime: number,
+  challengerScore = 80,
+): EvaluationPipelineMission {
   return {
     missionId,
     scanConfigVersion: 'scan-v1',
@@ -50,7 +54,7 @@ function mission(missionId: string, knowledgeTime: number): EvaluationPipelineMi
               status: 'scored',
               brainVersion: 'brain-v2',
               knowledgeCutoff: knowledgeTime,
-              score: 80,
+              score: challengerScore,
             },
           },
         ],
@@ -59,8 +63,13 @@ function mission(missionId: string, knowledgeTime: number): EvaluationPipelineMi
   };
 }
 
-function population(times: readonly number[]): DependenceAwareEvaluationPopulation {
-  const missions = times.map((time, index) => mission(`m${index + 1}`, time));
+function population(
+  times: readonly number[],
+  challengerScores: readonly number[] = [],
+): DependenceAwareEvaluationPopulation {
+  const missions = times.map((time, index) =>
+    mission(`m${index + 1}`, time, challengerScores[index] ?? 80),
+  );
   return {
     missions,
     pairedEligibility: missions.map((item, index) => ({
@@ -128,10 +137,11 @@ describe('dependence-aware pre-registered evaluation', () => {
     expect(result.paired.inference?.decisiveDirectionalPairs).toBe(4);
     expect(result.dependence?.rawScanCount).toBe(4);
     expect(result.dependence?.effectiveEvidenceUnits).toBe(1);
+    expect(result.directionalDependence?.effectiveEvidenceUnits).toBe(1);
     expect(result.paired.reasons).toContain('minimum-independent-market-episodes-not-met');
   });
 
-  it('allows the existing paired gates to decide once scans span enough separated episodes', () => {
+  it('allows the existing paired gates to decide once decisive scans span separated episodes', () => {
     const times = [1_100, 1_200, 1_300, 1_400];
     const result = buildDependenceAwarePreRegisteredEvaluation(
       population(times),
@@ -142,7 +152,33 @@ describe('dependence-aware pre-registered evaluation', () => {
 
     expect(result.paired.status).toBe('ready');
     expect(result.dependence?.episodeCount).toBe(4);
+    expect(result.directionalDependence?.episodeCount).toBe(4);
     expect(result.dependence?.largestEpisodeShare).toBe(0.25);
+  });
+
+  it('blocks false confidence when decisive evidence is concentrated in one episode', () => {
+    const times = [1_100, 1_110, 1_120, 1_130, 1_400, 1_600, 1_800];
+    const scores = [80, 80, 80, 80, 60, 60, 60];
+    const configured = policy(15);
+    const result = buildDependenceAwarePreRegisteredEvaluation(
+      population(times, scores),
+      observations(times),
+      { labelVersion: 'fixed-horizon-v1', horizonMs: 100, flatThresholdR: 0.01 },
+      {
+        ...configured,
+        aggregate: { ...configured.aggregate, minimumScans: 7, minimumOutcomes: 7 },
+        paired: { ...configured.paired, minimumPairs: 7, minimumFullyScoredPairs: 7 },
+      },
+    );
+
+    if (result.paired.status === 'analysis-window-open') throw new Error('unreachable');
+    expect(result.paired.inference?.decisiveDirectionalPairs).toBe(4);
+    expect(result.dependence?.episodeCount).toBe(4);
+    expect(result.directionalDependence?.episodeCount).toBe(1);
+    expect(result.paired.status).toBe('insufficient-data');
+    expect(result.paired.reasons).toContain(
+      'directional-minimum-independent-market-episodes-not-met',
+    );
   });
 
   it('fails closed if durable eligibility rewrites the canonical instrument identity', () => {
@@ -182,5 +218,6 @@ describe('dependence-aware pre-registered evaluation', () => {
 
     expect(result.paired.status).toBe('analysis-window-open');
     expect(result.dependence).toBeNull();
+    expect(result.directionalDependence).toBeNull();
   });
 });
