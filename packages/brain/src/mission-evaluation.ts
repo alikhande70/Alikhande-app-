@@ -50,8 +50,10 @@ function outcomeForMission(
 ): ScanOutcomeEvidence | undefined {
   const label = labels.get(missionId);
   if (label === undefined) return undefined;
-  if (label.labelVersion.trim().length === 0) throw new Error(`outcome labelVersion is required`);
-  if (label.missionId !== missionId) throw new Error(`outcome mission identity mismatch for '${missionId}'`);
+  if (label.labelVersion.trim().length === 0) throw new Error('outcome labelVersion is required');
+  if (label.missionId !== missionId) {
+    throw new Error(`outcome mission identity mismatch for '${missionId}'`);
+  }
   requireFiniteTimestamp('outcome.decisionKnowledgeTime', label.decisionKnowledgeTime);
   requireFiniteTimestamp('outcome.validAt', label.validAt);
   requireFiniteTimestamp('outcome.recordedAt', label.recordedAt);
@@ -87,13 +89,17 @@ export function projectDurableMissionsForEvaluation(
 ): readonly ScanDecisionEvidence[] {
   const labels = new Map<string, VersionedMarketOutcomeLabel>();
   for (const label of outcomeLabels) {
-    if (labels.has(label.missionId)) throw new Error(`duplicate outcome label for '${label.missionId}'`);
+    if (labels.has(label.missionId)) {
+      throw new Error(`duplicate outcome label for '${label.missionId}'`);
+    }
     labels.set(label.missionId, label);
   }
 
   return missions.map((mission) => {
     if (mission.missionId.trim().length === 0) throw new Error('missionId is required');
-    if (mission.scanConfigVersion.trim().length === 0) throw new Error('scanConfigVersion is required');
+    if (mission.scanConfigVersion.trim().length === 0) {
+      throw new Error('scanConfigVersion is required');
+    }
     requireFiniteTimestamp('mission.observedAt', mission.observedAt);
     const snapshot = mission.decisionSnapshot;
     if (snapshot?.brainEvaluation === undefined || snapshot.brainComparison === undefined) {
@@ -101,7 +107,10 @@ export function projectDurableMissionsForEvaluation(
     }
     requireFiniteTimestamp('snapshot.asOf', snapshot.asOf);
     requireFiniteTimestamp('brain.knowledgeCutoff', snapshot.brainEvaluation.knowledgeCutoff);
-    requireFiniteTimestamp('comparison.missionKnowledgeTime', snapshot.brainComparison.missionKnowledgeTime);
+    requireFiniteTimestamp(
+      'comparison.missionKnowledgeTime',
+      snapshot.brainComparison.missionKnowledgeTime,
+    );
     if (snapshot.brainEvaluation.knowledgeCutoff !== snapshot.brainComparison.missionKnowledgeTime) {
       throw new Error(`mission '${mission.missionId}' has divergent Brain knowledge cutoffs`);
     }
