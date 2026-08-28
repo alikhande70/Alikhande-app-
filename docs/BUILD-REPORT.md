@@ -1,230 +1,171 @@
 # Build report — `gpt/trading-brain-build`
 
-This report records repository evidence separately from external Windows, MetaEditor, MT5, LiteFinance and physical-device evidence. ADRs describe the intended architecture; this file records only what is actually implemented or still blocked.
+This report separates repository evidence from external Windows, MetaEditor, MT5, LiteFinance and physical-device evidence. ADRs define intended architecture; this file records only implemented or still-unverified state.
 
 ## Current state — 2026-08-28
 
-The repository-level MT5 foundation is substantially built and remains fail-closed. Real-money execution is not enabled or claimed.
+The repository-level MT5/execution foundation is substantially built and remains fail-closed. Real-money execution is not enabled or claimed.
 
-ADR-0018 — Trade Mission now has a hardened repository ownership path: scans, rejected setups, Mission lifecycle, Mission-bound intents, broker positions, external/manual positions, close/review and client realtime state are durable and reconstructable. The historical direct Mission-less `POST /orders` execution handler has now been physically removed from `server.ts`; the deterministic `410 MISSION_REQUIRED` tombstone remains, and a source-level regression test prevents direct handler reintroduction.
+ADR-0018 Trade Mission is the durable aggregate above execution truth. Scans, rejected setups, lifecycle actions, Mission-bound intents, broker positions, external/manual MT5 positions, close/review and client realtime state are durable/reconstructable. The historical direct Mission-less `POST /orders` execution handler is physically removed; its deterministic `410 MISSION_REQUIRED` tombstone and a regression test remain.
 
-ADR-0019 has a deterministic foundation in `packages/brain`, an immutable Mission-ledger-to-bitemporal-observation bridge, a Desk boundary that seals deterministic Brain output plus exact point-in-time evidence into the existing immutable Mission decision snapshot, and an ADR-0022 version registry that enforces immutable champion/challenger identities plus strictly forward challenger eligibility. Brain runtime/execution authority remains intentionally absent.
+ADR-0019 now has a deterministic/versioned Brain foundation, immutable Mission-ledger → bitemporal observation projection, point-in-time feature extraction, durable deterministic decision evidence, immutable ADR-0022 version registry and durable paired champion/challenger shadow evidence on the same Mission. Only champion evidence is copied into the primary decision field; challengers remain shadow-only and have no execution authority.
 
-The preserved branch `claude/personal-trading-app-atm6e1` is outside this workstream and must remain untouched.
+The preserved branch `claude/personal-trading-app-atm6e1` remains outside this workstream and must stay untouched.
 
 ## MT5 execution foundation — repository evidence
 
 Implemented and covered by repository tests:
 
 - Loopback Windows execution-host ↔ `KeelAgent.mq5` protocol with authenticated agent sessions.
-- Durable command lifecycle, ambiguity handling and reconciliation rather than unsafe automatic retry.
-- Strict distinction among MT5 orders, deals and positions.
-- 64-bit broker identifiers kept as decimal strings across JavaScript boundaries.
+- Durable command lifecycle, ambiguity handling and broker reconciliation instead of unsafe retry.
+- MT5 orders/deals/positions remain distinct; 64-bit broker ids remain decimal strings.
 - Partial-fill aggregation and duplicate/contradictory execution detection.
 - Separate broker-local and UTC clock domains with freshness guards.
-- Explicit venue-symbol ↔ canonical mapping with collision rejection; no fuzzy suffix guessing.
-- Explicit tradable-symbol universe and instrument-facts binding.
+- Explicit venue-symbol ↔ canonical mapping and tradable-universe/instrument-facts binding.
 - Runtime-selectable MT5 broker adapter with truthful capabilities.
 - Durable event spool/replay while reconciliation remains authoritative.
-- Request-specific margin path:
-  `ExecutionSupervisor → BrokerPort → MT5 adapter → HostClient → execution host → KeelAgent → OrderCalcMargin`.
-- Margin is fingerprint/freshness validated; missing, malformed, stale, mismatched or unavailable margin is **BLOCK**, never zero and never waivable.
+- Request-specific margin path through `ExecutionSupervisor → BrokerPort → MT5 adapter → host → EA → OrderCalcMargin`.
+- Margin fingerprint/freshness validation; missing/malformed/stale/mismatched/unavailable margin is **BLOCK**, never zero and never waivable.
 - Real-account safety remains hard-gated.
 
-Important previously closed defects include unknown-margin-to-zero, UTC/broker-time mixing, future heartbeat liveness, partial-fill understatement, venue-symbol collisions, duplicate execution collapse and incomplete MT5 rejection handling.
+External proof is still required for MetaEditor compilation, target-terminal runtime, LiteFinance Demo behavior and actual Windows/device security.
 
 ## ADR-0018 Trade Mission — repository evidence
 
-Mission is the durable aggregate above execution truth; it references intents/positions but never replaces broker truth.
+Implemented:
+
+- Durable stages from `OBSERVED` through `CLOSED/ABANDONED` and `REVIEWED`.
+- Distinct scanner/Brain/operator/manual-MT5/external origins.
+- Append-only hash-chained Mission facts; no second mutable broker truth database.
+- Bitemporal valid-time/recorded-time separation and versioned scan configuration.
+- Immutable `DecisionSnapshot` records both known and missing data at decision time.
+- Rejected/untraded scans remain complete durable records.
+- External/manual MT5 positions enter management without fabricated Brain attribution.
+- Internal ownership requires durable `clientOrderId → intent.created → mission.intentLinked` provenance, never fuzzy similarity.
+- Mission ownership is recorded before intent creation; restart repair closes the crash gap from durable facts.
+- Canonical contradictions fail closed and broker close events affect only durably linked Missions.
+- Decision review remains separate from realised outcome/counterfactual evidence.
+- Android/Desktop consequential paths require current Mission truth and `/missions/:missionId/orders`.
+- Mission-less `POST /orders` is physically retired; source regression prevents handler reintroduction.
+
+Repository/native work still open:
+
+1. Continue independent replay/reconnect/bypass audit across Desk, Android and Desktop.
+2. Package/bind the Windows UI around the single `WindowsMissionAppShell` without local trading truth.
+3. Keep Android/Windows hardware-backed key claims external until real-device proof exists.
+
+## Client/security paths — repository evidence
+
+Android and Windows signed command paths use enrolled-device identity, command nonce and current Mission truth. Stale/gapped last-known state can be displayed but cannot authorize a new consequential action. Authenticated realtime requires a signed hello, rejects malformed/replayed/stale/bad-signature admission, and uses heartbeat/resync protection.
+
+`WindowsProtectedSigner` exposes only an opaque native-provider boundary; repository metadata does not contain private key material. Missing/orphan/malformed key states fail closed. Hardware-backed status is not treated as verified until target-Windows proof exists.
+
+## ADR-0019 deterministic Brain
 
 Implemented:
 
-- Stages: `OBSERVED → CANDIDATE → PLANNED → ARMED → EXECUTING → MANAGING → CLOSED/ABANDONED → REVIEWED`.
-- Distinct origins for scanner, Brain observation, operator and external/manual/unknown MT5 activity.
-- Mission facts stored in the existing append-only hash-chained ledger; no second mutable truth database.
-- Bitemporal valid-time and recorded-time separation.
-- Scanner configuration version recorded for cohort-aware analysis.
-- Immutable `DecisionSnapshot` records both what was known and what was missing at decision time.
-- Rejected/untraded setups remain durable data.
-- External/manual MT5 positions enter management without fabricated Brain attribution or fabricated decision snapshots.
-- Internal position ownership is proven only through durable identity (`clientOrderId → intent.created → mission.intentLinked`), never symbol/side/volume/time similarity.
-- `MissionExecutionCoordinator` records Mission ownership before order-intent creation and repairs the crash gap from durable facts after restart.
-- Canonical contradictions fail closed.
-- Broker close events close only durably linked Missions.
-- Review keeps decision assessment separate from outcome/counterfactual evidence; accepted review is immutable.
-- Replay/idempotency and ledger hash-chain reconstruction cover both executed and rejected populations.
-- Realtime `missions` topic and bounded `/state` / `/missions` snapshots use durable Mission state.
-- Authenticated command surfaces exist for scan ingestion, planning, Mission-bound order submission, abandon and review.
-- Primary HTTP E2E uses `Scan → Mission → Decision Snapshot/Plan → /missions/:missionId/orders`.
-- Mission-less `POST /orders` remains deterministically retired with `410 MISSION_REQUIRED`, including server fixtures without `MissionRuntime`.
-- The old direct `app.post('/orders') → ExecutionSupervisor.submit()` handler was physically deleted from `server.ts`.
-- A source-level regression test fails CI if a direct `POST /orders` handler is reintroduced; order creation remains delegated to Mission routes.
+- Pure deterministic `evaluate(BrainVersion, FeatureVector, Context)` with no clock/network/filesystem/broker/account/environment/LLM dependency.
+- Explicit `brainVersion`, `featureSetVersion`, `rubricVersion` provenance.
+- Transparent normalized weighted rubric and machine-readable rationale codes.
+- Version/feature mismatch and invalid values fail closed.
+- Missing required features produce explicit `insufficient-data`; no imputation.
+- Integer-basis-point score representation for stable replay.
+- Same input/version yields byte-equivalent output independent of wall-clock time.
 
-Repository-level remaining ADR-0018 work:
+### Point-in-time evidence
 
-1. Continue independent replay/reconnect/bypass audit across Desk, Android and Desktop.
-2. Keep native Android/Windows key claims external until target-device proof exists.
-3. Bind/package the real Windows UI around the single `WindowsMissionAppShell` without creating Desktop-local trading truth.
-
-## Android path — repository evidence
-
-- Mission mutation/order paths use signed requests, command nonce and biometric signer contract.
-- Gap-aware Mission store retains last-known state but blocks consequential use after a gap until resync.
-- Trade entry requires a current `PLANNED`/`ARMED` Mission for the exact canonical instrument.
-- Ticket preserves exact `missionId`; fake local success messaging was removed.
-- Preview comes from Desk; client sizing is not execution truth.
-- Submit uses `/missions/:missionId/orders` only.
-- Timeout/ambiguous submit is **UNKNOWN**, never silently retried or reported as sent.
-- Already-paired bootstrap restores signed REST + authenticated realtime.
-- Pair controller/screen and versioned secure metadata persistence exist.
-- StrongBox/TEE and native key persistence still require physical-device proof.
-
-## Windows/Desktop path — repository evidence
-
-- Signed Desktop transport uses the same identity/command-nonce contract.
-- Desktop locally refuses Mission-less order submission before network access.
-- `DesktopMissionOperator` can submit only through `/missions/:missionId/orders` and requires `DesktopMissionTruth`.
-- Last-known Mission rows remain displayable after disconnect/gap but cannot authorize a new order.
-- Fresh authenticated reconnect requests a full Mission snapshot before action is re-enabled.
-- Heartbeat, sequence-gap and resync behavior have regression coverage.
-- `WindowsProtectedSigner` uses an opaque native Ed25519-provider boundary; private key material is not stored in repository metadata.
-- Missing-key/orphan-key/malformed-metadata states fail closed rather than silently regenerating identity.
-- Hardware protection reported by a bridge is not promoted to `hardwareBackedVerified` without target-Windows evidence.
-- `WindowsMissionAppShell` composes the single Mission runtime and owns no separate trading truth.
-
-Still external/native:
-
-- Actual Windows native key-provider + protected persistence implementation/proof.
-- Packaged/native Windows UI binding and runtime verification.
-
-## Realtime and command security — repository evidence
-
-- `/stream` admits clients only after a signed first-frame hello.
-- Stream auth reuses enrolled-device verification, clock-skew protection, nonce replay protection and Ed25519 verification.
-- Malformed/unsigned/replayed/stale/bad-signature hello attempts are rejected before subscription.
-- Consequential Mission commands require one-time command nonce.
-- Desk reaps clients that stop heartbeating; Android and Desktop heartbeat paths exist.
-- Mission-less `POST /orders` has no direct execution handler and remains a deterministic retired endpoint.
-
-## ADR-0019 Trading Brain — deterministic foundation
-
-Implemented in `packages/brain` and still isolated from runtime execution:
-
-- Pure `evaluate(BrainVersion, FeatureVector, Context)` function with no clock, network, filesystem, broker, account, environment or LLM dependency.
-- Explicit `brainVersion`, `featureSetVersion` and `rubricVersion` provenance.
-- Transparent weighted rubric over normalized explicit features.
-- Machine-readable rationale codes; no AI prose in scoring truth.
-- Feature-set mismatch fails closed.
-- Missing required features produce `insufficient-data`; values are never imputed.
-- Invalid normalized values/rubrics fail closed.
-- Deterministic integer-basis-point score representation.
-- Same input/version produces byte-equivalent output and is independent of wall-clock time.
-
-### Point-in-time feature extraction and Mission-ledger bridge
-
-A pure bitemporal extractor and durable-ledger bridge now exist:
-
-- Versioned `FeatureSetVersion` definitions map stable scanner/source keys to normalized Brain features.
+- Versioned feature definitions map stable scanner/source keys to normalized features.
 - Every observation carries market `validAt` and system `recordedAt`.
-- Historical extraction sees only facts with `validAt <= decisionAsOf` **and** `recordedAt <= knowledgeCutoff`.
-- Later corrections cannot leak into an earlier historical decision replay.
-- Feature freshness limits turn stale evidence into explicit missing data rather than silently carrying it forward.
-- Contradictory facts at identical bitemporal coordinates fail closed.
-- Impossible clock-domain evidence (`recordedAt < validAt`), NaN/infinite values and out-of-contract normalization ranges fail closed.
-- Extraction is deterministic regardless of input observation ordering.
-- `observationsFromMissionLedger()` converts immutable `mission.observed` rows into Brain observations without consulting current projections or AI output.
-- The bridge uses an explicit field allow-list and preserves ledger `ts` as recorded-time and Mission `observedAt` as market valid-time.
-- Pipeline regression proves `immutable Mission ledger → bitemporal extraction → deterministic evaluate` exactly replays the original historical score with the original knowledge cutoff.
-- A later correction may change a later hindsight query, but cannot retroactively alter the original decision replay.
-- Missing point-in-time evidence flows through to Brain as `insufficient-data` rather than a fabricated score.
+- Historical extraction admits only `validAt <= decisionAsOf` and `recordedAt <= knowledgeCutoff`.
+- Later corrections cannot leak into an earlier decision replay.
+- Stale/contradictory/impossible-clock/NaN/out-of-contract evidence fails closed or becomes explicit missing data as appropriate.
+- `observationsFromMissionLedger()` projects immutable Mission observations without consulting current projections or AI output.
+- Regression coverage proves `Mission ledger → bitemporal extraction → deterministic Brain` replays original historical decisions with the original cutoff.
 
-### Durable deterministic Brain decision evidence
+### Durable Brain decision evidence
 
-The existing immutable `mission.snapshotSealed` fact now carries optional full deterministic Brain evidence rather than only a version label:
+`mission.snapshotSealed` can carry full deterministic Brain evidence:
 
-- `brainVersion`, `featureSetVersion` and `rubricVersion` are recorded together.
-- The decision market time and recorded-time `knowledgeCutoff` are both frozen.
-- A scored result persists the deterministic score and machine-readable rationale codes.
-- An insufficient-data result persists explicit missing features and never fabricates a score.
-- Each used feature persists its `featureKey`, `sourceKey`, `validAt`, `recordedAt`, raw value and normalized value.
-- Evidence learned after the knowledge cutoff or valid only after decision time is rejected before the Mission snapshot can be sealed.
-- Evidence cannot simultaneously be marked present and missing; duplicate feature evidence and version contradictions fail closed.
-- Brain missing fields are merged into the outer Decision Snapshot missing set, preserving what was unavailable at decision time.
-- The bridge performs no clock/network/market/LLM reads and creates no order intent; Brain evidence remains forensic decision evidence, not execution authority.
-- Regression tests prove scored and insufficient-data snapshots survive the durable hash-chained Mission ledger and that hindsight evidence is rejected before persistence.
+- exact semantic versions and point-in-time cutoffs;
+- scored or explicit `insufficient-data` status;
+- machine rationale codes and exact missing fields;
+- per-feature source key, valid/recorded times, raw value and normalized value;
+- fail-closed vector/evidence consistency and hindsight guards.
 
-### ADR-0022 version registry and forward-only challenger eligibility — added
+The bridge performs no market/clock/network/LLM reads and creates no order intent.
 
-`packages/brain/src/version-registry.ts` now encodes the non-circular comparison boundary before ADR-0021 statistics are implemented:
+## ADR-0022 versioning + paired forward evidence
 
-- Every registry record carries immutable semantic Brain version data, a required `sha256:` content identity, sealed `createdAt`, role, change summary and optional hypothesis id.
-- Registry validation requires exactly one explicit champion and rejects duplicate hashes, duplicate semantic ids, malformed hashes and ambiguous champion identity.
-- The champion is always selected for mission scoring.
-- A challenger is eligible for paired mission scoring/promotion evidence only when `missionKnowledgeTime > challenger.createdAt`; missions before or exactly at candidate creation are excluded.
-- Retired versions cannot re-enter the active challenger set.
-- Concurrent challengers are deterministically ordered by immutable content hash so replay output does not depend on registry insertion order.
-- `isForwardPromotionEvidence()` contains only the temporal eligibility invariant; it intentionally does not compute outcome statistics or decide promotion.
-- No API exists here for automatic promotion. Promotion remains an explicit operator workflow, and ADR-0021 still owns sample, duration, confidence interval, calibration and guardrail evaluation.
-- Regression tests cover pre-creation leakage, equality-at-creation, strictly forward inclusion, retired versions, malformed identity, duplicate identity and deterministic concurrent challenger ordering.
+The immutable registry enforces:
 
-Not yet wired:
+- required `sha256:` content identity, semantic version, sealed `createdAt`, role, change summary and optional hypothesis id;
+- exactly one champion; duplicate/malformed/ambiguous identities fail closed;
+- challenger eligibility only when `missionKnowledgeTime > challenger.createdAt` — equality and pre-creation Missions are excluded;
+- retired versions do not re-enter active challenger comparison;
+- deterministic concurrent-challenger ordering;
+- no automatic promotion API.
 
-- Automatic runtime orchestration from new closed-bar scans through feature extraction/Brain evaluation into candidate/planning commands.
-- Durable paired champion/challenger score recording on each eligible Mission.
-- ADR-0021 statistical promotion evidence and explicit operator promotion workflow.
+### Durable same-Mission comparison — added in this build
+
+`DecisionSnapshot.brainComparison` now persists paired shadow evidence for the champion and every eligible challenger on the **same Mission**:
+
+- exact immutable content hash, semantic Brain result and version creation time are retained for each participant;
+- every paired version must use the exact same `missionKnowledgeTime`/knowledge cutoff;
+- a challenger at or before its own creation boundary is rejected before persistence;
+- duplicate content hashes or semantic Brain ids fail closed;
+- each version independently passes the existing point-in-time feature/evidence invariants;
+- challengers are sorted deterministically by content hash;
+- the champion alone populates the primary `brainEvaluation` and therefore remains the only Brain result that can continue toward risk/execution;
+- challenger `insufficient-data` does not contaminate the champion's decision `missing` set;
+- durable Mission-ledger regression proves paired evidence can be sealed without creating `intent.created`.
+
+This is the evidence spine only. ADR-0021 still owns statistics, minimum sample/duration gates, calibration/guardrails and the explicit operator promotion decision.
+
+## Evaluation and memory status
+
+Not yet implemented as runtime layers:
+
+- ADR-0021 scan-level evaluation dataset/statistics;
+- separation of decision-quality metrics from realised outcome metrics in the evaluator;
+- bootstrap paired-difference confidence intervals and pre-registered sample/duration gates;
+- regime/calibration/false-signal/risk-quality/expectancy guardrails;
+- explicit operator promotion workflow;
+- ADR-0020 validated-memory derivation over immutable bitemporal observations;
 - LLM explanation/query/hypothesis edge.
-- ADR-0020 memory and ADR-0021 evaluation runtime layers.
 
-The LLM remains outside actionable scoring and broker/account truth.
-
-## ADR-0018 exit status
-
-**IN PROGRESS — repository ownership boundary substantially hardened.**
-
-The dead direct `/orders` compatibility handler is removed. Remaining blockers are no longer a known server-side Mission-less execution path; they are final cross-client audit and external/native runtime proof/product packaging.
-
-Brain pure-library and evidence-recording work may continue in isolation. Brain-to-execution integration must remain controlled and cannot create a privileged execution path.
+No AI conclusion is stored as memory truth and no LLM output participates in actionable scoring or broker/account truth.
 
 ## Verification ladder
 
 | Stage | Status | Evidence / boundary |
 | --- | --- | --- |
 | Architecture ADR-0015–0022 | **DONE** | Accepted ADRs + `docs/BRAIN-DESIGN-REVIEW.md`. |
-| Repository MT5 foundation | **SUBSTANTIALLY DONE** | Deterministic execution truth, instrument/margin/recovery wiring built; target-terminal proof remains external. |
-| Repository lint/typecheck/tests | **PASS** | GitHub Actions `verify` passes after Brain registry, forward-only challenger eligibility and associated failure/leakage regression tests. |
-| Simulation/chaos | **STRONG, NOT COMPLETE** | Duplicate/recovery/clock/partial-fill/margin/Mission replay covered; target terminal/device restart remains external. |
-| Trade Mission spine | **IN PROGRESS — OWNERSHIP BOUNDARY HARDENED** | Durable lifecycle + server/Android/Desktop Mission truth exist; direct Mission-less POST handler physically removed; final cross-client/native audit remains. |
-| Android pairing | **REPOSITORY BUILT / DEVICE PROOF BLOCKED** | Controller/screen/persistence fail closed; native hardware-backed proof external. |
+| Repository MT5 foundation | **SUBSTANTIALLY DONE** | Deterministic execution truth, instrument/margin/recovery wiring built; target-terminal proof external. |
+| Repository lint/typecheck/tests | **PASS** | Exact implementation head passed GitHub Actions `verify` after paired-evidence regression tests and formatter repairs. |
+| Simulation/chaos | **STRONG, NOT COMPLETE** | Duplicate/recovery/clock/partial-fill/margin/Mission replay covered; target terminal/device restart external. |
+| Trade Mission spine | **IN PROGRESS — OWNERSHIP BOUNDARY HARDENED** | Durable lifecycle and Mission truth across server/clients; final cross-client/native audit remains. |
+| Android pairing | **REPOSITORY BUILT / DEVICE PROOF BLOCKED** | Fail-closed controller/persistence; hardware-backed proof external. |
 | Windows Mission shell | **REPOSITORY BUILT / NATIVE PACKAGING BLOCKED** | Single-runtime shell and stale-state guard built; native bridge/packaging proof external. |
-| Realtime + command auth | **REPOSITORY DONE** | Signed stream admission, replay guard, command nonce, heartbeat/resync coverage. |
-| Trading Brain | **DETERMINISTIC FOUNDATION + PIT EVIDENCE + VERSION REGISTRY BUILT** | Pure scoring, bitemporal extraction, immutable Mission-ledger observation adapter, durable decision evidence and forward-only champion/challenger eligibility built; automatic scan-to-Brain orchestration and paired Mission persistence not yet wired. |
-| Memory/Evaluation | **DESIGNED / BLOCKED** | Must derive from immutable Mission/Brain facts; no AI conclusions as memory truth. |
+| Realtime + command auth | **REPOSITORY DONE** | Signed admission, replay guard, command nonce, heartbeat/resync coverage. |
+| Trading Brain | **DETERMINISTIC + PIT + DURABLE PAIRED EVIDENCE BUILT** | Pure scoring, bitemporal projection/extraction, immutable decision evidence, version registry and same-Mission champion/challenger persistence built. |
+| Evaluation | **NEXT** | Must use scan-level forward-only paired evidence, explicit insufficient-data and separate decision/outcome measures. |
+| Memory | **DESIGNED / BLOCKED ON VALIDATED EVALUATION** | Must derive from immutable bitemporal facts/statistics; never AI conclusions. |
 | MetaEditor compile | **NOT VERIFIED** | Requires Windows/MetaEditor. |
 | Real MT5 terminal | **NOT VERIFIED** | Requires target terminal. |
 | LiteFinance Demo E2E | **NOT VERIFIED** | Requires Windows + MT5 + broker Demo. |
 
 ## External verification boundary — NOT VERIFIED
 
-Repository CI does not prove:
-
-- MetaEditor compilation of `KeelAgent.mq5` and included `.mqh` files;
-- EA attach/runtime in target MT5;
-- target-terminal `TimeGMT`, `TimeTradeServer`, symbol selection and spool durability;
-- real `OrderCheck` / `OrderCalcMargin` behavior on LiteFinance Demo;
-- actual LiteFinance symbol aliases, filling modes and account position model;
-- host/EA/terminal restart and reconnect against broker truth;
-- App → Desk → host → EA → MT5 → LiteFinance end-to-end runtime;
-- physical Android key provisioning/storage/background behavior;
-- actual Windows native key provider, protected key persistence, hardware-backed classification, packaging/runtime;
-- any real-money execution.
+Repository CI does not prove MetaEditor compilation, EA attach/runtime in target MT5, LiteFinance symbol/filling/account behavior, real `OrderCheck`/`OrderCalcMargin`, host/EA/terminal restart against broker truth, full App → Desk → host → EA → MT5 → LiteFinance Demo E2E, physical Android key behavior, actual Windows native protected key persistence/packaging, or any real-money execution.
 
 No real-money execution is enabled or claimed.
 
 ## Next highest-priority sequence
 
-1. Continue the ADR-0018 independent replay/reconnect/bypass audit and remove any remaining client/server path that can create consequential state without durable Mission provenance.
-2. Persist champion and eligible challenger outputs together on the same Mission so every comparison is truly paired and attributable to exact immutable Brain hashes.
-3. Implement ADR-0021 scan-level evaluation with explicit insufficient-data states, forward-only evidence gates and separate decision-quality/outcome measures; keep promotion operator-only.
-4. Implement ADR-0020 memory only from validated immutable bitemporal facts/statistics, never from AI conclusions.
-5. Keep LLM work quarantined to explanation/query/hypothesis generation and validate all displayed figures against deterministic fields.
-6. Keep Windows/Android native security, MetaEditor, MT5 and LiteFinance Demo on the external verification ladder until physically proven.
+1. Continue the ADR-0018 cross-client replay/reconnect/bypass audit while preserving the hardened Mission ownership boundary.
+2. Build ADR-0021 evaluation input from **scan-level durable paired Mission evidence**, including rejected/untraded scans and explicit insufficient-data states.
+3. Keep decision-quality assessment structurally separate from realised outcome, then implement forward-only paired statistics and pre-registered sample/duration/guardrail checks.
+4. Add only an explicit operator-controlled promotion workflow; never automatic self-promotion.
+5. Implement ADR-0020 memory only as derived validated knowledge over immutable bitemporal observations/statistics.
+6. Add LLM explanation/query/hypothesis generation only after deterministic figures are available for validation.
+7. Keep Windows/Android native security, MetaEditor, MT5 and LiteFinance Demo on the external verification ladder until physically proven.
