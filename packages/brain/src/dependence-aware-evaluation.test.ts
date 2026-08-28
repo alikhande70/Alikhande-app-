@@ -117,6 +117,11 @@ function policy(episodeGapMs: number): DependenceAwareEvaluationPolicy {
         episodeGapMs,
         minimumIndependentEpisodes: 2,
       },
+      maturity: {
+        minimumForwardSpanMs: 200,
+        maturityBucketMs: 100,
+        minimumOccupiedMaturityBuckets: 2,
+      },
     },
   };
 }
@@ -139,10 +144,11 @@ describe('dependence-aware pre-registered evaluation', () => {
     expect(result.dependence?.effectiveEvidenceUnits).toBe(1);
     expect(result.directionalDependence?.effectiveEvidenceUnits).toBe(1);
     expect(result.episodeBalancedInference?.decisiveEpisodeCount).toBe(1);
+    expect(result.longitudinalMaturity?.status).toBe('insufficient-data');
     expect(result.paired.reasons).toContain('minimum-independent-market-episodes-not-met');
   });
 
-  it('allows the existing paired gates to decide once decisive scans span separated episodes', () => {
+  it('allows the existing paired gates to decide once decisive scans span separated mature episodes', () => {
     const times = [1_100, 1_200, 1_300, 1_400];
     const result = buildDependenceAwarePreRegisteredEvaluation(
       population(times),
@@ -156,6 +162,34 @@ describe('dependence-aware pre-registered evaluation', () => {
     expect(result.directionalDependence?.episodeCount).toBe(4);
     expect(result.dependence?.largestEpisodeShare).toBe(0.25);
     expect(result.episodeBalancedInference?.decisiveEpisodeCount).toBe(4);
+    expect(result.longitudinalMaturity?.status).toBe('ready');
+  });
+
+  it('blocks separated episodes that are still too young longitudinally', () => {
+    const times = [1_100, 1_130, 1_160, 1_190];
+    const configured = policy(20);
+    const result = buildDependenceAwarePreRegisteredEvaluation(
+      population(times),
+      observations(times),
+      { labelVersion: 'fixed-horizon-v1', horizonMs: 100, flatThresholdR: 0.01 },
+      {
+        ...configured,
+        analysisPlan: {
+          ...configured.analysisPlan,
+          maturity: {
+            minimumForwardSpanMs: 500,
+            maturityBucketMs: 250,
+            minimumOccupiedMaturityBuckets: 2,
+          },
+        },
+      },
+    );
+
+    expect(result.directionalDependence?.episodeCount).toBe(4);
+    expect(result.longitudinalMaturity?.status).toBe('insufficient-data');
+    expect(result.paired.status).toBe('insufficient-data');
+    expect(result.paired.reasons).toContain('maturity-minimum-forward-span-not-met');
+    expect(result.paired.reasons).toContain('maturity-minimum-maturity-buckets-not-met');
   });
 
   it('blocks false confidence when decisive evidence is concentrated in one episode', () => {
@@ -232,7 +266,7 @@ describe('dependence-aware pre-registered evaluation', () => {
     ).toThrow(/canonical identity drift/);
   });
 
-  it('does not reveal dependence diagnostics before the fixed analysis window closes', () => {
+  it('does not reveal diagnostics before the fixed analysis window closes', () => {
     const times = [1_100, 1_200, 1_300, 1_400];
     const configured = policy(50);
     const early: DependenceAwareEvaluationPolicy = {
@@ -251,5 +285,6 @@ describe('dependence-aware pre-registered evaluation', () => {
     expect(result.dependence).toBeNull();
     expect(result.directionalDependence).toBeNull();
     expect(result.episodeBalancedInference).toBeNull();
+    expect(result.longitudinalMaturity).toBeNull();
   });
 });

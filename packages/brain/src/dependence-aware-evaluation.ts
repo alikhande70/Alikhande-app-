@@ -7,6 +7,11 @@ import {
   type EpisodeBalancedInferenceReport,
   inferEpisodeBalancedAlignment,
 } from './episode-balanced-inference.js';
+import {
+  assessLongitudinalMaturity,
+  type LongitudinalMaturityPolicy,
+  type LongitudinalMaturityReport,
+} from './longitudinal-maturity.js';
 import type { FixedHorizonOutcomePolicy, MarketCloseObservation } from './outcome-labeling.js';
 import {
   buildPreRegisteredEvaluationFromDurablePopulation,
@@ -29,6 +34,8 @@ export interface DependenceAwareEvaluationPopulation
 export interface DependenceAwareAnalysisPlan extends PreRegisteredPairedAnalysisPlan {
   /** Fixed before forward evidence; changing this defines a different analysis plan. */
   readonly dependence: ScanDependencePolicy;
+  /** Prevents a handful of episodes from one short-lived condition claiming mature evidence. */
+  readonly maturity: LongitudinalMaturityPolicy;
 }
 
 export interface DependenceAwareEvaluationPolicy
@@ -46,6 +53,8 @@ export interface DependenceAwareEvaluationResult extends PreRegisteredEvaluation
    * `paired.inference` remains diagnostic and must not override this episode-balanced result.
    */
   readonly episodeBalancedInference: EpisodeBalancedInferenceReport | null;
+  /** Longitudinal readiness of the decisive market episodes, fixed by the registered plan. */
+  readonly longitudinalMaturity: LongitudinalMaturityReport | null;
 }
 
 function validateCanonicalIdentity(population: DependenceAwareEvaluationPopulation): void {
@@ -65,16 +74,16 @@ function validateCanonicalIdentity(population: DependenceAwareEvaluationPopulati
  * Preferred ADR-0021 top-level evaluation boundary when durable Desk population is available.
  *
  * The existing fixed-look evaluator remains the source of aggregate and paired outcome
- * diagnostics. This wrapper adds a conservative dependence gate derived only from immutable
- * scan identity, canonical instrument and market observation time. Ledger knowledge-time
- * still controls eligibility for the pre-registered analysis window, while `observedAt`
- * controls whether scans belong to one underlying market episode.
+ * diagnostics. This wrapper adds conservative dependence and longitudinal-maturity gates derived
+ * only from immutable scan identity, canonical instrument and market observation time. Ledger
+ * knowledge-time still controls eligibility for the pre-registered analysis window, while
+ * `observedAt` controls both episode membership and evidence age.
  *
  * Both the full eligible population and the subset that actually drives directional inference
- * must span the pre-registered minimum number of episodes. Once that gate is met, decisive
- * per-Mission alignment is reduced to at most one equal-weight vote per market episode and a
- * fresh Wilson interval is computed on those episode votes. This episode-balanced result is the
- * dependence-adjusted direction; the raw scan-level interval is retained only as a diagnostic.
+ * must span the pre-registered minimum number of episodes. Decisive per-Mission alignment is then
+ * reduced to at most one equal-weight vote per episode. Finally those decisive episodes must span
+ * the registered duration and fixed maturity buckets. The episode-balanced result is the
+ * dependence-adjusted statistical direction; it never promotes or mutates a Brain version.
  */
 export function buildDependenceAwarePreRegisteredEvaluation(
   population: DependenceAwareEvaluationPopulation,
@@ -96,6 +105,7 @@ export function buildDependenceAwarePreRegisteredEvaluation(
       dependence: null,
       directionalDependence: null,
       episodeBalancedInference: null,
+      longitudinalMaturity: null,
     };
   }
 
@@ -123,13 +133,24 @@ export function buildDependenceAwarePreRegisteredEvaluation(
           directionalDependence.episodes,
           { minimumDecisiveEpisodes: plan.dependence.minimumIndependentEpisodes },
         );
+  const longitudinalMaturity = assessLongitudinalMaturity(
+    directionalDependence.episodes,
+    plan.maturity,
+  );
 
   if (
     dependence.status === 'ready' &&
     directionalDependence.status === 'ready' &&
+    longitudinalMaturity.status === 'ready' &&
     (episodeBalancedInference === null || episodeBalancedInference.status === 'ready')
   ) {
-    return { ...base, dependence, directionalDependence, episodeBalancedInference };
+    return {
+      ...base,
+      dependence,
+      directionalDependence,
+      episodeBalancedInference,
+      longitudinalMaturity,
+    };
   }
 
   const reasons = [
@@ -137,6 +158,7 @@ export function buildDependenceAwarePreRegisteredEvaluation(
       ...base.paired.reasons,
       ...dependence.reasons,
       ...directionalDependence.reasons.map((reason) => `directional-${reason}`),
+      ...longitudinalMaturity.reasons.map((reason) => `maturity-${reason}`),
       ...(episodeBalancedInference?.reasons.map((reason) => `episode-balanced-${reason}`) ?? []),
     ]),
   ];
@@ -145,6 +167,7 @@ export function buildDependenceAwarePreRegisteredEvaluation(
     dependence,
     directionalDependence,
     episodeBalancedInference,
+    longitudinalMaturity,
     paired: {
       ...base.paired,
       status: 'insufficient-data',
