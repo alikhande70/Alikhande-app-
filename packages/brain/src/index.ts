@@ -73,7 +73,8 @@ export type BrainResult =
 
 function validateVersion(version: BrainVersion): void {
   if (version.id.trim().length === 0) throw new Error('brain version id is required');
-  if (version.featureSetVersion.trim().length === 0) throw new Error('feature set version is required');
+  if (version.featureSetVersion.trim().length === 0)
+    throw new Error('feature set version is required');
   if (version.rubricVersion.trim().length === 0) throw new Error('rubric version is required');
   if (version.features.length === 0) throw new Error('brain version must define features');
 
@@ -88,7 +89,8 @@ function validateVersion(version: BrainVersion): void {
     }
     positiveWeight += feature.weight;
   }
-  if (!(positiveWeight > 0)) throw new Error('brain version must have positive total feature weight');
+  if (!(positiveWeight > 0))
+    throw new Error('brain version must have positive total feature weight');
 }
 
 function validateContext(context: BrainContext): void {
