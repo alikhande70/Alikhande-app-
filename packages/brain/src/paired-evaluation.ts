@@ -47,7 +47,11 @@ function validateDecision(side: PairedDecisionSide, label: string): void {
   validateHash(`${label} hash`, side.brainContentHash);
   if (side.brainVersion.trim().length === 0) throw new Error(`${label} Brain version is required`);
   if (side.decision.status === 'scored') {
-    if (!Number.isFinite(side.decision.score) || side.decision.score < 0 || side.decision.score > 100) {
+    if (
+      !Number.isFinite(side.decision.score) ||
+      side.decision.score < 0 ||
+      side.decision.score > 100
+    ) {
       throw new Error(`${label} score must be finite and in [0,100]`);
     }
   } else if (side.decision.missing.length === 0) {
@@ -92,7 +96,8 @@ export function buildForwardPairedCohort(
     if (pair.missionId.trim().length === 0) throw new Error('missionId is required');
     if (missionIds.has(pair.missionId)) throw new Error(`duplicate mission '${pair.missionId}'`);
     missionIds.add(pair.missionId);
-    if (pair.scanConfigVersion.trim().length === 0) throw new Error('scanConfigVersion is required');
+    if (pair.scanConfigVersion.trim().length === 0)
+      throw new Error('scanConfigVersion is required');
     scanConfigVersions.add(pair.scanConfigVersion);
 
     validateTimestamp('mission knowledgeTime', pair.knowledgeTime);
@@ -112,7 +117,10 @@ export function buildForwardPairedCohort(
     challengerCreatedTimes.add(pair.challengerCreatedAt);
     earliest = Math.min(earliest, pair.knowledgeTime);
     latest = Math.max(latest, pair.knowledgeTime);
-    if (pair.champion.decision.status === 'scored' && pair.challenger.decision.status === 'scored') {
+    if (
+      pair.champion.decision.status === 'scored' &&
+      pair.challenger.decision.status === 'scored'
+    ) {
       fullyScoredPairs += 1;
     }
   }
@@ -120,7 +128,8 @@ export function buildForwardPairedCohort(
   if (scanConfigVersions.size !== 1) {
     throw new Error('paired evaluation requires one scan configuration cohort');
   }
-  if (championHashes.size !== 1) throw new Error('paired evaluation requires one champion content hash');
+  if (championHashes.size !== 1)
+    throw new Error('paired evaluation requires one champion content hash');
   if (challengerHashes.size !== 1)
     throw new Error('paired evaluation requires one challenger content hash');
   if (challengerCreatedTimes.size !== 1)
