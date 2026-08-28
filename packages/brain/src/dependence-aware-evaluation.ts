@@ -57,8 +57,9 @@ function validateCanonicalIdentity(population: DependenceAwareEvaluationPopulati
  *
  * The existing fixed-look evaluator remains the source of aggregate and paired outcome
  * inference. This wrapper adds a conservative dependence gate derived only from immutable
- * scan identity, canonical instrument and ledger knowledge-time. A large number of scans in
- * one continuing market episode can therefore never make the overall paired result `ready`.
+ * scan identity, canonical instrument and market observation time. Ledger knowledge-time
+ * still controls eligibility for the pre-registered analysis window, while `observedAt`
+ * controls whether scans belong to one underlying market episode.
  *
  * Both the full eligible population and the subset that actually drives directional inference
  * must span the pre-registered minimum number of episodes. This prevents many quiet/tied scans
@@ -89,6 +90,7 @@ export function buildDependenceAwarePreRegisteredEvaluation(
   const dependenceEvidence = eligible.map((item) => ({
     missionId: item.missionId,
     canonical: item.canonical,
+    observedAt: item.observedAt,
     knownAt: item.knownAt,
   }));
   const dependence = buildScanDependenceReport(dependenceEvidence, plan.dependence);
