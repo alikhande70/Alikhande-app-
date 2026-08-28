@@ -10,7 +10,7 @@ ADR-0018 Trade Mission is the durable aggregate above execution truth. Scans, re
 
 ADR-0019 now has a deterministic/versioned Brain foundation, immutable Mission-ledger → bitemporal observation projection, point-in-time feature extraction, durable deterministic decision evidence, immutable ADR-0022 version registry and durable paired champion/challenger shadow evidence on the same Mission. Only champion evidence is copied into the primary decision field; challengers remain shadow-only and have no execution authority.
 
-ADR-0021 now has a deterministic scan-population evaluation foundation plus a forward-only paired-cohort gate. Decision evidence and future outcomes are structurally separate; rejected and `insufficient-data` scans remain in the population; future outcomes are admitted only when they were known by the evaluation cutoff; scan-configuration/version drift and duplicate Missions fail closed. Paired champion/challenger cohorts reject any Mission at or before challenger creation, require one immutable version pair and one scan-configuration cohort, and expose only sample/duration/coverage evidence — never a winner or promotion action.
+ADR-0021 now has a deterministic scan-population evaluation foundation, a forward-only paired-cohort gate, and a direct hash-verified Desk Mission-ledger population projection boundary. The projection consumes immutable Mission streams rather than a second truth store, surfaces sealed internal decisions, incomplete internal decisions and external/manual MT5 Missions as separate populations, and fails closed on ledger tampering, duplicate durable scan observations and impossible valid/recorded-time ordering. Decision evidence and future outcomes remain structurally separate; rejected and `insufficient-data` scans remain in the population; future outcomes are admitted only when they were known by the evaluation cutoff; scan-configuration/version drift and duplicate Missions fail closed. Paired champion/challenger cohorts reject any Mission at or before challenger creation, require one immutable version pair and one scan-configuration cohort, and expose only sample/duration/coverage evidence — never a winner or promotion action.
 
 The preserved branch `claude/personal-trading-app-atm6e1` remains outside this workstream and must stay untouched.
 
@@ -155,11 +155,26 @@ Implemented in `@keel/brain`:
 - insufficient sample or duration returns `insufficient-data` with machine-readable reasons;
 - the report contains no winner, promotion flag or recommendation and cannot mutate the version registry.
 
+### Durable Desk Mission population projection
+
+Implemented in `@keel/desk` as a structural boundary rather than a second evaluation database:
+
+- `buildMissionEvaluationPopulation()` reads directly from the append-only hash-chained Desk ledger and verifies the full chain before trusting any Mission facts.
+- The projection captures a ledger head and paginates deterministically to that head; it does not consult a mutable Mission table, current Brain registry or AI output.
+- Each internal Mission is reconstructed from its immutable stream with `reduceMission()`; sealed Brain decisions are projected with their original Decision Snapshot.
+- Internal Missions without sealed Brain identity remain explicit in `pendingDecisionMissionIds` instead of disappearing from population accounting.
+- Manual MT5, pending-activation and unknown external positions remain explicit in `externalMissionIds`; they are durable account truth but are never credited to a Brain version.
+- Duplicate durable `mission.observed` events fail closed to prevent retry/replay inflation of scan sample size.
+- A Mission whose market `observedAt` is after the ledger row's recorded timestamp fails closed as impossible bitemporal evidence.
+- Snapshot seal time, decision `asOf`, Brain knowledge cutoff and paired-comparison knowledge time must be mutually consistent before projection.
+- Tampering regression mutates a ledger row and proves the population builder refuses evaluation when the hash chain no longer verifies.
+- Desk exports only structural durable facts here; it does not import `@keel/brain`, so the execution host does not gain Brain authority. Runtime composition can consume this view through `@keel/brain/mission-evaluation` outside the execution decision boundary.
+
 ### Deliberately not claimed complete
 
 Still required before ADR-0021 can be called complete:
 
-- durable Desk/Mission → evaluator projection for whole historical scan populations and paired cohorts;
+- runtime composition of the hash-verified Desk population boundary with `@keel/brain/mission-evaluation`, including durable extraction of same-Mission paired challenger evidence without a parallel truth store;
 - versioned future-outcome labeling rules derived from market data rather than operator review;
 - pre-registered statistical comparison over paired outcomes (including uncertainty/confidence intervals appropriate to the metric and observed dependence structure);
 - regime/false-signal/risk-quality/expectancy guardrails where their ground truth is well-defined;
@@ -179,14 +194,14 @@ Memory must be derived from immutable bitemporal observations and validated stat
 | --- | --- | --- |
 | Architecture ADR-0015–0022 | **DONE** | Accepted ADRs + `docs/BRAIN-DESIGN-REVIEW.md`. |
 | Repository MT5 foundation | **SUBSTANTIALLY DONE** | Deterministic execution truth, instrument/margin/recovery wiring built; target-terminal proof external. |
-| Repository lint/typecheck/tests | **PASS** | Exact implementation head passed GitHub Actions `verify` after scan-evaluation and forward-paired cohort regressions plus formatter repairs. |
-| Simulation/chaos | **STRONG, NOT COMPLETE** | Duplicate/recovery/clock/partial-fill/margin/Mission replay covered; target terminal/device restart external. |
+| Repository lint/typecheck/tests | **PASS** | Code head `8b90e71f4eb592303a55c333177088ba57af872d` passed GitHub Actions `verify` run 655 after the new hash-verified Mission-population and tamper/duplicate/bitemporal regressions plus the exact Biome repair. |
+| Simulation/chaos | **STRONG, NOT COMPLETE** | Duplicate/recovery/clock/partial-fill/margin/Mission replay plus ledger-tamper evaluation refusal covered; target terminal/device restart external. |
 | Trade Mission spine | **IN PROGRESS — OWNERSHIP BOUNDARY HARDENED** | Durable lifecycle and Mission truth across server/clients; final cross-client/native audit remains. |
 | Android pairing | **REPOSITORY BUILT / DEVICE PROOF BLOCKED** | Fail-closed controller/persistence; hardware-backed proof external. |
 | Windows Mission shell | **REPOSITORY BUILT / NATIVE PACKAGING BLOCKED** | Single-runtime shell and stale-state guard built; native bridge/packaging proof external. |
 | Realtime + command auth | **REPOSITORY DONE** | Signed admission, replay guard, command nonce, heartbeat/resync coverage. |
 | Trading Brain | **DETERMINISTIC + PIT + DURABLE PAIRED EVIDENCE BUILT** | Pure scoring, bitemporal projection/extraction, immutable decision evidence, version registry and same-Mission champion/challenger persistence built. |
-| Evaluation | **FOUNDATION BUILT / RUNTIME + INFERENCE IN PROGRESS** | Scan-level separation/leakage gates and forward-only paired sample/duration gates implemented; durable population projection and statistical inference still open. |
+| Evaluation | **FOUNDATION + DURABLE DESK POPULATION BOUNDARY BUILT / OUTCOME LABELING + INFERENCE IN PROGRESS** | Scan-level separation/leakage gates, forward-only paired gates and direct hash-verified Mission-ledger population projection are built; runtime composition, market-derived labels and statistical inference remain open. |
 | Memory | **DESIGNED / BLOCKED ON VALIDATED EVALUATION** | Must derive from immutable bitemporal facts/statistics; never AI conclusions. |
 | MetaEditor compile | **NOT VERIFIED** | Requires Windows/MetaEditor. |
 | Real MT5 terminal | **NOT VERIFIED** | Requires target terminal. |
@@ -201,7 +216,7 @@ No real-money execution is enabled or claimed.
 ## Next highest-priority sequence
 
 1. Continue the ADR-0018 cross-client replay/reconnect/bypass audit while preserving the hardened Mission ownership boundary.
-2. Build the durable Desk/Mission → ADR-0021 projection so the evaluator consumes whole scan populations and same-Mission paired evidence without a parallel truth store.
+2. Compose the hash-verified Desk population view with `@keel/brain/mission-evaluation` outside the execution authority boundary and project same-Mission champion/challenger evidence directly from immutable Decision Snapshots.
 3. Define/version future-outcome labels from market data and add point-in-time leakage tests for the complete Mission → outcome → evaluation path.
 4. Add pre-registered forward-only paired statistics and uncertainty measures appropriate to the actual outcome metric; do not treat the current rubric score as probability.
 5. Add only an explicit operator-controlled promotion workflow; never automatic self-promotion.
