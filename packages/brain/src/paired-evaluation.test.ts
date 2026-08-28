@@ -73,10 +73,10 @@ describe('forward-only paired evaluation cohort', () => {
   });
 
   it('returns insufficient-data when sample or duration gates are not met', () => {
-    const report = buildForwardPairedCohort(
-      [pair('m1', 1_010), pair('m2', 1_020)],
-      { minimumPairs: 3, minimumDurationMs: 100 },
-    );
+    const report = buildForwardPairedCohort([pair('m1', 1_010), pair('m2', 1_020)], {
+      minimumPairs: 3,
+      minimumDurationMs: 100,
+    });
 
     expect(report.status).toBe('insufficient-data');
     expect(report.reasons).toEqual([
@@ -95,9 +95,9 @@ describe('forward-only paired evaluation cohort', () => {
   });
 
   it('rejects duplicate Missions, population drift, and changing immutable pair identity', () => {
-    expect(() =>
-      buildForwardPairedCohort([pair('m1', 1_100), pair('m1', 1_250)], policy),
-    ).toThrow(/duplicate mission/);
+    expect(() => buildForwardPairedCohort([pair('m1', 1_100), pair('m1', 1_250)], policy)).toThrow(
+      /duplicate mission/,
+    );
 
     expect(() =>
       buildForwardPairedCohort(
