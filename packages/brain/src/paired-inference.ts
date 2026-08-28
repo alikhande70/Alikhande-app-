@@ -19,6 +19,11 @@ export interface WilsonInterval95 {
   readonly upper: number;
 }
 
+export interface PairedDirectionalAlignmentEvidence {
+  readonly missionId: string;
+  readonly aligned: 'challenger' | 'champion';
+}
+
 export interface PairedOutcomeInferenceReport {
   readonly status: 'ready' | 'insufficient-data';
   readonly reasons: readonly string[];
@@ -34,6 +39,8 @@ export interface PairedOutcomeInferenceReport {
   readonly decisiveDirectionalPairs: number;
   /** Immutable Mission identities behind the non-flat, fully-scored, non-tied evidence. */
   readonly decisiveDirectionalMissionIds: readonly string[];
+  /** Per-Mission alignment retained so dependence-aware analysis can aggregate by market episode. */
+  readonly decisiveDirectionalEvidence: readonly PairedDirectionalAlignmentEvidence[];
   readonly challengerAlignedPairs: number;
   readonly championAlignedPairs: number;
   readonly challengerAlignmentShare: number | null;
@@ -78,7 +85,8 @@ function wilson95(successes: number, trials: number): WilsonInterval95 {
   const p = successes / trials;
   const denominator = 1 + z2 / trials;
   const center = (p + z2 / (2 * trials)) / denominator;
-  const half = (z / denominator) * Math.sqrt((p * (1 - p)) / trials + z2 / (4 * trials * trials));
+  const half =
+    (z / denominator) * Math.sqrt((p * (1 - p)) / trials + z2 / (4 * trials * trials));
   return {
     lower: Math.max(0, center - half),
     upper: Math.min(1, center + half),
@@ -92,8 +100,10 @@ function wilson95(successes: number, trials: number): WilsonInterval95 {
  * asks only which score was directionally better aligned with the later market label:
  * higher is better for a favourable setup outcome, lower is better for an unfavourable
  * setup outcome, flat outcomes are not directional evidence, and equal scores are ties.
- * A fixed Wilson 95% interval expresses uncertainty without introducing a tunable
- * significance knob. No winner is selected and no registry or execution state mutates.
+ * A fixed Wilson 95% interval expresses scan-level uncertainty without introducing a
+ * tunable significance knob. Dependence-aware callers must additionally aggregate this
+ * per-Mission alignment by pre-registered market episode before treating the interval as
+ * decision-grade evidence. No winner is selected and no registry or execution state mutates.
  */
 export function inferForwardPairedOutcomeAlignment(
   evidence: readonly ForwardPairedScanEvidence[],
@@ -146,6 +156,7 @@ export function inferForwardPairedOutcomeAlignment(
   let challengerAlignedPairs = 0;
   let championAlignedPairs = 0;
   const decisiveDirectionalMissionIds: string[] = [];
+  const decisiveDirectionalEvidence: PairedDirectionalAlignmentEvidence[] = [];
 
   for (const pair of evidence) {
     const label = labels.get(pair.missionId);
@@ -176,8 +187,13 @@ export function inferForwardPairedOutcomeAlignment(
       label.directional === 'favourable'
         ? challengerScore > championScore
         : challengerScore < championScore;
-    if (challengerAligned) challengerAlignedPairs += 1;
-    else championAlignedPairs += 1;
+    if (challengerAligned) {
+      challengerAlignedPairs += 1;
+      decisiveDirectionalEvidence.push({ missionId: pair.missionId, aligned: 'challenger' });
+    } else {
+      championAlignedPairs += 1;
+      decisiveDirectionalEvidence.push({ missionId: pair.missionId, aligned: 'champion' });
+    }
   }
 
   const decisiveDirectionalPairs = challengerAlignedPairs + championAlignedPairs;
@@ -218,6 +234,7 @@ export function inferForwardPairedOutcomeAlignment(
     tiedDirectionalPairs,
     decisiveDirectionalPairs,
     decisiveDirectionalMissionIds,
+    decisiveDirectionalEvidence,
     challengerAlignedPairs,
     championAlignedPairs,
     challengerAlignmentShare,

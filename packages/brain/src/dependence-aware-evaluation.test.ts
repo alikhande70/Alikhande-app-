@@ -138,6 +138,7 @@ describe('dependence-aware pre-registered evaluation', () => {
     expect(result.dependence?.rawScanCount).toBe(4);
     expect(result.dependence?.effectiveEvidenceUnits).toBe(1);
     expect(result.directionalDependence?.effectiveEvidenceUnits).toBe(1);
+    expect(result.episodeBalancedInference?.decisiveEpisodeCount).toBe(1);
     expect(result.paired.reasons).toContain('minimum-independent-market-episodes-not-met');
   });
 
@@ -154,6 +155,7 @@ describe('dependence-aware pre-registered evaluation', () => {
     expect(result.dependence?.episodeCount).toBe(4);
     expect(result.directionalDependence?.episodeCount).toBe(4);
     expect(result.dependence?.largestEpisodeShare).toBe(0.25);
+    expect(result.episodeBalancedInference?.decisiveEpisodeCount).toBe(4);
   });
 
   it('blocks false confidence when decisive evidence is concentrated in one episode', () => {
@@ -181,6 +183,35 @@ describe('dependence-aware pre-registered evaluation', () => {
     );
   });
 
+  it('uses episode-balanced uncertainty instead of treating every scan as independent', () => {
+    const times = [1_100, 1_110, 1_120, 1_130, 1_400, 1_600, 1_800];
+    const scores = [80, 80, 80, 80, 40, 40, 40];
+    const configured = policy(15);
+    const result = buildDependenceAwarePreRegisteredEvaluation(
+      population(times, scores),
+      observations(times),
+      { labelVersion: 'fixed-horizon-v1', horizonMs: 100, flatThresholdR: 0.01 },
+      {
+        ...configured,
+        aggregate: { ...configured.aggregate, minimumScans: 7, minimumOutcomes: 7 },
+        paired: {
+          ...configured.paired,
+          minimumPairs: 7,
+          minimumFullyScoredPairs: 7,
+          minimumDirectionalComparisons: 7,
+        },
+      },
+    );
+
+    if (result.paired.status === 'analysis-window-open') throw new Error('unreachable');
+    expect(result.paired.inference?.challengerAlignedPairs).toBe(4);
+    expect(result.paired.inference?.championAlignedPairs).toBe(3);
+    expect(result.episodeBalancedInference?.challengerAlignedEpisodes).toBe(1);
+    expect(result.episodeBalancedInference?.championAlignedEpisodes).toBe(3);
+    expect(result.episodeBalancedInference?.decisiveEpisodeCount).toBe(4);
+    expect(result.episodeBalancedInference?.inference).toBe('inconclusive');
+  });
+
   it('fails closed if durable eligibility rewrites the canonical instrument identity', () => {
     const times = [1_100, 1_200, 1_300, 1_400];
     const base = population(times);
@@ -201,7 +232,7 @@ describe('dependence-aware pre-registered evaluation', () => {
     ).toThrow(/canonical identity drift/);
   });
 
-  it('does not reveal episode diagnostics before the fixed analysis window closes', () => {
+  it('does not reveal dependence diagnostics before the fixed analysis window closes', () => {
     const times = [1_100, 1_200, 1_300, 1_400];
     const configured = policy(50);
     const early: DependenceAwareEvaluationPolicy = {
@@ -219,5 +250,6 @@ describe('dependence-aware pre-registered evaluation', () => {
     expect(result.paired.status).toBe('analysis-window-open');
     expect(result.dependence).toBeNull();
     expect(result.directionalDependence).toBeNull();
+    expect(result.episodeBalancedInference).toBeNull();
   });
 });

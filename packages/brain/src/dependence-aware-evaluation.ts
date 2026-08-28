@@ -3,6 +3,10 @@ import {
   type ScanDependencePolicy,
   type ScanDependenceReport,
 } from './dependence-guard.js';
+import {
+  inferEpisodeBalancedAlignment,
+  type EpisodeBalancedInferenceReport,
+} from './episode-balanced-inference.js';
 import type { FixedHorizonOutcomePolicy, MarketCloseObservation } from './outcome-labeling.js';
 import {
   buildPreRegisteredEvaluationFromDurablePopulation,
@@ -37,6 +41,11 @@ export interface DependenceAwareEvaluationResult extends PreRegisteredEvaluation
   readonly dependence: ScanDependenceReport | null;
   /** Same guard restricted to the Mission IDs that actually drive directional inference. */
   readonly directionalDependence: ScanDependenceReport | null;
+  /**
+   * Authoritative dependence-adjusted direction when available. Scan-level Wilson output inside
+   * `paired.inference` remains diagnostic and must not override this episode-balanced result.
+   */
+  readonly episodeBalancedInference: EpisodeBalancedInferenceReport | null;
 }
 
 function validateCanonicalIdentity(population: DependenceAwareEvaluationPopulation): void {
@@ -56,14 +65,16 @@ function validateCanonicalIdentity(population: DependenceAwareEvaluationPopulati
  * Preferred ADR-0021 top-level evaluation boundary when durable Desk population is available.
  *
  * The existing fixed-look evaluator remains the source of aggregate and paired outcome
- * inference. This wrapper adds a conservative dependence gate derived only from immutable
+ * diagnostics. This wrapper adds a conservative dependence gate derived only from immutable
  * scan identity, canonical instrument and market observation time. Ledger knowledge-time
  * still controls eligibility for the pre-registered analysis window, while `observedAt`
  * controls whether scans belong to one underlying market episode.
  *
  * Both the full eligible population and the subset that actually drives directional inference
- * must span the pre-registered minimum number of episodes. This prevents many quiet/tied scans
- * from disguising the fact that all decisive evidence came from one market move.
+ * must span the pre-registered minimum number of episodes. Once that gate is met, decisive
+ * per-Mission alignment is reduced to at most one equal-weight vote per market episode and a
+ * fresh Wilson interval is computed on those episode votes. This episode-balanced result is the
+ * dependence-adjusted direction; the raw scan-level interval is retained only as a diagnostic.
  */
 export function buildDependenceAwarePreRegisteredEvaluation(
   population: DependenceAwareEvaluationPopulation,
@@ -80,7 +91,12 @@ export function buildDependenceAwarePreRegisteredEvaluation(
   );
 
   if (base.paired.status === 'analysis-window-open') {
-    return { ...base, dependence: null, directionalDependence: null };
+    return {
+      ...base,
+      dependence: null,
+      directionalDependence: null,
+      episodeBalancedInference: null,
+    };
   }
 
   const plan = policy.analysisPlan;
@@ -99,9 +115,21 @@ export function buildDependenceAwarePreRegisteredEvaluation(
     dependenceEvidence.filter((item) => decisiveIds.has(item.missionId)),
     plan.dependence,
   );
+  const episodeBalancedInference =
+    base.paired.inference === null
+      ? null
+      : inferEpisodeBalancedAlignment(
+          base.paired.inference.decisiveDirectionalEvidence,
+          directionalDependence.episodes,
+          { minimumDecisiveEpisodes: plan.dependence.minimumIndependentEpisodes },
+        );
 
-  if (dependence.status === 'ready' && directionalDependence.status === 'ready') {
-    return { ...base, dependence, directionalDependence };
+  if (
+    dependence.status === 'ready' &&
+    directionalDependence.status === 'ready' &&
+    (episodeBalancedInference === null || episodeBalancedInference.status === 'ready')
+  ) {
+    return { ...base, dependence, directionalDependence, episodeBalancedInference };
   }
 
   const reasons = [
@@ -109,12 +137,14 @@ export function buildDependenceAwarePreRegisteredEvaluation(
       ...base.paired.reasons,
       ...dependence.reasons,
       ...directionalDependence.reasons.map((reason) => `directional-${reason}`),
+      ...(episodeBalancedInference?.reasons.map((reason) => `episode-balanced-${reason}`) ?? []),
     ]),
   ];
   return {
     ...base,
     dependence,
     directionalDependence,
+    episodeBalancedInference,
     paired: {
       ...base.paired,
       status: 'insufficient-data',
