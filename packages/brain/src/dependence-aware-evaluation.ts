@@ -1,3 +1,8 @@
+import {
+  buildScanDependenceReport,
+  type ScanDependencePolicy,
+  type ScanDependenceReport,
+} from './dependence-guard.js';
 import type { FixedHorizonOutcomePolicy, MarketCloseObservation } from './outcome-labeling.js';
 import {
   buildPreRegisteredEvaluationFromDurablePopulation,
@@ -7,11 +12,6 @@ import {
   type PreRegisteredEvaluationResult,
   type PreRegisteredPairedAnalysisPlan,
 } from './pre-registered-evaluation.js';
-import {
-  buildScanDependenceReport,
-  type ScanDependencePolicy,
-  type ScanDependenceReport,
-} from './dependence-guard.js';
 
 export interface DurableDependenceEligibility extends DurablePairedEligibility {
   readonly canonical: string;
