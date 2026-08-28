@@ -10,6 +10,14 @@
       "types": "./dist/index.d.ts",
       "default": "./dist/index.js"
     },
+    "./dependence-aware-evaluation": {
+      "types": "./dist/dependence-aware-evaluation.d.ts",
+      "default": "./dist/dependence-aware-evaluation.js"
+    },
+    "./dependence-guard": {
+      "types": "./dist/dependence-guard.d.ts",
+      "default": "./dist/dependence-guard.js"
+    },
     "./evaluation-pipeline": {
       "types": "./dist/evaluation-pipeline.d.ts",
       "default": "./dist/evaluation-pipeline.js"
