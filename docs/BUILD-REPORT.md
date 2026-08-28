@@ -76,6 +76,8 @@ Implemented:
   - `Scan → Snapshot → Intent → Position → Close → Review`
   - `Scan → rejected/ABANDONED → Review`
 - Ledger hash-chain integrity is checked after reconstruction.
+- The primary HTTP E2E harness now creates a real candidate Scan, plans its Mission and submits only through `/missions/:missionId/orders`; it no longer uses Mission-less order submission as the success path.
+- Production Desk now tombstones `POST /orders` with `410 MISSION_REQUIRED` before the historical handler can reach `ExecutionSupervisor`. A signed, nonce-authorised regression test proves the retired path creates no order visible in `/state`.
 
 ## Android path — repository state
 
@@ -98,7 +100,7 @@ The repository now has a platform-neutral Mission-bound Windows operator core, a
 Implemented:
 
 - Signed Desktop Desk transport with the same request identity and command-nonce contract.
-- Legacy Mission-less `POST /orders` is refused locally by Desktop transport before any network call.
+- Legacy Mission-less `POST /orders` is refused locally by Desktop transport before any network call, and the real Desk now independently tombstones the same server path.
 - Commands are never automatically retried; post-authorisation network uncertainty becomes **UNKNOWN**.
 - `DesktopMissionOperator` sends only `/missions/:missionId/orders` with explicit `origin: operator:windows`.
 - `DesktopMissionTruth` retains last-known rows after disconnect/gap but blocks consequential use until completeness is re-proven.
@@ -111,7 +113,7 @@ Implemented:
 - Desktop honours the Desk-advertised heartbeat interval and sends `ping` frames, preventing healthy authenticated clients from being reaped as dead.
 - **Every Desktop reconnect requests a full Mission snapshot (`resume: {}`)** rather than trusting a stale pre-disconnect sequence. This deliberately trades bandwidth for proof: if nothing changed while offline, zero replayed deltas cannot falsely leave stale rows looking current. Resume optimisation is deferred until the protocol has an explicit resume acknowledgement.
 - Reconnect regression tests prove a pre-disconnect sequence cannot re-enable order entry; only a fresh server snapshot restores current truth.
-- `WindowsProtectedSigner` now implements the repository-side `DesktopSigner` boundary over an opaque native Ed25519 key provider. Private key material never enters repository metadata.
+- `WindowsProtectedSigner` implements the repository-side `DesktopSigner` boundary over an opaque native Ed25519 key provider. Private key material never enters repository metadata.
 - Persisted signer metadata is versioned and public-only (`keyName`, public key, protection class, creation time).
 - Metadata-with-missing-key, orphan-native-key and malformed-metadata states all fail closed instead of silently regenerating a new Desk identity.
 - A native bridge report of hardware protection is recorded only as `hardware-backed-reported`; repository status remains `hardwareBackedVerified: false` until target-Windows evidence exists.
@@ -131,15 +133,15 @@ Remaining Desktop work:
 - Mission mutations and Mission orders are consequential command paths requiring a single-use command nonce.
 - Android additionally requests biometric authorisation through its signer contract.
 - Desk reaps clients that stop heartbeating; both Android and Desktop have heartbeat paths in repository code.
+- Mission-less `POST /orders` is retired at the server boundary with a deterministic non-ambiguous 410 response; old clients cannot silently bypass Mission ownership.
 
 ## ADR-0018 exit gaps
 
-ADR-0018 remains **IN PROGRESS**. Remaining work is narrow and explicit:
+ADR-0018 remains **IN PROGRESS**. The broad Mission ownership path is now closed; remaining work is narrower and explicit:
 
-1. **Native device-key proof** — Android hardware-backed behavior and the Windows native bridge/security classification require target-device/runtime proof. The repository-side Windows signer adapter now exists, but it deliberately does not claim native/hardware verification.
+1. **Native device-key proof** — Android hardware-backed behavior and the Windows native bridge/security classification require target-device/runtime proof. The repository-side Windows signer adapter exists, but it deliberately does not claim native/hardware verification.
 2. **Windows app completion** — bind the native signer provider/persistence and UI shell to the existing single Desktop Mission runtime path; do not introduce a local source of trading truth.
-3. **Legacy `/orders` retirement** — compatibility server route still permits Mission-less internal order submission. Remove/fail-close it only after every actual operator path is Mission-bound.
-4. **Final ADR-0018 independent audit** — replay/reconnect/red-team server + Android + Desktop and confirm identical Mission ownership/state with no hidden local truth or bypass.
+3. **Final ADR-0018 independent audit** — replay/reconnect/red-team server + Android + Desktop and confirm identical Mission ownership/state, that the retired Mission-less route cannot mutate execution state, and that no hidden local truth/bypass remains.
 
 Trading Brain implementation remains blocked until these are resolved or formally re-scoped through an accepted ADR change.
 
@@ -149,9 +151,9 @@ Trading Brain implementation remains blocked until these are resolved or formall
 | --- | --- | --- |
 | Architecture ADR-0015–0022 | **DONE** | Accepted ADRs + `docs/BRAIN-DESIGN-REVIEW.md`. |
 | Repository MT5 foundation | **SUBSTANTIALLY DONE** | Deterministic execution truth, instrument/margin/recovery wiring built; target-terminal proof remains external. |
-| Repository lint/typecheck/tests | **PASS** | Exact code head `13ecb91ea7ad4a7b4fa45f26b139ebfb2a96bf7b` passed GitHub Actions `verify`; this documentation commit requires its own exact-head run before being called green. |
+| Repository lint/typecheck/tests | **PASS** | Exact code head `548d13a358edde3c1a9df5172ae29eb65912e38d` passed GitHub Actions `verify`; this documentation commit requires its own exact-head run before being called green. |
 | Simulation/chaos | **STRONG, NOT COMPLETE** | Duplicate/recovery/clock/partial-fill/margin and Mission replay paths covered; real terminal/device restart remains external. |
-| Trade Mission spine | **IN PROGRESS — SERVER + ANDROID + DESKTOP CORE** | Durable lifecycle and client Mission truth paths exist; native Windows bridge/shell + bypass retirement + exit audit remain. |
+| Trade Mission spine | **IN PROGRESS — OWNERSHIP BYPASS RETIRED** | Durable lifecycle and server/Android/Desktop Mission truth paths exist; native Windows bridge/shell + final independent exit audit remain. |
 | Android first-time pairing | **REPOSITORY BUILT / DEVICE PROOF BLOCKED** | Controller/screen/persistence fail closed without signer; hardware-backed proof external. |
 | Windows protected signer | **ADAPTER BUILT / TARGET PROOF BLOCKED** | Repository adapter preserves identity and keeps the private key opaque; native provider implementation and Windows proof remain external work. |
 | Realtime + command authentication | **REPOSITORY DONE** | Signed stream admission, replay guard, command nonce; Desktop heartbeat/reconnect proof covered. |
@@ -180,10 +182,9 @@ No real-money execution is enabled or claimed.
 
 ## Next highest-priority sequence
 
-1. Implement/integrate the actual Windows native key-provider + protected persistence bridge behind the new fail-closed signer adapter; do not claim hardware-backed protection without target proof.
+1. Implement/integrate the actual Windows native key-provider + protected persistence bridge behind the fail-closed signer adapter; do not claim hardware-backed protection without target proof.
 2. Compose the real Windows app shell around the **single** existing `DesktopMissionTruth + DesktopMissionRealtime + DesktopMissionOperator` path.
 3. Add app-shell restart/reconnect tests proving local UI state cannot re-enable actions before server Mission snapshot proof.
-4. When Android and the actual Windows operator path are both Mission-bound, disable/remove server `POST /orders` and add a regression test proving internal orders require Mission ownership.
-5. Perform the independent ADR-0018 replay/reconnect/bypass red-team audit and fix defects.
-6. Only after ADR-0018 exit criteria pass, begin ADR-0019 deterministic/versioned Trading Brain.
-7. Keep MT5/LiteFinance and native-device/runtime facts on the external verification ladder; do not substitute repository tests for physical/runtime proof.
+4. Perform the independent ADR-0018 replay/reconnect/bypass red-team audit across server, Android and Desktop; physically remove obsolete dead compatibility code if that audit shows no supported consumer depends on it.
+5. Only after ADR-0018 exit criteria pass, begin ADR-0019 deterministic/versioned Trading Brain.
+6. Keep MT5/LiteFinance and native-device/runtime facts on the external verification ladder; do not substitute repository tests for physical/runtime proof.
