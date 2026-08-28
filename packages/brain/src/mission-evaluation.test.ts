@@ -11,7 +11,9 @@ import { buildForwardPairedCohort } from './paired-evaluation.js';
 const HASH = `sha256:${'a'.repeat(64)}` as const;
 const CHALLENGER_HASH = `sha256:${'b'.repeat(64)}` as const;
 
-function mission(overrides: Partial<DurableMissionForEvaluation> = {}): DurableMissionForEvaluation {
+function mission(
+  overrides: Partial<DurableMissionForEvaluation> = {},
+): DurableMissionForEvaluation {
   return {
     missionId: 'mission-1',
     scanConfigVersion: 'scan-v1',
@@ -33,7 +35,9 @@ function mission(overrides: Partial<DurableMissionForEvaluation> = {}): DurableM
   };
 }
 
-function pairedMission(overrides: Partial<DurableMissionForEvaluation> = {}): DurableMissionForEvaluation {
+function pairedMission(
+  overrides: Partial<DurableMissionForEvaluation> = {},
+): DurableMissionForEvaluation {
   return mission({
     decisionSnapshot: {
       asOf: 110,
@@ -135,18 +139,18 @@ describe('projectDurableMissionsForEvaluation', () => {
   });
 
   it('rejects hindsight labels and impossible bitemporal ordering', () => {
-    expect(() => projectDurableMissionsForEvaluation([mission()], [label({ validAt: 120 })])).toThrow(
-      /not strictly forward/,
-    );
+    expect(() =>
+      projectDurableMissionsForEvaluation([mission()], [label({ validAt: 120 })]),
+    ).toThrow(/not strictly forward/);
     expect(() =>
       projectDurableMissionsForEvaluation([mission()], [label({ validAt: 220, recordedAt: 219 })]),
     ).toThrow(/recorded before it became valid/);
   });
 
   it('fails closed when immutable Brain identity is absent or cutoffs diverge', () => {
-    expect(() => projectDurableMissionsForEvaluation([mission({ decisionSnapshot: { asOf: 110 } })])).toThrow(
-      /lacks sealed Brain evaluation identity/,
-    );
+    expect(() =>
+      projectDurableMissionsForEvaluation([mission({ decisionSnapshot: { asOf: 110 } })]),
+    ).toThrow(/lacks sealed Brain evaluation identity/);
 
     expect(() =>
       projectDurableMissionsForEvaluation([
@@ -192,7 +196,8 @@ describe('projectDurableMissionsForPairedEvaluation', () => {
   it('rejects challenger evidence created at the decision boundary', () => {
     const base = pairedMission();
     const snapshot = base.decisionSnapshot;
-    if (snapshot?.brainComparison?.evaluations === undefined) throw new Error('fixture missing comparison');
+    if (snapshot?.brainComparison?.evaluations === undefined)
+      throw new Error('fixture missing comparison');
     const evaluations = snapshot.brainComparison.evaluations.map((entry) =>
       entry.role === 'challenger' ? { ...entry, createdAt: 120 } : entry,
     );
@@ -212,7 +217,8 @@ describe('projectDurableMissionsForPairedEvaluation', () => {
   it('fails closed if durable champion shadow evidence diverges from the primary decision', () => {
     const base = pairedMission();
     const snapshot = base.decisionSnapshot;
-    if (snapshot?.brainComparison?.evaluations === undefined) throw new Error('fixture missing comparison');
+    if (snapshot?.brainComparison?.evaluations === undefined)
+      throw new Error('fixture missing comparison');
     const evaluations = snapshot.brainComparison.evaluations.map((entry) =>
       entry.role === 'champion'
         ? { ...entry, evaluation: { ...entry.evaluation, score: 77 } }
@@ -234,7 +240,8 @@ describe('projectDurableMissionsForPairedEvaluation', () => {
   it('rejects duplicate immutable Brain identities within one Mission', () => {
     const base = pairedMission();
     const snapshot = base.decisionSnapshot;
-    if (snapshot?.brainComparison?.evaluations === undefined) throw new Error('fixture missing comparison');
+    if (snapshot?.brainComparison?.evaluations === undefined)
+      throw new Error('fixture missing comparison');
     const duplicate = snapshot.brainComparison.evaluations[1];
     if (duplicate === undefined) throw new Error('fixture missing challenger');
 
