@@ -35,8 +35,12 @@ function validateHash(hash: BrainContentHash): void {
 }
 
 function withoutBrainEvidence(snapshot: DecisionSnapshot): DecisionSnapshot {
-  const { brainComparison: _comparison, brainEvaluation: _evaluation, brainVersion: _version, ...rest } =
-    snapshot;
+  const {
+    brainComparison: _comparison,
+    brainEvaluation: _evaluation,
+    brainVersion: _version,
+    ...rest
+  } = snapshot;
   return rest;
 }
 
