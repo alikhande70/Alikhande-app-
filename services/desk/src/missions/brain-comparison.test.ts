@@ -1,6 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import { Ledger } from '../ledger/ledger.js';
-import { BrainComparisonInvariantError, withBrainComparisonEvidence } from './brain-comparison.js';
+import {
+  BrainComparisonInvariantError,
+  withBrainComparisonEvidence,
+} from './brain-comparison.js';
 import { MissionService } from './service.js';
 import type { BrainContentHash, DecisionSnapshot } from './types.js';
 
