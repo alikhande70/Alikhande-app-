@@ -1,12 +1,15 @@
 export interface ScanDependenceEvidence {
   readonly missionId: string;
   readonly canonical: string;
+  /** Market/event time of the scan. Episode dependence is measured on this axis. */
+  readonly observedAt: number;
+  /** Ledger knowledge time. Used only to enforce valid bitemporal ordering. */
   readonly knownAt: number;
 }
 
 export interface ScanDependencePolicy {
   /**
-   * Consecutive scans for the same canonical instrument at or inside this gap are
+   * Consecutive scans for the same canonical instrument at or inside this market-time gap are
    * treated as one market episode. This value must be pre-registered before evidence.
    */
   readonly episodeGapMs: number;
@@ -17,8 +20,8 @@ export interface ScanDependencePolicy {
 export interface MarketEpisode {
   readonly episodeId: string;
   readonly canonical: string;
-  readonly firstKnownAt: number;
-  readonly lastKnownAt: number;
+  readonly firstObservedAt: number;
+  readonly lastObservedAt: number;
   readonly missionIds: readonly string[];
 }
 
@@ -58,6 +61,11 @@ function validatePolicy(policy: ScanDependencePolicy): void {
 /**
  * Collapse temporally adjacent scans into deterministic same-instrument market episodes.
  *
+ * Episode adjacency is intentionally based on `observedAt`, not `knownAt`. Delayed ingestion,
+ * replay or a temporarily slow ledger must never split one underlying market move into several
+ * apparently independent evidence units. `knownAt` remains present to prove that the market
+ * observation was not recorded before it was valid.
+ *
  * This is a conservative dependence guard for ADR-0021. It does not infer correlation
  * from outcomes and does not claim that different episodes are mathematically independent.
  * Instead it prevents repeated scans inside one continuing market move from satisfying
@@ -78,37 +86,41 @@ export function buildScanDependenceReport(
     if (item.canonical.trim().length === 0) {
       throw new Error(`dependence canonical is required for '${item.missionId}'`);
     }
+    requireTimestamp('dependence observedAt', item.observedAt);
     requireTimestamp('dependence knownAt', item.knownAt);
+    if (item.observedAt > item.knownAt) {
+      throw new Error(`dependence mission '${item.missionId}' was known before it was observed`);
+    }
   }
 
   const sorted = [...evidence].sort(
     (left, right) =>
       left.canonical.localeCompare(right.canonical) ||
-      left.knownAt - right.knownAt ||
+      left.observedAt - right.observedAt ||
       left.missionId.localeCompare(right.missionId),
   );
   const mutableEpisodes: Array<{
     episodeId: string;
     canonical: string;
-    firstKnownAt: number;
-    lastKnownAt: number;
+    firstObservedAt: number;
+    lastObservedAt: number;
     missionIds: string[];
   }> = [];
   const latestByCanonical = new Map<string, (typeof mutableEpisodes)[number]>();
 
   for (const item of sorted) {
     const current = latestByCanonical.get(item.canonical);
-    if (current !== undefined && item.knownAt - current.lastKnownAt <= policy.episodeGapMs) {
-      current.lastKnownAt = item.knownAt;
+    if (current !== undefined && item.observedAt - current.lastObservedAt <= policy.episodeGapMs) {
+      current.lastObservedAt = item.observedAt;
       current.missionIds.push(item.missionId);
       continue;
     }
 
     const episode = {
-      episodeId: `${item.canonical}:${item.knownAt}:${item.missionId}`,
+      episodeId: `${item.canonical}:${item.observedAt}:${item.missionId}`,
       canonical: item.canonical,
-      firstKnownAt: item.knownAt,
-      lastKnownAt: item.knownAt,
+      firstObservedAt: item.observedAt,
+      lastObservedAt: item.observedAt,
       missionIds: [item.missionId],
     };
     mutableEpisodes.push(episode);
