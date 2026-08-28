@@ -3,6 +3,8 @@ import type { EvaluationPipelineMission } from './evaluation-pipeline.js';
 import type { MarketCloseObservation } from './outcome-labeling.js';
 import {
   buildPreRegisteredEvaluation,
+  buildPreRegisteredEvaluationFromDurablePopulation,
+  type DurableEvaluationPopulation,
   type PreRegisteredEvaluationPolicy,
 } from './pre-registered-evaluation.js';
 
@@ -110,6 +112,19 @@ function policy(currentKnowledgeCutoff: number): PreRegisteredEvaluationPolicy {
   };
 }
 
+function durablePopulation(): DurableEvaluationPopulation {
+  return {
+    missions,
+    pairedEligibility: missions.map((item, index) => ({
+      missionId: item.missionId,
+      scanConfigVersion: item.scanConfigVersion,
+      observedAt: item.observedAt,
+      knownAt: 1_100 + index * 100,
+    })),
+    ledgerHead: { seq: 8, hash: 'ledger-head-test' },
+  };
+}
+
 describe('pre-registered evaluation composition', () => {
   it('does not reveal paired inference before the fixed analysis cutoff', () => {
     const result = buildPreRegisteredEvaluation(
@@ -193,6 +208,78 @@ describe('pre-registered evaluation composition', () => {
     expect(result.paired.pairingCoverage).toBe(0.75);
     expect(result.paired.missingPairedMissionIds).toEqual(['m4']);
     expect(result.paired.reasons).toContain('minimum-pairing-coverage-not-met');
+  });
+
+  it('counts a durable scan with no decision/comparison snapshot in pairing coverage', () => {
+    const base = durablePopulation();
+    const population: DurableEvaluationPopulation = {
+      ...base,
+      pairedEligibility: [
+        ...base.pairedEligibility,
+        {
+          missionId: 'm5-no-comparison',
+          scanConfigVersion: 'scan-v1',
+          observedAt: 1_490,
+          knownAt: 1_500,
+        },
+      ],
+      ledgerHead: { seq: 9, hash: 'ledger-head-with-missing-comparison' },
+    };
+
+    const result = buildPreRegisteredEvaluationFromDurablePopulation(
+      population,
+      observations,
+      { labelVersion: 'fixed-horizon-v1', horizonMs: 100, flatThresholdR: 0.01 },
+      policy(analysisCutoff),
+    );
+
+    expect(result.paired.status).toBe('insufficient-data');
+    if (result.paired.status === 'analysis-window-open') throw new Error('unreachable');
+    expect(result.paired.eligiblePairedPopulation).toBe(5);
+    expect(result.paired.observedPairedPopulation).toBe(4);
+    expect(result.paired.pairingCoverage).toBe(0.8);
+    expect(result.paired.missingPairedMissionIds).toEqual(['m5-no-comparison']);
+    expect(result.paired.reasons).toContain('minimum-pairing-coverage-not-met');
+    expect(result.paired.inference?.inference).toBe('challenger-favouring');
+  });
+
+  it('fails closed when durable eligibility rewrites Mission identity or mixes scan cohorts', () => {
+    const base = durablePopulation();
+    const driftedIdentity: DurableEvaluationPopulation = {
+      ...base,
+      pairedEligibility: base.pairedEligibility.map((item) =>
+        item.missionId === 'm1' ? { ...item, observedAt: item.observedAt - 1 } : item,
+      ),
+    };
+    expect(() =>
+      buildPreRegisteredEvaluationFromDurablePopulation(
+        driftedIdentity,
+        observations,
+        { labelVersion: 'fixed-horizon-v1', horizonMs: 100, flatThresholdR: 0.01 },
+        policy(analysisCutoff),
+      ),
+    ).toThrow(/observation-time drift/);
+
+    const mixedCohort: DurableEvaluationPopulation = {
+      ...base,
+      pairedEligibility: [
+        ...base.pairedEligibility,
+        {
+          missionId: 'm5-other-config',
+          scanConfigVersion: 'scan-v2',
+          observedAt: 1_490,
+          knownAt: 1_500,
+        },
+      ],
+    };
+    expect(() =>
+      buildPreRegisteredEvaluationFromDurablePopulation(
+        mixedCohort,
+        observations,
+        { labelVersion: 'fixed-horizon-v1', horizonMs: 100, flatThresholdR: 0.01 },
+        policy(analysisCutoff),
+      ),
+    ).toThrow(/one scan configuration cohort/);
   });
 
   it('fails closed on inconsistent Challenger creation identity and future aggregate cutoffs', () => {
