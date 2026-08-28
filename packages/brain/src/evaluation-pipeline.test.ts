@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
-  type EvaluationPipelineMission,
   buildMissionEvaluationPipeline,
+  type EvaluationPipelineMission,
 } from './evaluation-pipeline.js';
 import type { MarketCloseObservation } from './outcome-labeling.js';
 
