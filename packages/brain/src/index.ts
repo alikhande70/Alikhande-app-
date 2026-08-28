@@ -76,7 +76,7 @@ function validateVersion(version: BrainVersion): void {
   if (version.featureSetVersion.trim().length === 0)
     throw new Error('feature set version is required');
   if (version.rubricVersion.trim().length === 0) throw new Error('rubric version is required');
-  if (version.features.length === 0) throw new Error('brain version must define features');
+  if (version.features.length === 0) throw new Error('brain version must contain features');
 
   const seen = new Set<string>();
   let positiveWeight = 0;
