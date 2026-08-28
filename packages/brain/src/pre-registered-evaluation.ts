@@ -210,11 +210,8 @@ function composePreRegisteredEvaluation(
     throw new Error('analysis plan cannot be registered before Challenger creation');
   }
 
-  for (const mission of missions) {
-    const knowledgeTime = missionKnowledgeTime(mission);
-    if (knowledgeTime === undefined) continue;
-    requireTimestamp('paired mission knowledgeTime', knowledgeTime);
-    if (knowledgeTime > createdAt && knowledgeTime <= plan.registeredAt) {
+  for (const item of eligibility) {
+    if (item.knownAt > createdAt && item.knownAt <= plan.registeredAt) {
       throw new Error('analysis plan was registered after forward Challenger evidence began');
     }
   }
