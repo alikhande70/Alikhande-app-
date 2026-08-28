@@ -9,6 +9,10 @@
     ".": {
       "types": "./dist/index.d.ts",
       "default": "./dist/index.js"
+    },
+    "./mission-evaluation": {
+      "types": "./dist/mission-evaluation.d.ts",
+      "default": "./dist/mission-evaluation.js"
     }
   },
   "scripts": {
