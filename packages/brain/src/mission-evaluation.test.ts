@@ -97,9 +97,7 @@ describe('projectDurableMissionsForEvaluation', () => {
 
   it('fails closed when immutable Brain identity is absent or cutoffs diverge', () => {
     expect(() =>
-      projectDurableMissionsForEvaluation([
-        mission({ decisionSnapshot: { asOf: 110, brainEvaluation: undefined } }),
-      ]),
+      projectDurableMissionsForEvaluation([mission({ decisionSnapshot: { asOf: 110 } })]),
     ).toThrow(/lacks sealed Brain evaluation identity/);
 
     expect(() =>
