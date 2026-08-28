@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import {
   type EvaluationPolicy,
-  type ScanDecisionEvidence,
   evaluateScanPopulation,
+  type ScanDecisionEvidence,
 } from './evaluation.js';
 
 const hash = `sha256:${'a'.repeat(64)}`;
@@ -156,10 +156,7 @@ describe('scan-level evaluator', () => {
 
   it('prevents accidental cross-cohort and cross-version aggregation', () => {
     expect(() =>
-      evaluateScanPopulation(
-        [scan('m1'), scan('m2', { scanConfigVersion: 'scan-v2' })],
-        policy,
-      ),
+      evaluateScanPopulation([scan('m1'), scan('m2', { scanConfigVersion: 'scan-v2' })], policy),
     ).toThrow(/one scan configuration cohort/);
 
     expect(() =>
