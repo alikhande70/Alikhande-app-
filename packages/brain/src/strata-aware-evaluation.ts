@@ -18,7 +18,8 @@ export interface StrataAwareAnalysisPlan extends DependenceAwareAnalysisPlan {
   readonly featureStrata: FeatureStrataPolicy;
 }
 
-export interface StrataAwareEvaluationPolicy extends Omit<DependenceAwareEvaluationPolicy, 'analysisPlan'> {
+export interface StrataAwareEvaluationPolicy
+  extends Omit<DependenceAwareEvaluationPolicy, 'analysisPlan'> {
   readonly analysisPlan: StrataAwareAnalysisPlan;
 }
 
@@ -62,7 +63,9 @@ export function buildStrataAwarePreRegisteredEvaluation(
     (item) => item.knownAt > plan.registeredAt && item.knownAt <= plan.analysisCutoff,
   );
   const eligibleIds = new Set(eligible.map((item) => item.missionId));
-  const evidence = population.featureStrataEvidence.filter((item) => eligibleIds.has(item.missionId));
+  const evidence = population.featureStrataEvidence.filter((item) =>
+    eligibleIds.has(item.missionId),
+  );
   const decisiveIds = new Set(base.paired.inference?.decisiveDirectionalMissionIds ?? []);
   const featureStrata = assessFeatureStrataCoverage(
     eligible,

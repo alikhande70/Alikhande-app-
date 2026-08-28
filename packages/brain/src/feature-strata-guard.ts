@@ -55,8 +55,10 @@ function requireTimestamp(name: string, value: number): void {
 }
 
 function validatePolicy(policy: FeatureStrataPolicy): void {
-  if (policy.featureKey.trim().length === 0) throw new Error('feature strata featureKey is required');
-  if (policy.boundaries.length < 2) throw new Error('feature strata requires at least two boundaries');
+  if (policy.featureKey.trim().length === 0)
+    throw new Error('feature strata featureKey is required');
+  if (policy.boundaries.length < 2)
+    throw new Error('feature strata requires at least two boundaries');
   if (policy.boundaries[0] !== 0 || policy.boundaries[policy.boundaries.length - 1] !== 1) {
     throw new Error('feature strata boundaries must start at 0 and end at 1');
   }
@@ -123,13 +125,15 @@ export function assessFeatureStrataCoverage(
 
   const eligibleById = new Map<string, DurablePairedEligibility>();
   for (const item of eligibility) {
-    if (item.missionId.trim().length === 0) throw new Error('feature strata eligibility missionId is required');
+    if (item.missionId.trim().length === 0)
+      throw new Error('feature strata eligibility missionId is required');
     requireTimestamp('feature strata eligibility observedAt', item.observedAt);
     requireTimestamp('feature strata eligibility knownAt', item.knownAt);
     if (item.knownAt < item.observedAt) {
       throw new Error(`feature strata eligibility '${item.missionId}' was known before observedAt`);
     }
-    if (eligibleById.has(item.missionId)) throw new Error(`duplicate feature strata eligibility '${item.missionId}'`);
+    if (eligibleById.has(item.missionId))
+      throw new Error(`duplicate feature strata eligibility '${item.missionId}'`);
     eligibleById.set(item.missionId, item);
   }
 
@@ -152,9 +156,15 @@ export function assessFeatureStrataCoverage(
       throw new Error(`feature strata evidence '${item.missionId}' uses future market evidence`);
     }
     if (item.recordedAt > eligible.knownAt) {
-      throw new Error(`feature strata evidence '${item.missionId}' was learned after the scan knowledge-time`);
+      throw new Error(
+        `feature strata evidence '${item.missionId}' was learned after the scan knowledge-time`,
+      );
     }
-    if (!Number.isFinite(item.normalizedValue) || item.normalizedValue < 0 || item.normalizedValue > 1) {
+    if (
+      !Number.isFinite(item.normalizedValue) ||
+      item.normalizedValue < 0 ||
+      item.normalizedValue > 1
+    ) {
       throw new Error(`feature strata evidence '${item.missionId}' must be normalized to [0,1]`);
     }
     targetEvidence.set(item.missionId, item);
@@ -162,7 +172,9 @@ export function assessFeatureStrataCoverage(
 
   for (const missionId of decisiveMissionIds) {
     if (!eligibleById.has(missionId)) {
-      throw new Error(`directional feature strata mission '${missionId}' is outside the eligible population`);
+      throw new Error(
+        `directional feature strata mission '${missionId}' is outside the eligible population`,
+      );
     }
   }
 
@@ -191,7 +203,8 @@ export function assessFeatureStrataCoverage(
   const evidencedPopulation = targetEvidence.size;
   const evidenceCoverage = eligiblePopulation === 0 ? 0 : evidencedPopulation / eligiblePopulation;
   const directionalPopulation = decisiveMissionIds.size;
-  const directionalEvidencedPopulation = directionalPopulation - missingDirectionalMissionIds.length;
+  const directionalEvidencedPopulation =
+    directionalPopulation - missingDirectionalMissionIds.length;
   const occupiedEligibleBins = eligibleCounts.filter((count) => count > 0).length;
   const occupiedDirectionalBins = directionalCounts.filter((count) => count > 0).length;
   const largestDirectionalBinShare =
@@ -200,10 +213,13 @@ export function assessFeatureStrataCoverage(
       : Math.max(...directionalCounts) / directionalEvidencedPopulation;
 
   const reasons: string[] = [];
-  if (evidenceCoverage < policy.minimumEligibleCoverage) reasons.push('minimum-feature-coverage-not-met');
-  if (occupiedEligibleBins < policy.minimumOccupiedEligibleBins) reasons.push('minimum-eligible-strata-not-met');
+  if (evidenceCoverage < policy.minimumEligibleCoverage)
+    reasons.push('minimum-feature-coverage-not-met');
+  if (occupiedEligibleBins < policy.minimumOccupiedEligibleBins)
+    reasons.push('minimum-eligible-strata-not-met');
   if (missingDirectionalMissionIds.length > 0) reasons.push('directional-feature-evidence-missing');
-  if (occupiedDirectionalBins < policy.minimumOccupiedDirectionalBins) reasons.push('minimum-directional-strata-not-met');
+  if (occupiedDirectionalBins < policy.minimumOccupiedDirectionalBins)
+    reasons.push('minimum-directional-strata-not-met');
   if (
     directionalEvidencedPopulation > 0 &&
     largestDirectionalBinShare > policy.maximumDirectionalBinShare

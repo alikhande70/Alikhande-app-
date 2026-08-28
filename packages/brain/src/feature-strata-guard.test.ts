@@ -107,21 +107,19 @@ describe('feature strata guard', () => {
   it('fails closed on future, late, duplicate, or unknown evidence', () => {
     const eligibility = [eligible('m1', 100)];
     expect(() =>
-      assessFeatureStrataCoverage(
-        eligibility,
-        [evidence('m1', 0.5, 101)],
-        new Set(['m1']),
-        { ...policy, minimumOccupiedEligibleBins: 1, minimumOccupiedDirectionalBins: 1 },
-      ),
+      assessFeatureStrataCoverage(eligibility, [evidence('m1', 0.5, 101)], new Set(['m1']), {
+        ...policy,
+        minimumOccupiedEligibleBins: 1,
+        minimumOccupiedDirectionalBins: 1,
+      }),
     ).toThrow(/future market evidence/);
 
     expect(() =>
-      assessFeatureStrataCoverage(
-        eligibility,
-        [evidence('m1', 0.5, 90, 111)],
-        new Set(['m1']),
-        { ...policy, minimumOccupiedEligibleBins: 1, minimumOccupiedDirectionalBins: 1 },
-      ),
+      assessFeatureStrataCoverage(eligibility, [evidence('m1', 0.5, 90, 111)], new Set(['m1']), {
+        ...policy,
+        minimumOccupiedEligibleBins: 1,
+        minimumOccupiedDirectionalBins: 1,
+      }),
     ).toThrow(/learned after the scan knowledge-time/);
 
     expect(() =>
@@ -134,32 +132,27 @@ describe('feature strata guard', () => {
     ).toThrow(/duplicate feature strata evidence/);
 
     expect(() =>
-      assessFeatureStrataCoverage(
-        eligibility,
-        [evidence('other', 0.5, 90)],
-        new Set(['m1']),
-        { ...policy, minimumOccupiedEligibleBins: 1, minimumOccupiedDirectionalBins: 1 },
-      ),
+      assessFeatureStrataCoverage(eligibility, [evidence('other', 0.5, 90)], new Set(['m1']), {
+        ...policy,
+        minimumOccupiedEligibleBins: 1,
+        minimumOccupiedDirectionalBins: 1,
+      }),
     ).toThrow(/ineligible mission/);
   });
 
   it('rejects post-hoc or malformed strata policies', () => {
     const eligibility = [eligible('m1', 100)];
     expect(() =>
-      assessFeatureStrataCoverage(
-        eligibility,
-        [evidence('m1', 0.5, 90)],
-        new Set(['m1']),
-        { ...policy, boundaries: [0, 0.7, 0.6, 1] },
-      ),
+      assessFeatureStrataCoverage(eligibility, [evidence('m1', 0.5, 90)], new Set(['m1']), {
+        ...policy,
+        boundaries: [0, 0.7, 0.6, 1],
+      }),
     ).toThrow(/strictly increasing/);
     expect(() =>
-      assessFeatureStrataCoverage(
-        eligibility,
-        [evidence('m1', 0.5, 90)],
-        new Set(['m1']),
-        { ...policy, maximumDirectionalBinShare: 0 },
-      ),
+      assessFeatureStrataCoverage(eligibility, [evidence('m1', 0.5, 90)], new Set(['m1']), {
+        ...policy,
+        maximumDirectionalBinShare: 0,
+      }),
     ).toThrow(/maximumDirectionalBinShare/);
   });
 });
