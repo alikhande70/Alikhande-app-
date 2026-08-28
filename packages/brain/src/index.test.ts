@@ -1,6 +1,5 @@
-import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
-import { evaluate, type BrainVersion, type FeatureVector } from './index.js';
+import { type BrainVersion, evaluate, type FeatureVector } from './index.js';
 
 const version: BrainVersion = {
   id: 'brain-v1.0.0',
@@ -89,12 +88,10 @@ describe('deterministic Trading Brain boundary', () => {
   });
 
   it('keeps every valid score finite and inside 0..100', () => {
-    fc.assert(
-      fc.property(
-        fc.double({ min: 0, max: 1, noNaN: true }),
-        fc.double({ min: 0, max: 1, noNaN: true }),
-        fc.double({ min: 0, max: 1, noNaN: true }),
-        (trendAlignment, spreadStress, riskGeometry) => {
+    const samples = [0, 0.01, 0.25, 0.5, 0.75, 0.99, 1];
+    for (const trendAlignment of samples) {
+      for (const spreadStress of samples) {
+        for (const riskGeometry of samples) {
           const output = evaluate(
             version,
             vector({ trendAlignment, spreadStress, riskGeometry }),
@@ -106,9 +103,9 @@ describe('deterministic Trading Brain boundary', () => {
             expect(output.score.value).toBeGreaterThanOrEqual(0);
             expect(output.score.value).toBeLessThanOrEqual(100);
           }
-        },
-      ),
-    );
+        }
+      }
+    }
   });
 
   it('never depends on wall-clock time or mutable process state', () => {
