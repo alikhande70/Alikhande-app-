@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import {
   type BitemporalFeatureObservation,
-  type FeatureSetVersion,
   extractFeatureVector,
+  type FeatureSetVersion,
 } from './features.js';
 
 const featureSet: FeatureSetVersion = {
