@@ -2,6 +2,7 @@ import type { VersionedMarketOutcomeLabel } from './mission-evaluation.js';
 
 export interface OutcomeMissionSeed {
   readonly missionId: string;
+  readonly symbol: string;
   readonly decisionKnowledgeTime: number;
   readonly direction: 'long' | 'short';
   readonly referencePrice: number;
@@ -40,6 +41,7 @@ function validatePolicy(policy: FixedHorizonOutcomePolicy): void {
 
 function validateSeed(seed: OutcomeMissionSeed): void {
   if (seed.missionId.trim().length === 0) throw new Error('missionId is required');
+  if (seed.symbol.trim().length === 0) throw new Error('mission symbol is required');
   requireFiniteTimestamp('decisionKnowledgeTime', seed.decisionKnowledgeTime);
   requireFinite('referencePrice', seed.referencePrice);
   if (seed.referencePrice <= 0) throw new Error('referencePrice must be greater than zero');
@@ -83,6 +85,12 @@ export function buildFixedHorizonOutcomeLabel(
   validateSeed(seed);
   validateObservation(observation);
   validatePolicy(policy);
+
+  if (observation.symbol !== seed.symbol) {
+    throw new Error(
+      `market observation symbol '${observation.symbol}' does not match mission symbol '${seed.symbol}'`,
+    );
+  }
 
   const targetValidAt = seed.decisionKnowledgeTime + policy.horizonMs;
   if (!Number.isSafeInteger(targetValidAt)) {
