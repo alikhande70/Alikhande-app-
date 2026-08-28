@@ -196,4 +196,24 @@ describe('deterministic Brain -> Mission decision snapshot', () => {
     ).toHaveLength(0);
     ledger.close();
   });
+
+  it('rejects a persisted evidence value that differs from the feature vector actually scored', () => {
+    const inconsistent = {
+      ...extraction(),
+      vector: {
+        featureSetVersion: 'features-v1',
+        asOf: 1_020,
+        values: { trend: 0.1, spread: 0.2 },
+      },
+    };
+
+    expect(() =>
+      withBrainDecisionEvidence({
+        snapshot: baseSnapshot(),
+        evaluation: scoredEvaluation(),
+        extraction: inconsistent,
+        knowledgeCutoff: 1_020,
+      }),
+    ).toThrow(/does not match persisted normalized evidence/);
+  });
 });
