@@ -4,7 +4,9 @@ This report records what is actually implemented and verified on the branch. ADR
 
 ## Current state — 2026-08-28
 
-The repository-level MT5 execution foundation is substantially built and remains fail-closed. Real broker execution is deliberately not enabled or claimed. The current development gate is **ADR-0018 — Trade Mission**; Trading Brain, memory and evaluation remain blocked until that spine passes its exit audit.
+The repository-level MT5 execution foundation is substantially built and remains fail-closed. Real broker execution is deliberately not enabled or claimed. ADR-0018 — Trade Mission has a substantially closed repository ownership path, but its final independent audit/native runtime proof remains open.
+
+A **non-integrated ADR-0019 foundation** now exists as `packages/brain`: a pure deterministic/versioned rubric evaluator with explicit insufficient-data handling. It has no clock, network, I/O, LLM dependency, Mission wiring or execution access. No further Brain runtime integration is permitted until the remaining ADR-0018 audit items are resolved.
 
 The preserved branch `claude/personal-trading-app-atm6e1` remains outside this workstream and must not be modified.
 
@@ -78,7 +80,11 @@ Implemented:
 - Ledger hash-chain integrity is checked after reconstruction.
 - The primary HTTP E2E harness creates a real candidate Scan, plans its Mission and submits only through `/missions/:missionId/orders`.
 - Mission-less `POST /orders` is retired with deterministic `410 MISSION_REQUIRED` before the historical handler can reach `ExecutionSupervisor`.
-- **Red-team hardening:** the 410 tombstone is now installed even when `MissionRuntime` is absent. A dedicated regression test proves an isolated/legacy server configuration cannot resurrect direct Mission-less submission.
+- **Red-team hardening:** the 410 tombstone is installed even when `MissionRuntime` is absent. A dedicated regression test proves an isolated/legacy server configuration cannot resurrect direct Mission-less submission.
+
+### Remaining repository audit note
+
+The historical direct `POST /orders` handler still physically exists in `server.ts`, but an unconditional Mission-route pre-handler makes it unreachable and regression tests prove it cannot create an intent, including when `MissionRuntime` is absent. This dead compatibility code should still be removed when a safe source edit can be made, because deleting dangerous dead code is stronger than relying indefinitely on interception.
 
 ## Android path — repository state
 
@@ -119,7 +125,7 @@ Implemented:
 - Metadata-with-missing-key, orphan-native-key and malformed-metadata states fail closed instead of silently regenerating a new Desk identity.
 - A native bridge report of hardware protection is recorded only as `hardware-backed-reported`; repository status remains `hardwareBackedVerified: false` until target-Windows evidence exists.
 - Metadata persistence failure intentionally leaves an orphan key visible so later startup fails closed rather than guessing identity continuity.
-- **`WindowsMissionAppShell` now composes the single existing Mission runtime for UI binding. It owns no mutable trading truth and exposes actions only while runtime Mission truth is proven current.**
+- `WindowsMissionAppShell` composes the single existing Mission runtime for UI binding. It owns no mutable trading truth and exposes actions only while runtime Mission truth is proven current.
 - App-shell regression coverage proves cached/last-known Mission rows remain displayable after stop/disconnect but cannot re-enable a network order; a fresh server snapshot is required.
 
 Remaining Desktop work:
@@ -139,15 +145,44 @@ Remaining Desktop work:
 - Mission-less `POST /orders` is retired at the server boundary with a deterministic non-ambiguous 410 response.
 - The retirement guard no longer depends on MissionRuntime being present, closing a configuration-dependent bypass found during the ADR-0018 red-team audit.
 
+## ADR-0019 Trading Brain foundation — repository state
+
+A deliberately narrow foundation is now implemented in `packages/brain` and is **not wired into runtime execution**.
+
+Implemented:
+
+- Independent `@keel/brain` package boundary.
+- Pure `evaluate(BrainVersion, FeatureVector, Context)` function with no clock, network, filesystem, broker, account, LLM or environment access.
+- Explicit `brainVersion`, `featureSetVersion` and `rubricVersion` provenance in every output.
+- Transparent weighted rubric over normalized explicit features.
+- Deterministic machine-readable rationale codes rather than prose.
+- Feature-set mismatch is rejected rather than silently compared across incompatible populations.
+- Missing required features produce `insufficient-data` with an explicit sorted missing-feature list; values are never imputed.
+- Malformed normalized features and invalid rubrics fail closed.
+- Integer-basis-point rounding provides stable deterministic score representation.
+- Regression tests prove byte-equivalent same-input output, wall-clock independence and score bounds over a deterministic grid of feature combinations.
+- No LLM code exists in this package and no Brain output has a privileged execution path.
+
+Not yet implemented/wired:
+
+- Versioned point-in-time feature extraction from actual scan data.
+- Brain → Mission candidate/planning integration.
+- Champion/challenger registry or forward-only evaluation.
+- LLM explanation edge.
+- Memory/evaluation layers.
+
+No further runtime integration should occur until the remaining ADR-0018 repository audit items are resolved.
+
 ## ADR-0018 exit status
 
-ADR-0018 remains **IN PROGRESS**, but the repository-level Mission ownership path is now substantially closed. Current remaining gaps are explicit:
+ADR-0018 remains **IN PROGRESS**, but the repository-level Mission ownership path is substantially closed. Current remaining gaps are explicit:
 
-1. **Native device-key proof** — Android hardware-backed behavior and Windows native key-provider/protected persistence require target-device/runtime proof. Repository abstractions deliberately do not claim this evidence.
-2. **Native Windows product completion** — package/bind the Windows UI to the existing single `WindowsMissionAppShell`; no local source of trading truth is permitted.
-3. **Final independent audit continuation** — continue replay/reconnect/bypass inspection across server, Android and Desktop and remove any remaining dead compatibility execution code where practical. The current audit already found and closed one configuration-dependent `/orders` resurrection path.
+1. **Dead compatibility removal** — remove the physically present historical direct `/orders` execution handler after confirming no fixture/tool requires it; the current unconditional tombstone and regression tests already prevent execution.
+2. **Native device-key proof** — Android hardware-backed behavior and Windows native key-provider/protected persistence require target-device/runtime proof. Repository abstractions deliberately do not claim this evidence.
+3. **Native Windows product completion** — package/bind the Windows UI to the existing single `WindowsMissionAppShell`; no local source of trading truth is permitted.
+4. **Final independent audit continuation** — continue replay/reconnect/bypass inspection across server, Android and Desktop.
 
-Trading Brain implementation remains blocked until these are resolved or formally re-scoped through an accepted ADR change.
+The pure Brain package may be developed in isolation, but Brain-to-Mission/runtime integration remains blocked until these repository exit items are closed. External Windows/MT5/device proofs remain on the verification ladder and must not be converted into repository claims.
 
 ## Verification ladder
 
@@ -155,14 +190,14 @@ Trading Brain implementation remains blocked until these are resolved or formall
 | --- | --- | --- |
 | Architecture ADR-0015–0022 | **DONE** | Accepted ADRs + `docs/BRAIN-DESIGN-REVIEW.md`. |
 | Repository MT5 foundation | **SUBSTANTIALLY DONE** | Deterministic execution truth, instrument/margin/recovery wiring built; target-terminal proof remains external. |
-| Repository lint/typecheck/tests | **PASS** | Exact code head `62a00838499122a8a3e67cefc071dfa414c3badf` passed GitHub Actions `verify` after the app-shell and missionless-runtime guard changes. This documentation commit requires its own exact-head run before being called green. |
+| Repository lint/typecheck/tests | **PASS** | Exact code head `59fc311cb1213f6eee6402030c4f50731e284ab1` passed GitHub Actions `verify`, including the new `@keel/brain` package. This documentation commit requires its own exact-head run before being called green. |
 | Simulation/chaos | **STRONG, NOT COMPLETE** | Duplicate/recovery/clock/partial-fill/margin and Mission replay paths covered; real terminal/device restart remains external. |
-| Trade Mission spine | **IN PROGRESS — REPOSITORY OWNERSHIP PATH HARDENED** | Durable lifecycle + server/Android/Desktop Mission truth paths exist; config-dependent legacy-order bypass closed; native/runtime proof + final audit remain. |
+| Trade Mission spine | **IN PROGRESS — REPOSITORY OWNERSHIP PATH HARDENED** | Durable lifecycle + server/Android/Desktop Mission truth paths exist; config-dependent legacy-order bypass closed; dead-handler cleanup/native/runtime proof + final audit remain. |
 | Android first-time pairing | **REPOSITORY BUILT / DEVICE PROOF BLOCKED** | Controller/screen/persistence fail closed without signer; hardware-backed proof external. |
 | Windows Mission app shell | **REPOSITORY BUILT / NATIVE PACKAGING BLOCKED** | Single-runtime shell built; stale UI cannot submit; native bridge/packaging proof remains external. |
 | Windows protected signer | **ADAPTER BUILT / TARGET PROOF BLOCKED** | Repository adapter preserves identity and keeps private key opaque; native provider implementation and Windows proof remain external. |
 | Realtime + command authentication | **REPOSITORY DONE** | Signed stream admission, replay guard, command nonce; Desktop heartbeat/reconnect proof covered. |
-| Trading Brain | **DESIGNED ONLY / BLOCKED** | Must wait for ADR-0018 exit criteria. |
+| Trading Brain | **FOUNDATION BUILT / RUNTIME WIRING BLOCKED** | Pure deterministic/versioned evaluator exists and is green; no Mission/execution integration yet. |
 | Memory/Evaluation | **DESIGNED ONLY / BLOCKED** | Must wait for Mission + deterministic/versioned Brain facts. |
 | MetaEditor compile | **NOT VERIFIED** | Requires Windows/MetaEditor. |
 | Real MT5 terminal | **NOT VERIFIED** | Requires target terminal. |
@@ -187,9 +222,10 @@ No real-money execution is enabled or claimed.
 
 ## Next highest-priority sequence
 
-1. Continue the independent ADR-0018 red-team audit for hidden direct-to-execution paths and remove dead compatibility execution code where safe.
+1. Continue the independent ADR-0018 red-team audit and safely remove the physically present dead direct `/orders` handler while preserving the deterministic 410 tombstone.
 2. Implement/integrate the actual Windows native key-provider + protected persistence bridge; do not claim hardware-backed protection without target proof.
 3. Bind/package the real Windows UI around the **single** `WindowsMissionAppShell` path and add restart/reconnect tests at that boundary.
 4. Perform target Windows + physical-device verification and keep failures on the verification ladder rather than converting assumptions into facts.
-5. Only after ADR-0018 exit criteria pass, begin ADR-0019 deterministic/versioned Trading Brain.
-6. Keep MT5/LiteFinance facts on the external verification ladder; do not substitute repository tests for physical/runtime proof.
+5. After the repository ADR-0018 exit audit closes, wire the already-pure `@keel/brain` foundation into versioned point-in-time scan features and Trade Missions.
+6. Then implement ADR-0021 evaluation and ADR-0020 memory in the accepted order, with ADR-0022 version/challenger rules and no automatic promotion.
+7. Keep MT5/LiteFinance facts on the external verification ladder; do not substitute repository tests for physical/runtime proof.
