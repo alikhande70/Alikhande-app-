@@ -62,7 +62,7 @@ function observeScanner(missions: MissionService, missionId: string, observedAt 
 }
 
 describe('Mission ledger -> ADR-0021 evaluation population', () => {
-  it('projects sealed internal decisions while surfacing pending and external Missions explicitly', () => {
+  it('projects sealed internal decisions while retaining every internal scan in paired eligibility', () => {
     const ledger = new Ledger({ path: ':memory:', synchronous: 'OFF', now: () => 1_030 });
     const missions = new MissionService(ledger);
 
@@ -93,6 +93,22 @@ describe('Mission ledger -> ADR-0021 evaluation population', () => {
         brainComparison: { championHash: `sha256:${'a'.repeat(64)}` },
       },
     });
+    expect(population.pairedEligibility).toEqual([
+      {
+        missionId: 'mission-pending',
+        canonical: 'XAUUSD',
+        scanConfigVersion: 'scan-v7',
+        observedAt: 1_000,
+        knownAt: 1_030,
+      },
+      {
+        missionId: 'mission-scored',
+        canonical: 'XAUUSD',
+        scanConfigVersion: 'scan-v7',
+        observedAt: 1_000,
+        knownAt: 1_030,
+      },
+    ]);
     expect(population.pendingDecisionMissionIds).toEqual(['mission-pending']);
     expect(population.externalMissionIds).toEqual(['mission-external']);
     expect(population.ledgerHead).toEqual(ledger.head);
