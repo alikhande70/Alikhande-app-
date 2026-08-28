@@ -32,6 +32,8 @@ export interface PairedOutcomeInferenceReport {
   readonly incompleteDecisionPairs: number;
   readonly tiedDirectionalPairs: number;
   readonly decisiveDirectionalPairs: number;
+  /** Immutable Mission identities behind the non-flat, fully-scored, non-tied evidence. */
+  readonly decisiveDirectionalMissionIds: readonly string[];
   readonly challengerAlignedPairs: number;
   readonly championAlignedPairs: number;
   readonly challengerAlignmentShare: number | null;
@@ -76,7 +78,8 @@ function wilson95(successes: number, trials: number): WilsonInterval95 {
   const p = successes / trials;
   const denominator = 1 + z2 / trials;
   const center = (p + z2 / (2 * trials)) / denominator;
-  const half = (z / denominator) * Math.sqrt((p * (1 - p)) / trials + z2 / (4 * trials * trials));
+  const half =
+    (z / denominator) * Math.sqrt((p * (1 - p)) / trials + z2 / (4 * trials * trials));
   return {
     lower: Math.max(0, center - half),
     upper: Math.min(1, center + half),
@@ -143,6 +146,7 @@ export function inferForwardPairedOutcomeAlignment(
   let tiedDirectionalPairs = 0;
   let challengerAlignedPairs = 0;
   let championAlignedPairs = 0;
+  const decisiveDirectionalMissionIds: string[] = [];
 
   for (const pair of evidence) {
     const label = labels.get(pair.missionId);
@@ -168,6 +172,7 @@ export function inferForwardPairedOutcomeAlignment(
       continue;
     }
 
+    decisiveDirectionalMissionIds.push(pair.missionId);
     const challengerAligned =
       label.directional === 'favourable'
         ? challengerScore > championScore
@@ -213,6 +218,7 @@ export function inferForwardPairedOutcomeAlignment(
     incompleteDecisionPairs,
     tiedDirectionalPairs,
     decisiveDirectionalPairs,
+    decisiveDirectionalMissionIds,
     challengerAlignedPairs,
     championAlignedPairs,
     challengerAlignmentShare,
