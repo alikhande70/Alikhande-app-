@@ -252,10 +252,11 @@ export class Projector {
       case 'mission.actionRecorded':
       case 'mission.reviewed':
       // Events that are recorded for forensics but project no mutable state.
-      // Holdout access is intentionally read directly from its authoritative
-      // hash-chained stream so an eventually-caught-up projection can never
-      // permit a second peek.
+      // Evaluation access/registration facts are intentionally read directly
+      // from their authoritative hash-chained streams so projector lag cannot
+      // weaken one-shot or pre-registration guarantees.
       case 'evaluation.holdoutOpened':
+      case 'evaluation.hypothesisFamilyRegistered':
       case 'desk.started':
       case 'desk.stopping':
       case 'broker.connected':
