@@ -26,7 +26,7 @@ function input(overrides: Partial<LedgerRegisteredResearchFamily> = {}): LedgerR
       ],
     },
     receipt: {
-      familyHash: 'sha256:78b79285ff68f3971583f6fa90d91aa1ec5b94dc2b39d84d43fe8a6509e2c7c5',
+      familyHash: 'sha256:30915b11f29a6a3ca8dff48bb67ee222801805f70cb29217cf632a2abb9e1399',
       knownAt: 1_100,
     },
     ...overrides,
@@ -46,6 +46,13 @@ const results = [
 ];
 
 describe('ledger-registered research evaluation boundary', () => {
+  it('evaluates a ledger-provenanced family without granting promotion authority', () => {
+    const evaluated = evaluateLedgerRegisteredResearchFamily(input(), results);
+    expect(evaluated.status).toBe('complete');
+    expect(evaluated.discoveries).toBe(1);
+    expect(evaluated.promotionAction).toBe('none');
+  });
+
   it('rejects non-ledger provenance before statistical evaluation', () => {
     expect(() =>
       evaluateLedgerRegisteredResearchFamily(
