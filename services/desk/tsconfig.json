@@ -8,5 +8,9 @@
   },
   "include": ["src/**/*"],
   "exclude": ["src/**/*.test.ts"],
-  "references": [{ "path": "../../packages/core" }, { "path": "../../packages/contracts" }]
+  "references": [
+    { "path": "../../packages/core" },
+    { "path": "../../packages/contracts" },
+    { "path": "../../packages/brain" }
+  ]
 }
