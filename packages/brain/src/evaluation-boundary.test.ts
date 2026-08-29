@@ -1,4 +1,4 @@
-import { readFileSync, readdirSync } from 'node:fs';
+import { readdirSync, readFileSync } from 'node:fs';
 import { extname, join, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
@@ -57,7 +57,7 @@ describe('ADR-0021 production evaluation boundary', () => {
   it('does not smuggle low-level evaluators back through the package root', () => {
     for (const modulePath of forbiddenRootReExports) {
       expect(indexSource).not.toContain(`export * from '${modulePath}'`);
-      expect(indexSource).not.toContain(`export * from \"${modulePath}\"`);
+      expect(indexSource).not.toContain(`export * from "${modulePath}"`);
     }
   });
 
