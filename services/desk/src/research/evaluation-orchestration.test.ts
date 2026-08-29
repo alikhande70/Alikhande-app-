@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { evaluateLedgerRegisteredResearchFamily } from '../../../../packages/brain/src/ledger-registered-research-evaluation.js';
+import { evaluateLedgerRegisteredResearchFamily } from '../../../../packages/brain/src/public-evaluation-composition.js';
 import type { HypothesisFamilyRegistrationRecord } from '../ledger/events.js';
 import {
   recordHypothesisFamilyRegistration,
