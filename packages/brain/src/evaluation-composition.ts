@@ -1,5 +1,11 @@
 import type { FixedHorizonOutcomePolicy, MarketCloseObservation } from './outcome-labeling.js';
 import {
+  LEAKAGE_WINDOW_GUARD_VERSION,
+  type LeakageDisposition,
+  type LeakageWindowPlan,
+  partitionLeakageWindows,
+} from './leakage-window-guard.js';
+import {
   buildSnapshotStrataAwarePreRegisteredEvaluation,
   type SnapshotStrataAwareAnalysisPlan,
   type SnapshotStrataAwareEvaluationPolicy,
@@ -39,6 +45,31 @@ export interface EvaluationCompositionAudit {
 export interface FinalEvaluationResult extends StrataAwareEvaluationResult {
   /** Structural proof that every downstream guard consumed one durable scan identity/timeline. */
   readonly compositionAudit: EvaluationCompositionAudit;
+}
+
+export interface ResearchSafeEvaluationAnalysisPlan extends FinalEvaluationAnalysisPlan {
+  /** Locked before the holdout starts; ordinary research may never consume non-research windows. */
+  readonly leakageWindow: LeakageWindowPlan;
+}
+
+export interface ResearchSafeFinalEvaluationPolicy extends Omit<FinalEvaluationPolicy, 'analysisPlan'> {
+  readonly analysisPlan: ResearchSafeEvaluationAnalysisPlan;
+}
+
+export interface ResearchSafeProjectionAudit {
+  readonly leakageVersion: typeof LEAKAGE_WINDOW_GUARD_VERSION;
+  readonly holdoutId: string;
+  readonly questionId: string;
+  readonly sourcePopulation: number;
+  readonly researchPopulation: number;
+  readonly purgedPopulation: number;
+  readonly holdoutPopulation: number;
+  readonly embargoedPopulation: number;
+}
+
+export interface ResearchSafeFinalEvaluationResult extends FinalEvaluationResult {
+  /** Counts only. Holdout identities/outcomes are never returned by the ordinary research path. */
+  readonly researchSafety: ResearchSafeProjectionAudit;
 }
 
 function requireUniqueIds(name: string, ids: readonly string[]): Set<string> {
@@ -84,12 +115,6 @@ function requireRegisteredOutcomePolicy(
 
 /**
  * Fail-closed structural audit for the final ADR-0021 composition boundary.
- *
- * The evaluator has several intentionally separate statistical layers, but they must all consume
- * one durable population. This guard prevents a caller from shrinking the denominator for feature
- * coverage, swapping observation timestamps, mixing a different Mission set into outcome
- * evaluation, changing outcome-label semantics after seeing results, or evaluating aggregate and
- * paired evidence at different historical cutoffs.
  */
 export function validateFinalEvaluationComposition(
   population: FinalEvaluationPopulation,
@@ -178,14 +203,6 @@ export function validateFinalEvaluationComposition(
   };
 }
 
-/**
- * Final ADR-0021 composition boundary.
- *
- * Callers provide one hash-verified Desk projection. Structural identity/timeline consistency is
- * audited before outcome labeling, Champion/Challenger pairing, dependence guards, longitudinal
- * maturity and snapshot-derived feature-strata coverage run. The result remains observational: it
- * never promotes a Challenger, mutates Brain state, emits broker truth, or authorizes execution.
- */
 export function buildFinalPreRegisteredEvaluation(
   population: FinalEvaluationPopulation,
   observations: readonly MarketCloseObservation[],
@@ -200,4 +217,89 @@ export function buildFinalPreRegisteredEvaluation(
     policy,
   );
   return { ...result, compositionAudit };
+}
+
+function countDisposition(
+  assignments: readonly { disposition: LeakageDisposition }[],
+  disposition: LeakageDisposition,
+): number {
+  return assignments.filter((item) => item.disposition === disposition).length;
+}
+
+/**
+ * Produce the only population ordinary research evaluation is allowed to see.
+ *
+ * Classification depends exclusively on immutable scan identity/time plus the pre-registered
+ * leakage window. Holdout, purge and embargo Mission identities are removed from all parallel
+ * evaluation projections before any outcome labels, Brain scores or statistical diagnostics run.
+ */
+export function projectResearchSafeEvaluationPopulation(
+  population: FinalEvaluationPopulation,
+  outcomePolicy: FixedHorizonOutcomePolicy,
+  policy: ResearchSafeFinalEvaluationPolicy,
+): Readonly<{
+  population: FinalEvaluationPopulation;
+  audit: ResearchSafeProjectionAudit;
+}> {
+  validateFinalEvaluationComposition(population, outcomePolicy, policy);
+  const plan = policy.analysisPlan.leakageWindow;
+  if (plan.labelHorizonMs !== outcomePolicy.horizonMs) {
+    throw new Error('leakage-window label horizon must match the registered outcome horizon');
+  }
+
+  const assignments = partitionLeakageWindows(
+    population.pairedEligibility.map(({ missionId, observedAt, knownAt }) => ({
+      missionId,
+      observedAt,
+      knownAt,
+    })),
+    plan,
+  );
+  const researchIds = new Set(
+    assignments.filter((item) => item.disposition === 'research').map((item) => item.missionId),
+  );
+
+  const projected: FinalEvaluationPopulation = {
+    ledgerHead: population.ledgerHead,
+    pairedEligibility: population.pairedEligibility.filter((item) => researchIds.has(item.missionId)),
+    missions: population.missions.filter((item) => researchIds.has(item.missionId)),
+    featureMissions: population.featureMissions.filter((item) => researchIds.has(item.missionId)),
+  };
+
+  return {
+    population: projected,
+    audit: {
+      leakageVersion: LEAKAGE_WINDOW_GUARD_VERSION,
+      holdoutId: plan.holdoutId,
+      questionId: plan.questionId,
+      sourcePopulation: assignments.length,
+      researchPopulation: researchIds.size,
+      purgedPopulation: countDisposition(assignments, 'purged'),
+      holdoutPopulation: countDisposition(assignments, 'holdout'),
+      embargoedPopulation: countDisposition(assignments, 'embargoed'),
+    },
+  };
+}
+
+/**
+ * Research-safe ADR-0021 evaluation boundary.
+ *
+ * The ordinary evaluator never receives locked-holdout, purged or embargoed Mission rows. Locked
+ * holdout consumption remains a separate one-shot promotion-evaluation concern governed by durable
+ * access receipts; this function has no receipt parameter and therefore cannot open the holdout.
+ */
+export function buildResearchSafeFinalEvaluation(
+  population: FinalEvaluationPopulation,
+  observations: readonly MarketCloseObservation[],
+  outcomePolicy: FixedHorizonOutcomePolicy,
+  policy: ResearchSafeFinalEvaluationPolicy,
+): ResearchSafeFinalEvaluationResult {
+  const projected = projectResearchSafeEvaluationPopulation(population, outcomePolicy, policy);
+  const result = buildFinalPreRegisteredEvaluation(
+    projected.population,
+    observations,
+    outcomePolicy,
+    policy,
+  );
+  return { ...result, researchSafety: projected.audit };
 }
