@@ -5,7 +5,9 @@ import {
   type LedgerRegisteredResearchFamily,
 } from './ledger-registered-research-evaluation.js';
 
-function input(overrides: Partial<LedgerRegisteredResearchFamily> = {}): LedgerRegisteredResearchFamily {
+function input(
+  overrides: Partial<LedgerRegisteredResearchFamily> = {},
+): LedgerRegisteredResearchFamily {
   return {
     source: LEDGER_REGISTERED_RESEARCH_SOURCE,
     ledgerSeq: 42,
