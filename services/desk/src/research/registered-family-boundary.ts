@@ -23,5 +23,11 @@ export function readDurableRegisteredFamily(ledger: Ledger, familyId: string) {
       `registered family '${familyId}' does not exist in the durable ledger`,
     );
   }
-  return toHypothesisEvaluationRegistrationInputs(registration);
+  const inputs = toHypothesisEvaluationRegistrationInputs(registration);
+  return {
+    source: 'desk-hash-chained-ledger:v1' as const,
+    ledgerSeq: registration.ledgerSeq,
+    ledgerHash: registration.ledgerHash,
+    ...inputs,
+  };
 }
