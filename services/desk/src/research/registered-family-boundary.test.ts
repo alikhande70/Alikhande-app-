@@ -36,10 +36,10 @@ function registration(
 }
 
 describe('registered hypothesis family research boundary', () => {
-  it('derives both the family and receipt from the durable hash-chain ledger', () => {
+  it('derives family, receipt, and durable row provenance from the hash-chain ledger', () => {
     const ledger = memoryLedger();
     const sealed = registration();
-    recordHypothesisFamilyRegistration(ledger, sealed, 4_250);
+    const recorded = recordHypothesisFamilyRegistration(ledger, sealed, 4_250);
 
     const inputs = readDurableRegisteredFamily(ledger, sealed.familyId);
     expect(inputs.receipt).toEqual({
@@ -54,6 +54,10 @@ describe('registered hypothesis family research boundary', () => {
       qLevel: sealed.qLevel,
       hypotheses: sealed.hypotheses,
     });
+    expect(inputs.source).toBe('desk-hash-chained-ledger:v1');
+    expect(inputs.ledgerSeq).toBe(recorded.registration.ledgerSeq);
+    expect(inputs.ledgerHash).toBe(recorded.registration.ledgerHash);
+    expect(inputs.ledgerHash).toMatch(/^[0-9a-f]{64}$/);
     expect(ledger.verifyChain().ok).toBe(true);
     ledger.close();
   });
