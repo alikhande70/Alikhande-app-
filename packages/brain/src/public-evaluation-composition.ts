@@ -18,3 +18,10 @@ export {
   type LockedHoldoutPopulationSeal,
   sealLockedHoldoutPopulation,
 } from './locked-holdout-evaluation.js';
+export {
+  evaluateLedgerRegisteredResearchFamily,
+  LEDGER_REGISTERED_RESEARCH_SOURCE,
+  type LedgerRegisteredResearchEvaluation,
+  type LedgerRegisteredResearchFamily,
+  type LedgerRegisteredResearchTestResult,
+} from './ledger-registered-research-evaluation.js';
