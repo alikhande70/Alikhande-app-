@@ -9,6 +9,7 @@ export {
   type ResearchSafeFinalEvaluationResult,
   type ResearchSafeProjectionAudit,
 } from './evaluation-composition.js';
+export type { LockedHoldoutAccessReceipt } from './leakage-window-guard.js';
 export {
   buildLockedHoldoutEvaluation,
   LOCKED_HOLDOUT_EVALUATION_VERSION,
@@ -17,4 +18,3 @@ export {
   type LockedHoldoutPopulationSeal,
   sealLockedHoldoutPopulation,
 } from './locked-holdout-evaluation.js';
-export type { LockedHoldoutAccessReceipt } from './leakage-window-guard.js';
