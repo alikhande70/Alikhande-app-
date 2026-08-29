@@ -55,10 +55,14 @@ function requireSameIdentitySet(
   actual: ReadonlySet<string>,
 ): void {
   for (const id of expected) {
-    if (!actual.has(id)) throw new Error(`${actualName} is missing durable scan '${id}' from ${expectedName}`);
+    if (!actual.has(id)) {
+      throw new Error(`${actualName} is missing durable scan '${id}' from ${expectedName}`);
+    }
   }
   for (const id of actual) {
-    if (!expected.has(id)) throw new Error(`${actualName} contains unknown scan '${id}' outside ${expectedName}`);
+    if (!expected.has(id)) {
+      throw new Error(`${actualName} contains unknown scan '${id}' outside ${expectedName}`);
+    }
   }
 }
 
@@ -75,7 +79,9 @@ export function validateFinalEvaluationComposition(
   policy: FinalEvaluationPolicy,
 ): EvaluationCompositionAudit {
   if (policy.analysisPlan.compositionVersion !== EVALUATION_COMPOSITION_VERSION) {
-    throw new Error(`unsupported evaluation composition version '${policy.analysisPlan.compositionVersion}'`);
+    throw new Error(
+      `unsupported evaluation composition version '${policy.analysisPlan.compositionVersion}'`,
+    );
   }
   if (policy.currentKnowledgeCutoff < policy.analysisPlan.registeredAt) {
     throw new Error('current knowledge cannot predate analysis-plan registration');
@@ -96,10 +102,19 @@ export function validateFinalEvaluationComposition(
     'decision Mission population',
     population.missions.map((item) => item.missionId),
   );
-  requireSameIdentitySet('paired eligibility', eligibilityIds, 'feature Mission population', featureIds);
+  requireSameIdentitySet(
+    'paired eligibility',
+    eligibilityIds,
+    'feature Mission population',
+    featureIds,
+  );
 
-  const eligibilityById = new Map(population.pairedEligibility.map((item) => [item.missionId, item]));
-  const featureById = new Map(population.featureMissions.map((item) => [item.missionId, item]));
+  const eligibilityById = new Map(
+    population.pairedEligibility.map((item) => [item.missionId, item]),
+  );
+  const featureById = new Map(
+    population.featureMissions.map((item) => [item.missionId, item]),
+  );
 
   for (const id of decisionIds) {
     const eligibility = eligibilityById.get(id);
@@ -107,7 +122,9 @@ export function validateFinalEvaluationComposition(
       throw new Error(`decision Mission population contains '${id}' outside durable scan population`);
     }
     const mission = population.missions.find((item) => item.missionId === id);
-    if (mission === undefined) throw new Error(`decision Mission '${id}' disappeared during validation`);
+    if (mission === undefined) {
+      throw new Error(`decision Mission '${id}' disappeared during validation`);
+    }
     if (mission.observedAt !== eligibility.observedAt) {
       throw new Error(`decision Mission observation-time drift for '${id}'`);
     }
