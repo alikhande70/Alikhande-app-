@@ -184,9 +184,9 @@ export function evaluate(
   };
 }
 
-export * from './evaluation.js';
+// Public root exports are intentionally limited to deterministic Brain construction
+// and immutable observation/version primitives. Statistical evaluation is reachable
+// externally only through the guarded evaluation-composition subpath.
 export * from './features.js';
 export * from './ledger-observations.js';
-export * from './paired-evaluation.js';
-export * from './paired-inference.js';
 export * from './version-registry.js';
