@@ -119,7 +119,9 @@ export function sealLockedHoldoutPopulation(
   const assignments = partitionValidatedPopulation(population, outcomePolicy, policy);
   const plan = policy.analysisPlan.leakageWindow;
   if (policy.currentKnowledgeCutoff < plan.holdoutEndAt) {
-    throw new Error('locked holdout population cannot be sealed before the holdout window is complete');
+    throw new Error(
+      'locked holdout population cannot be sealed before the holdout window is complete',
+    );
   }
   const populationCount = assignments.filter((item) => item.disposition === 'holdout').length;
   if (populationCount === 0) throw new Error('locked holdout population is empty');
@@ -155,7 +157,9 @@ function requireMatchingReceipt(
     throw new Error('locked holdout receipt population hash does not match the sealed population');
   }
   if (receipt.evaluationCutoff !== policy.analysisPlan.analysisCutoff) {
-    throw new Error('locked holdout receipt evaluationCutoff must match the registered analysis cutoff');
+    throw new Error(
+      'locked holdout receipt evaluationCutoff must match the registered analysis cutoff',
+    );
   }
   if (receipt.openedAt > policy.currentKnowledgeCutoff) {
     throw new Error('locked holdout receipt is not yet known at currentKnowledgeCutoff');
@@ -185,7 +189,9 @@ export function buildLockedHoldoutEvaluation(
   );
   const projected: FinalEvaluationPopulation = {
     ledgerHead: population.ledgerHead,
-    pairedEligibility: population.pairedEligibility.filter((item) => holdoutIds.has(item.missionId)),
+    pairedEligibility: population.pairedEligibility.filter((item) =>
+      holdoutIds.has(item.missionId),
+    ),
     missions: population.missions.filter((item) => holdoutIds.has(item.missionId)),
     featureMissions: population.featureMissions.filter((item) => holdoutIds.has(item.missionId)),
   };
