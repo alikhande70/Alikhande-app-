@@ -5,11 +5,14 @@ import {
   type ResearchSafeFinalEvaluationPolicy,
 } from './evaluation-composition.js';
 import {
+  LEAKAGE_WINDOW_GUARD_VERSION,
+  type LockedHoldoutAccessReceipt,
+} from './leakage-window-guard.js';
+import {
   buildLockedHoldoutEvaluation,
   LOCKED_HOLDOUT_EVALUATION_VERSION,
   sealLockedHoldoutPopulation,
 } from './locked-holdout-evaluation.js';
-import { LEAKAGE_WINDOW_GUARD_VERSION, type LockedHoldoutAccessReceipt } from './leakage-window-guard.js';
 import type { FixedHorizonOutcomePolicy } from './outcome-labeling.js';
 
 function outcomePolicy(): FixedHorizonOutcomePolicy {
@@ -113,16 +116,16 @@ describe('locked holdout evaluation boundary', () => {
   });
 
   it('requires a durable receipt before any holdout evaluation can run', () => {
-    expect(() => buildLockedHoldoutEvaluation(population(), [], outcomePolicy(), policy(), [])).toThrow(
-      /requires exactly one durable access receipt/,
-    );
+    expect(() =>
+      buildLockedHoldoutEvaluation(population(), [], outcomePolicy(), policy(), []),
+    ).toThrow(/requires exactly one durable access receipt/);
   });
 
   it('rejects a receipt bound to a different sealed population', () => {
     const bad = receipt(`sha256:${'b'.repeat(64)}`);
-    expect(() => buildLockedHoldoutEvaluation(population(), [], outcomePolicy(), policy(), [bad])).toThrow(
-      /population hash does not match/,
-    );
+    expect(() =>
+      buildLockedHoldoutEvaluation(population(), [], outcomePolicy(), policy(), [bad]),
+    ).toThrow(/population hash does not match/);
   });
 
   it('invalidates repeated peeking instead of treating a second access as confirmation', () => {
