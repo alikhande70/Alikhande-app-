@@ -70,7 +70,7 @@ describe('registered hypothesis families', () => {
     const evaluation = evaluateRegisteredHypothesisFamily(
       input,
       sealed,
-      results([0.001, 0.02, 0.03, 0.2]),
+      results([0.001, 0.03, 0.04, 0.2]),
     );
 
     expect(evaluation.status).toBe('complete');
