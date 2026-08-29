@@ -11,8 +11,8 @@
       "default": "./dist/index.js"
     },
     "./evaluation-composition": {
-      "types": "./dist/evaluation-composition.d.ts",
-      "default": "./dist/evaluation-composition.js"
+      "types": "./dist/public-evaluation-composition.d.ts",
+      "default": "./dist/public-evaluation-composition.js"
     }
   },
   "scripts": {
