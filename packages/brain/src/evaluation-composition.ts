@@ -112,14 +112,14 @@ export function validateFinalEvaluationComposition(
   const eligibilityById = new Map(
     population.pairedEligibility.map((item) => [item.missionId, item]),
   );
-  const featureById = new Map(
-    population.featureMissions.map((item) => [item.missionId, item]),
-  );
+  const featureById = new Map(population.featureMissions.map((item) => [item.missionId, item]));
 
   for (const id of decisionIds) {
     const eligibility = eligibilityById.get(id);
     if (eligibility === undefined) {
-      throw new Error(`decision Mission population contains '${id}' outside durable scan population`);
+      throw new Error(
+        `decision Mission population contains '${id}' outside durable scan population`,
+      );
     }
     const mission = population.missions.find((item) => item.missionId === id);
     if (mission === undefined) {
