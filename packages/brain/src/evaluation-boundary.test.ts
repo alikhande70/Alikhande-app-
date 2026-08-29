@@ -5,8 +5,12 @@ import { describe, expect, it } from 'vitest';
 
 const packageJson = JSON.parse(
   readFileSync(new URL('../package.json', import.meta.url), 'utf8'),
-) as { exports: Record<string, unknown> };
+) as { exports: Record<string, { types?: string; default?: string }> };
 const indexSource = readFileSync(new URL('./index.ts', import.meta.url), 'utf8');
+const publicEvaluationSource = readFileSync(
+  new URL('./public-evaluation-composition.ts', import.meta.url),
+  'utf8',
+);
 const repoRoot = fileURLToPath(new URL('../../../', import.meta.url));
 
 const forbiddenPublicSubpaths = [
@@ -64,11 +68,18 @@ function moduleSpecifiers(source: string): string[] {
 }
 
 describe('ADR-0021 production evaluation boundary', () => {
-  it('exposes only the composed evaluation API as a public statistical subpath', () => {
+  it('exposes only the research-safe composed evaluation API as a public statistical subpath', () => {
     expect(Object.keys(packageJson.exports).sort()).toEqual(['.', './evaluation-composition']);
     for (const subpath of forbiddenPublicSubpaths) {
       expect(packageJson.exports[subpath]).toBeUndefined();
     }
+    expect(packageJson.exports['./evaluation-composition']).toEqual({
+      types: './dist/public-evaluation-composition.d.ts',
+      default: './dist/public-evaluation-composition.js',
+    });
+    expect(publicEvaluationSource).toContain('buildResearchSafeFinalEvaluation');
+    expect(publicEvaluationSource).not.toContain('buildFinalPreRegisteredEvaluation');
+    expect(publicEvaluationSource).not.toContain('validateFinalEvaluationComposition');
   });
 
   it('does not smuggle low-level evaluators back through the package root', () => {
