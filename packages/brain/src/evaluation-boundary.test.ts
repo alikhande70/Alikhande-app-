@@ -24,6 +24,7 @@ const forbiddenPublicSubpaths = [
   './outcome-labeling',
   './paired-inference',
   './pre-registered-evaluation',
+  './registered-hypotheses',
   './snapshot-feature-strata',
   './strata-aware-evaluation',
 ];
@@ -32,6 +33,7 @@ const forbiddenRootReExports = [
   './evaluation.js',
   './paired-evaluation.js',
   './paired-inference.js',
+  './registered-hypotheses.js',
 ];
 
 const sourceExtensions = new Set(['.ts', '.tsx', '.mts', '.cts', '.js', '.mjs', '.cjs']);
@@ -80,6 +82,8 @@ describe('ADR-0021 production evaluation boundary', () => {
     expect(publicEvaluationSource).toContain('buildResearchSafeFinalEvaluation');
     expect(publicEvaluationSource).not.toContain('buildFinalPreRegisteredEvaluation');
     expect(publicEvaluationSource).not.toContain('validateFinalEvaluationComposition');
+    expect(publicEvaluationSource).not.toContain('evaluateRegisteredHypothesisFamily');
+    expect(publicEvaluationSource).not.toContain('RegisteredHypothesisFamilyReceipt');
   });
 
   it('does not smuggle low-level evaluators back through the package root', () => {
