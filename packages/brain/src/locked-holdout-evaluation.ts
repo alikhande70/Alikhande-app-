@@ -77,7 +77,6 @@ function computePopulationHash(
     version: LOCKED_HOLDOUT_EVALUATION_VERSION,
     holdoutId: plan.holdoutId,
     questionId: plan.questionId,
-    ledgerHead: population.ledgerHead,
     holdoutStartAt: plan.holdoutStartAt,
     holdoutEndAt: plan.holdoutEndAt,
     rows: canonicalHoldoutRows(population, assignments),
@@ -109,7 +108,8 @@ function partitionValidatedPopulation(
  * Describe the exact sealed holdout population without revealing identities, scores or outcomes.
  *
  * The returned hash is suitable for a durable access receipt. Computing it is not an evaluation and
- * therefore does not consume the holdout question.
+ * therefore does not consume the holdout question. The hash deliberately excludes the moving ledger
+ * head so later append-only research cannot invalidate a receipt for an unchanged holdout cohort.
  */
 export function sealLockedHoldoutPopulation(
   population: FinalEvaluationPopulation,
