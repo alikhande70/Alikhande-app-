@@ -16,8 +16,24 @@ export interface LedgerRegisteredResearchFamily {
   readonly receipt: RegisteredHypothesisFamilyReceipt;
 }
 
+export interface LedgerRegisteredResearchProvenance {
+  readonly source: typeof LEDGER_REGISTERED_RESEARCH_SOURCE;
+  readonly ledgerSeq: number;
+  readonly ledgerHash: string;
+  readonly familyHash: string;
+  readonly registeredAt: number;
+  readonly registrationKnownAt: number;
+}
+
 export type LedgerRegisteredResearchTestResult = RegisteredTestResult;
-export type LedgerRegisteredResearchEvaluation = RegisteredHypothesisFamilyEvaluation;
+export type LedgerRegisteredResearchEvaluation = RegisteredHypothesisFamilyEvaluation & {
+  /**
+   * Immutable audit link back to the exact durable registration row used for
+   * this statistical evaluation. Statistical results must never shed their
+   * transaction-time provenance before later review/memory layers consume them.
+   */
+  readonly registrationProvenance: LedgerRegisteredResearchProvenance;
+};
 
 function validateLedgerProvenance(input: LedgerRegisteredResearchFamily): void {
   if (input.source !== LEDGER_REGISTERED_RESEARCH_SOURCE) {
@@ -37,11 +53,25 @@ function validateLedgerProvenance(input: LedgerRegisteredResearchFamily): void {
  * Production callers must obtain `input` from Desk's verified ledger boundary.
  * This function deliberately exposes no registration factory and no promotion
  * authority; it only validates forwarded provenance and runs deterministic FDR.
+ * The returned result retains the exact ledger identity and bitemporal
+ * registration timestamps so later audit/memory code cannot detach a result
+ * from the durable fact that authorized its evaluation.
  */
 export function evaluateLedgerRegisteredResearchFamily(
   input: LedgerRegisteredResearchFamily,
   results: readonly LedgerRegisteredResearchTestResult[],
 ): LedgerRegisteredResearchEvaluation {
   validateLedgerProvenance(input);
-  return evaluateRegisteredHypothesisFamily(input.family, input.receipt, results);
+  const evaluation = evaluateRegisteredHypothesisFamily(input.family, input.receipt, results);
+  return {
+    ...evaluation,
+    registrationProvenance: {
+      source: input.source,
+      ledgerSeq: input.ledgerSeq,
+      ledgerHash: input.ledgerHash,
+      familyHash: input.receipt.familyHash,
+      registeredAt: input.family.registeredAt,
+      registrationKnownAt: input.receipt.knownAt,
+    },
+  };
 }
