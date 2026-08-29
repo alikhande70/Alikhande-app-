@@ -50,6 +50,22 @@ export interface RiskDecisionRecord {
   readonly evaluatedAt: number;
 }
 
+/**
+ * Immutable evidence that a sealed holdout question was opened once.
+ *
+ * This is deliberately a Desk fact rather than Brain state. The Brain may
+ * consume this evidence, but it cannot manufacture or mutate it. The exact
+ * sealed population hash and registered cutoff are captured before evaluation
+ * so a later process restart cannot forget that the question was consumed.
+ */
+export interface HoldoutAccessReceiptRecord {
+  readonly holdoutId: string;
+  readonly questionId: string;
+  readonly openedAt: number;
+  readonly evaluationCutoff: number;
+  readonly populationHash: string;
+}
+
 export type LedgerEvent =
   | MissionLedgerEvent
   | { kind: 'desk.started'; version: string; config: Record<string, unknown> }
@@ -132,6 +148,7 @@ export type LedgerEvent =
   | { kind: 'divergence.acknowledged'; divergenceId: string; at: number }
   | { kind: 'divergence.resolved'; divergenceId: string; how: string; at: number }
   | { kind: 'reconcile.completed'; checkedAt: number; divergences: number; clean: boolean }
+  | { kind: 'evaluation.holdoutOpened'; receipt: HoldoutAccessReceiptRecord }
   | { kind: 'journal.opened'; tradeId: string; entry: Record<string, unknown> }
   | {
       kind: 'journal.closed';
@@ -285,6 +302,8 @@ export function streamOf(e: LedgerEvent): string {
     case 'divergence.acknowledged':
     case 'divergence.resolved':
       return e.divergenceId;
+    case 'evaluation.holdoutOpened':
+      return `evaluation.holdout:${JSON.stringify([e.receipt.holdoutId, e.receipt.questionId])}`;
     case 'journal.opened':
     case 'journal.closed':
     case 'journal.noted':
@@ -342,6 +361,7 @@ export const DURABLE_KINDS: ReadonlySet<LedgerEventKind> = new Set([
   'drawdown.breached',
   'drawdown.breachCleared',
   'policy.updated',
+  'evaluation.holdoutOpened',
   'mission.observed',
   'mission.snapshotSealed',
   'mission.stageChanged',
