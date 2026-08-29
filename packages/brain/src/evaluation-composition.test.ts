@@ -5,6 +5,15 @@ import {
   type FinalEvaluationPopulation,
   validateFinalEvaluationComposition,
 } from './evaluation-composition.js';
+import type { FixedHorizonOutcomePolicy } from './outcome-labeling.js';
+
+function outcomePolicy(): FixedHorizonOutcomePolicy {
+  return {
+    labelVersion: 'fixed-horizon:v2',
+    horizonMs: 60_000,
+    flatThresholdR: 0.1,
+  };
+}
 
 function population(): FinalEvaluationPopulation {
   return {
@@ -59,13 +68,14 @@ function policy(): FinalEvaluationPolicy {
         featureKey: 'trend-alignment',
         featureSetVersion: 'features:v3',
       },
+      outcome: outcomePolicy(),
     },
   } as unknown as FinalEvaluationPolicy;
 }
 
 describe('validateFinalEvaluationComposition', () => {
   it('audits one durable identity/timeline across every evaluation layer', () => {
-    expect(validateFinalEvaluationComposition(population(), policy())).toEqual({
+    expect(validateFinalEvaluationComposition(population(), outcomePolicy(), policy())).toEqual({
       compositionVersion: EVALUATION_COMPOSITION_VERSION,
       ledgerHead: { seq: 8, hash: 'ledger-head-8' },
       durableScanPopulation: 2,
@@ -75,6 +85,7 @@ describe('validateFinalEvaluationComposition', () => {
       latestObservedAt: 120,
       latestKnownAt: 130,
       analysisCutoff: 250,
+      outcome: outcomePolicy(),
     });
   });
 
@@ -84,7 +95,7 @@ describe('validateFinalEvaluationComposition', () => {
       ...base,
       featureMissions: base.featureMissions.slice(0, 1),
     } as FinalEvaluationPopulation;
-    expect(() => validateFinalEvaluationComposition(malformed, policy())).toThrow(
+    expect(() => validateFinalEvaluationComposition(malformed, outcomePolicy(), policy())).toThrow(
       /missing durable scan 'scan-2'/,
     );
   });
@@ -95,7 +106,7 @@ describe('validateFinalEvaluationComposition', () => {
       ...base,
       featureMissions: [...base.featureMissions, { missionId: 'scan-3', observedAt: 140 }],
     } as FinalEvaluationPopulation;
-    expect(() => validateFinalEvaluationComposition(malformed, policy())).toThrow(
+    expect(() => validateFinalEvaluationComposition(malformed, outcomePolicy(), policy())).toThrow(
       /unknown scan 'scan-3'/,
     );
   });
@@ -106,7 +117,7 @@ describe('validateFinalEvaluationComposition', () => {
       ...base,
       missions: [{ ...base.missions[0], observedAt: 101 }],
     } as FinalEvaluationPopulation;
-    expect(() => validateFinalEvaluationComposition(malformed, policy())).toThrow(
+    expect(() => validateFinalEvaluationComposition(malformed, outcomePolicy(), policy())).toThrow(
       /decision Mission observation-time drift/,
     );
   });
@@ -117,7 +128,7 @@ describe('validateFinalEvaluationComposition', () => {
       ...base,
       featureMissions: [base.featureMissions[0], { ...base.featureMissions[1], observedAt: 121 }],
     } as FinalEvaluationPopulation;
-    expect(() => validateFinalEvaluationComposition(malformed, policy())).toThrow(
+    expect(() => validateFinalEvaluationComposition(malformed, outcomePolicy(), policy())).toThrow(
       /feature Mission observation-time drift/,
     );
   });
@@ -133,15 +144,15 @@ describe('validateFinalEvaluationComposition', () => {
     } as FinalEvaluationPopulation;
     const basePolicy = policy();
     const staleKnowledge = { ...basePolicy, currentKnowledgeCutoff: 160 } as FinalEvaluationPolicy;
-    expect(() => validateFinalEvaluationComposition(futureEvidence, staleKnowledge)).toThrow(
-      /not yet known at currentKnowledgeCutoff/,
-    );
+    expect(() =>
+      validateFinalEvaluationComposition(futureEvidence, outcomePolicy(), staleKnowledge),
+    ).toThrow(/not yet known at currentKnowledgeCutoff/);
   });
 
   it('rejects running an analysis plan before the plan was registered', () => {
     const base = policy();
     const impossible = { ...base, currentKnowledgeCutoff: 140 } as FinalEvaluationPolicy;
-    expect(() => validateFinalEvaluationComposition(population(), impossible)).toThrow(
+    expect(() => validateFinalEvaluationComposition(population(), outcomePolicy(), impossible)).toThrow(
       /predate analysis-plan registration/,
     );
   });
@@ -152,8 +163,15 @@ describe('validateFinalEvaluationComposition', () => {
       ...base,
       aggregate: { ...base.aggregate, evaluationCutoff: 240 },
     } as FinalEvaluationPolicy;
-    expect(() => validateFinalEvaluationComposition(population(), drifted)).toThrow(
+    expect(() => validateFinalEvaluationComposition(population(), outcomePolicy(), drifted)).toThrow(
       /cutoffs must be identical/,
+    );
+  });
+
+  it('rejects outcome policy drift after the analysis plan was registered', () => {
+    const changedOutcome = { ...outcomePolicy(), horizonMs: 120_000 };
+    expect(() => validateFinalEvaluationComposition(population(), changedOutcome, policy())).toThrow(
+      /outcome policy drift from pre-registered analysis plan/,
     );
   });
 
@@ -163,7 +181,7 @@ describe('validateFinalEvaluationComposition', () => {
       ...base,
       pairedEligibility: [...base.pairedEligibility, base.pairedEligibility[0]],
     } as FinalEvaluationPopulation;
-    expect(() => validateFinalEvaluationComposition(malformed, policy())).toThrow(
+    expect(() => validateFinalEvaluationComposition(malformed, outcomePolicy(), policy())).toThrow(
       /duplicate mission 'scan-1'/,
     );
   });
@@ -174,7 +192,7 @@ describe('validateFinalEvaluationComposition', () => {
       ...base,
       analysisPlan: { ...base.analysisPlan, compositionVersion: 'evaluation-composition:v2' },
     } as unknown as FinalEvaluationPolicy;
-    expect(() => validateFinalEvaluationComposition(population(), malformed)).toThrow(
+    expect(() => validateFinalEvaluationComposition(population(), outcomePolicy(), malformed)).toThrow(
       /unsupported evaluation composition version/,
     );
   });
