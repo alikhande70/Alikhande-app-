@@ -11,6 +11,10 @@ const publicEvaluationSource = readFileSync(
   new URL('./public-evaluation-composition.ts', import.meta.url),
   'utf8',
 );
+const ledgerRegisteredResearchSource = readFileSync(
+  new URL('./ledger-registered-research-evaluation.ts', import.meta.url),
+  'utf8',
+);
 const repoRoot = fileURLToPath(new URL('../../../', import.meta.url));
 
 const forbiddenPublicSubpaths = [
@@ -80,10 +84,22 @@ describe('ADR-0021 production evaluation boundary', () => {
       default: './dist/public-evaluation-composition.js',
     });
     expect(publicEvaluationSource).toContain('buildResearchSafeFinalEvaluation');
+    expect(publicEvaluationSource).toContain('evaluateLedgerRegisteredResearchFamily');
+    expect(publicEvaluationSource).toContain('LEDGER_REGISTERED_RESEARCH_SOURCE');
     expect(publicEvaluationSource).not.toContain('buildFinalPreRegisteredEvaluation');
     expect(publicEvaluationSource).not.toContain('validateFinalEvaluationComposition');
     expect(publicEvaluationSource).not.toContain('evaluateRegisteredHypothesisFamily');
     expect(publicEvaluationSource).not.toContain('RegisteredHypothesisFamilyReceipt');
+  });
+
+  it('keeps the ledger-registered facade provenance-only and promotion-free', () => {
+    expect(ledgerRegisteredResearchSource).toContain('LEDGER_REGISTERED_RESEARCH_SOURCE');
+    expect(ledgerRegisteredResearchSource).toContain('ledgerSeq');
+    expect(ledgerRegisteredResearchSource).toContain('ledgerHash');
+    expect(ledgerRegisteredResearchSource).toContain('evaluateRegisteredHypothesisFamily');
+    expect(ledgerRegisteredResearchSource).not.toContain('sealRegisteredHypothesisFamily');
+    expect(ledgerRegisteredResearchSource).not.toContain('recordHypothesisFamilyRegistration');
+    expect(ledgerRegisteredResearchSource).not.toContain('promotionAction');
   });
 
   it('does not smuggle low-level evaluators back through the package root', () => {
