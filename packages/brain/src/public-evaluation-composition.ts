@@ -11,6 +11,13 @@ export {
 } from './evaluation-composition.js';
 export type { LockedHoldoutAccessReceipt } from './leakage-window-guard.js';
 export {
+  evaluateLedgerRegisteredResearchFamily,
+  LEDGER_REGISTERED_RESEARCH_SOURCE,
+  type LedgerRegisteredResearchEvaluation,
+  type LedgerRegisteredResearchFamily,
+  type LedgerRegisteredResearchTestResult,
+} from './ledger-registered-research-evaluation.js';
+export {
   buildLockedHoldoutEvaluation,
   LOCKED_HOLDOUT_EVALUATION_VERSION,
   type LockedHoldoutEvaluationAudit,
@@ -18,10 +25,3 @@ export {
   type LockedHoldoutPopulationSeal,
   sealLockedHoldoutPopulation,
 } from './locked-holdout-evaluation.js';
-export {
-  evaluateLedgerRegisteredResearchFamily,
-  LEDGER_REGISTERED_RESEARCH_SOURCE,
-  type LedgerRegisteredResearchEvaluation,
-  type LedgerRegisteredResearchFamily,
-  type LedgerRegisteredResearchTestResult,
-} from './ledger-registered-research-evaluation.js';
