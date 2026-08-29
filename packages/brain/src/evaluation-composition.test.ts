@@ -152,9 +152,9 @@ describe('validateFinalEvaluationComposition', () => {
   it('rejects running an analysis plan before the plan was registered', () => {
     const base = policy();
     const impossible = { ...base, currentKnowledgeCutoff: 140 } as FinalEvaluationPolicy;
-    expect(() => validateFinalEvaluationComposition(population(), outcomePolicy(), impossible)).toThrow(
-      /predate analysis-plan registration/,
-    );
+    expect(() =>
+      validateFinalEvaluationComposition(population(), outcomePolicy(), impossible),
+    ).toThrow(/predate analysis-plan registration/);
   });
 
   it('rejects aggregate/paired cutoff drift so hindsight cannot enter one side only', () => {
@@ -163,16 +163,16 @@ describe('validateFinalEvaluationComposition', () => {
       ...base,
       aggregate: { ...base.aggregate, evaluationCutoff: 240 },
     } as FinalEvaluationPolicy;
-    expect(() => validateFinalEvaluationComposition(population(), outcomePolicy(), drifted)).toThrow(
-      /cutoffs must be identical/,
-    );
+    expect(() =>
+      validateFinalEvaluationComposition(population(), outcomePolicy(), drifted),
+    ).toThrow(/cutoffs must be identical/);
   });
 
   it('rejects outcome policy drift after the analysis plan was registered', () => {
     const changedOutcome = { ...outcomePolicy(), horizonMs: 120_000 };
-    expect(() => validateFinalEvaluationComposition(population(), changedOutcome, policy())).toThrow(
-      /outcome policy drift from pre-registered analysis plan/,
-    );
+    expect(() =>
+      validateFinalEvaluationComposition(population(), changedOutcome, policy()),
+    ).toThrow(/outcome policy drift from pre-registered analysis plan/);
   });
 
   it('rejects duplicate durable identities before any statistical layer can count them', () => {
@@ -192,8 +192,8 @@ describe('validateFinalEvaluationComposition', () => {
       ...base,
       analysisPlan: { ...base.analysisPlan, compositionVersion: 'evaluation-composition:v2' },
     } as unknown as FinalEvaluationPolicy;
-    expect(() => validateFinalEvaluationComposition(population(), outcomePolicy(), malformed)).toThrow(
-      /unsupported evaluation composition version/,
-    );
+    expect(() =>
+      validateFinalEvaluationComposition(population(), outcomePolicy(), malformed),
+    ).toThrow(/unsupported evaluation composition version/);
   });
 });
