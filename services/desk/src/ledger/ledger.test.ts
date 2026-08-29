@@ -101,6 +101,24 @@ describe('append-only guarantees', () => {
     l.close();
   });
 
+  it('persists locked-holdout access in one dedicated durable stream', () => {
+    const l = makeLedger();
+    l.append({
+      kind: 'evaluation.holdoutOpened',
+      holdoutId: 'holdout-q3',
+      questionId: 'challenger-a',
+      openedAt: 300,
+      evaluationCutoff: 290,
+      populationHash: `sha256:${'a'.repeat(64)}`,
+    });
+    const stream = l.readStream('evaluation:holdout:holdout-q3:challenger-a');
+    expect(stream).toHaveLength(1);
+    expect(stream[0]?.kind).toBe('evaluation.holdoutOpened');
+    expect(Ledger.isDurable('evaluation.holdoutOpened')).toBe(true);
+    expect(l.verifyChain().ok).toBe(true);
+    l.close();
+  });
+
   it('marks the order path as durable', () => {
     expect(Ledger.isDurable('intent.created')).toBe(true);
     expect(Ledger.isDurable('order.event')).toBe(true);
@@ -258,11 +276,12 @@ describe('recovery after an unclean stop', () => {
 
     // "Restart": new projector over the same store.
     const p2 = new Projector(l);
-    p2.catchUp();
-    const rec = p2.loadOrderRecord('i-crash');
-    expect(rec?.state).toBe('PENDING_SUBMIT');
-    // Which is exactly what boot recovery needs in order to ask the broker
-    // whether it ever arrived.
+    const row = l.db.prepare('SELECT * FROM orders WHERE intent_id = ?').get('i-crash') as Record<
+      string,
+      unknown
+    >;
+    expect(row.state).toBe('PENDING_SUBMIT');
+    expect(p2.watermark).toBe(1);
     l.close();
   });
 });
