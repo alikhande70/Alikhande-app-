@@ -18,3 +18,14 @@ export {
   type LockedHoldoutPopulationSeal,
   sealLockedHoldoutPopulation,
 } from './locked-holdout-evaluation.js';
+export {
+  evaluateRegisteredHypothesisFamily as evaluateLedgerRegisteredHypothesisFamily,
+  MULTIPLE_TESTING_METHOD,
+  REGISTERED_HYPOTHESIS_FAMILY_VERSION,
+  type RegisteredHypothesis,
+  type RegisteredHypothesisDecision,
+  type RegisteredHypothesisFamily,
+  type RegisteredHypothesisFamilyEvaluation,
+  type RegisteredHypothesisFamilyReceipt,
+  type RegisteredTestResult,
+} from './registered-hypotheses.js';
