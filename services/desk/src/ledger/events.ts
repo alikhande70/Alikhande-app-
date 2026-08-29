@@ -66,6 +66,29 @@ export interface HoldoutAccessReceiptRecord {
   readonly populationHash: string;
 }
 
+/**
+ * Immutable pre-registration of one multiple-testing family (ADR-0021).
+ *
+ * The whole family is stored, not merely its digest. That lets replay prove
+ * exactly which questions, test definitions and analysis plans were fixed
+ * before evidence arrived. `familyHash` is the deterministic Brain-compatible
+ * seal over the remaining fields.
+ */
+export interface HypothesisFamilyRegistrationRecord {
+  readonly version: 'registered-hypothesis-family:v1';
+  readonly familyId: string;
+  readonly familyHash: string;
+  readonly registeredAt: number;
+  readonly method: 'benjamini-hochberg';
+  readonly qLevel: number;
+  readonly hypotheses: readonly {
+    readonly questionId: string;
+    readonly testId: string;
+    readonly analysisPlanHash: string;
+    readonly alternative: 'greater' | 'less' | 'two-sided';
+  }[];
+}
+
 export type LedgerEvent =
   | MissionLedgerEvent
   | { kind: 'desk.started'; version: string; config: Record<string, unknown> }
@@ -149,6 +172,10 @@ export type LedgerEvent =
   | { kind: 'divergence.resolved'; divergenceId: string; how: string; at: number }
   | { kind: 'reconcile.completed'; checkedAt: number; divergences: number; clean: boolean }
   | { kind: 'evaluation.holdoutOpened'; receipt: HoldoutAccessReceiptRecord }
+  | {
+      kind: 'evaluation.hypothesisFamilyRegistered';
+      registration: HypothesisFamilyRegistrationRecord;
+    }
   | { kind: 'journal.opened'; tradeId: string; entry: Record<string, unknown> }
   | {
       kind: 'journal.closed';
@@ -304,6 +331,8 @@ export function streamOf(e: LedgerEvent): string {
       return e.divergenceId;
     case 'evaluation.holdoutOpened':
       return `evaluation.holdout:${JSON.stringify([e.receipt.holdoutId, e.receipt.questionId])}`;
+    case 'evaluation.hypothesisFamilyRegistered':
+      return `evaluation.hypothesis-family:${JSON.stringify([e.registration.familyId])}`;
     case 'journal.opened':
     case 'journal.closed':
     case 'journal.noted':
@@ -362,6 +391,7 @@ export const DURABLE_KINDS: ReadonlySet<LedgerEventKind> = new Set([
   'drawdown.breachCleared',
   'policy.updated',
   'evaluation.holdoutOpened',
+  'evaluation.hypothesisFamilyRegistered',
   'mission.observed',
   'mission.snapshotSealed',
   'mission.stageChanged',
