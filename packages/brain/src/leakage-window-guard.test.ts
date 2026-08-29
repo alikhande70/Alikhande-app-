@@ -66,9 +66,9 @@ describe('partitionLeakageWindows', () => {
   });
 
   it('rejects a holdout that was only sealed after its first observation', () => {
-    expect(() =>
-      partitionLeakageWindows([], { ...plan(), sealedAt: 2_001 }),
-    ).toThrow(/sealed before its first observation/);
+    expect(() => partitionLeakageWindows([], { ...plan(), sealedAt: 2_001 })).toThrow(
+      /sealed before its first observation/,
+    );
   });
 });
 
@@ -111,9 +111,9 @@ describe('auditLockedHoldout', () => {
       evaluationCutoff: 3_050,
       populationHash: `sha256:${'b'.repeat(64)}`,
     };
-    expect(() => auditLockedHoldout(assignments, plan(), [receipt, { ...receipt, openedAt: 3_200 }])).toThrow(
-      /opened more than once/,
-    );
+    expect(() =>
+      auditLockedHoldout(assignments, plan(), [receipt, { ...receipt, openedAt: 3_200 }]),
+    ).toThrow(/opened more than once/);
   });
 
   it('rejects opening the holdout before its sealed window or evaluation cutoff is complete', () => {
