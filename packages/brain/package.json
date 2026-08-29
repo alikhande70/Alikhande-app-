@@ -10,57 +10,9 @@
       "types": "./dist/index.d.ts",
       "default": "./dist/index.js"
     },
-    "./dependence-aware-evaluation": {
-      "types": "./dist/dependence-aware-evaluation.d.ts",
-      "default": "./dist/dependence-aware-evaluation.js"
-    },
-    "./dependence-guard": {
-      "types": "./dist/dependence-guard.d.ts",
-      "default": "./dist/dependence-guard.js"
-    },
-    "./episode-balanced-inference": {
-      "types": "./dist/episode-balanced-inference.d.ts",
-      "default": "./dist/episode-balanced-inference.js"
-    },
     "./evaluation-composition": {
       "types": "./dist/evaluation-composition.d.ts",
       "default": "./dist/evaluation-composition.js"
-    },
-    "./evaluation-pipeline": {
-      "types": "./dist/evaluation-pipeline.d.ts",
-      "default": "./dist/evaluation-pipeline.js"
-    },
-    "./feature-strata-guard": {
-      "types": "./dist/feature-strata-guard.d.ts",
-      "default": "./dist/feature-strata-guard.js"
-    },
-    "./longitudinal-maturity": {
-      "types": "./dist/longitudinal-maturity.d.ts",
-      "default": "./dist/longitudinal-maturity.js"
-    },
-    "./mission-evaluation": {
-      "types": "./dist/mission-evaluation.d.ts",
-      "default": "./dist/mission-evaluation.js"
-    },
-    "./outcome-labeling": {
-      "types": "./dist/outcome-labeling.d.ts",
-      "default": "./dist/outcome-labeling.js"
-    },
-    "./paired-inference": {
-      "types": "./dist/paired-inference.d.ts",
-      "default": "./dist/paired-inference.js"
-    },
-    "./pre-registered-evaluation": {
-      "types": "./dist/pre-registered-evaluation.d.ts",
-      "default": "./dist/pre-registered-evaluation.js"
-    },
-    "./snapshot-feature-strata": {
-      "types": "./dist/snapshot-feature-strata.d.ts",
-      "default": "./dist/snapshot-feature-strata.js"
-    },
-    "./strata-aware-evaluation": {
-      "types": "./dist/strata-aware-evaluation.d.ts",
-      "default": "./dist/strata-aware-evaluation.js"
     }
   },
   "scripts": {
