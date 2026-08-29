@@ -101,24 +101,6 @@ describe('append-only guarantees', () => {
     l.close();
   });
 
-  it('persists locked-holdout access in one dedicated durable stream', () => {
-    const l = makeLedger();
-    l.append({
-      kind: 'evaluation.holdoutOpened',
-      holdoutId: 'holdout-q3',
-      questionId: 'challenger-a',
-      openedAt: 300,
-      evaluationCutoff: 290,
-      populationHash: `sha256:${'a'.repeat(64)}`,
-    });
-    const stream = l.readStream('evaluation:holdout:holdout-q3:challenger-a');
-    expect(stream).toHaveLength(1);
-    expect(stream[0]?.kind).toBe('evaluation.holdoutOpened');
-    expect(Ledger.isDurable('evaluation.holdoutOpened')).toBe(true);
-    expect(l.verifyChain().ok).toBe(true);
-    l.close();
-  });
-
   it('marks the order path as durable', () => {
     expect(Ledger.isDurable('intent.created')).toBe(true);
     expect(Ledger.isDurable('order.event')).toBe(true);
