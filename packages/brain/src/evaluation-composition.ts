@@ -12,6 +12,8 @@ export const EVALUATION_COMPOSITION_VERSION = 'evaluation-composition:v1' as con
 export interface FinalEvaluationAnalysisPlan extends SnapshotStrataAwareAnalysisPlan {
   /** Pins the validation semantics used to compose every ADR-0021 evidence layer. */
   readonly compositionVersion: typeof EVALUATION_COMPOSITION_VERSION;
+  /** Fixed before forward evidence so outcome horizon/labels cannot be selected with hindsight. */
+  readonly outcome: FixedHorizonOutcomePolicy;
 }
 
 export interface FinalEvaluationPolicy
@@ -31,6 +33,7 @@ export interface EvaluationCompositionAudit {
   readonly latestObservedAt: number | null;
   readonly latestKnownAt: number | null;
   readonly analysisCutoff: number;
+  readonly outcome: FixedHorizonOutcomePolicy;
 }
 
 export interface FinalEvaluationResult extends StrataAwareEvaluationResult {
@@ -66,16 +69,31 @@ function requireSameIdentitySet(
   }
 }
 
+function requireRegisteredOutcomePolicy(
+  registered: FixedHorizonOutcomePolicy,
+  supplied: FixedHorizonOutcomePolicy,
+): void {
+  if (
+    registered.labelVersion !== supplied.labelVersion ||
+    registered.horizonMs !== supplied.horizonMs ||
+    registered.flatThresholdR !== supplied.flatThresholdR
+  ) {
+    throw new Error('outcome policy drift from pre-registered analysis plan');
+  }
+}
+
 /**
  * Fail-closed structural audit for the final ADR-0021 composition boundary.
  *
  * The evaluator has several intentionally separate statistical layers, but they must all consume
  * one durable population. This guard prevents a caller from shrinking the denominator for feature
  * coverage, swapping observation timestamps, mixing a different Mission set into outcome
- * evaluation, or evaluating aggregate and paired evidence at different historical cutoffs.
+ * evaluation, changing outcome-label semantics after seeing results, or evaluating aggregate and
+ * paired evidence at different historical cutoffs.
  */
 export function validateFinalEvaluationComposition(
   population: FinalEvaluationPopulation,
+  outcomePolicy: FixedHorizonOutcomePolicy,
   policy: FinalEvaluationPolicy,
 ): EvaluationCompositionAudit {
   if (policy.analysisPlan.compositionVersion !== EVALUATION_COMPOSITION_VERSION) {
@@ -83,6 +101,7 @@ export function validateFinalEvaluationComposition(
       `unsupported evaluation composition version '${policy.analysisPlan.compositionVersion}'`,
     );
   }
+  requireRegisteredOutcomePolicy(policy.analysisPlan.outcome, outcomePolicy);
   if (policy.currentKnowledgeCutoff < policy.analysisPlan.registeredAt) {
     throw new Error('current knowledge cannot predate analysis-plan registration');
   }
@@ -155,6 +174,7 @@ export function validateFinalEvaluationComposition(
     latestObservedAt: observed.length === 0 ? null : Math.max(...observed),
     latestKnownAt: known.length === 0 ? null : Math.max(...known),
     analysisCutoff: policy.analysisPlan.analysisCutoff,
+    outcome: policy.analysisPlan.outcome,
   };
 }
 
@@ -172,7 +192,7 @@ export function buildFinalPreRegisteredEvaluation(
   outcomePolicy: FixedHorizonOutcomePolicy,
   policy: FinalEvaluationPolicy,
 ): FinalEvaluationResult {
-  const compositionAudit = validateFinalEvaluationComposition(population, policy);
+  const compositionAudit = validateFinalEvaluationComposition(population, outcomePolicy, policy);
   const result = buildSnapshotStrataAwarePreRegisteredEvaluation(
     population,
     observations,
