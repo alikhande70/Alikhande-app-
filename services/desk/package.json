@@ -15,6 +15,7 @@
     "test:live": "vitest run .live.test"
   },
   "dependencies": {
+    "@keel/brain": "workspace:*",
     "@keel/core": "workspace:*",
     "@keel/contracts": "workspace:*",
     "@fastify/websocket": "^11.2.0",
