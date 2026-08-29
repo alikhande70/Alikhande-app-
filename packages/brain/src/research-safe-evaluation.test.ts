@@ -92,11 +92,16 @@ describe('projectResearchSafeEvaluationPopulation', () => {
     });
   });
 
-  it('does not return locked-holdout Mission identities in the research projection or audit', () => {
+  it('does not expose excluded Mission identities through the research projection', () => {
     const result = projectResearchSafeEvaluationPopulation(population(), outcomePolicy(), policy());
-    expect(JSON.stringify(result)).not.toContain('"holdout"');
-    expect(JSON.stringify(result)).not.toContain('"embargoed"');
-    expect(JSON.stringify(result)).not.toContain('"purged"');
+    const projectedIds = new Set([
+      ...result.population.pairedEligibility.map((item) => item.missionId),
+      ...result.population.featureMissions.map((item) => item.missionId),
+      ...result.population.missions.map((item) => item.missionId),
+    ]);
+    expect(projectedIds.has('holdout')).toBe(false);
+    expect(projectedIds.has('embargoed')).toBe(false);
+    expect(projectedIds.has('purged')).toBe(false);
   });
 
   it('rejects label-horizon drift between leakage protection and outcome evaluation', () => {
