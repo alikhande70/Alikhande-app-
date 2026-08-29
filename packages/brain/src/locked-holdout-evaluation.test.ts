@@ -107,6 +107,33 @@ describe('locked holdout evaluation boundary', () => {
     expect(first).not.toHaveProperty('missionIds');
   });
 
+  it('keeps the sealed cohort hash stable when the append-only ledger grows outside holdout', () => {
+    const first = sealLockedHoldoutPopulation(population(), outcomePolicy(), policy());
+    const base = population();
+    const later = {
+      ...base,
+      ledgerHead: { seq: 13, hash: 'ledger-head-13' },
+      pairedEligibility: [
+        ...base.pairedEligibility,
+        {
+          missionId: 'research-before-holdout',
+          scanConfigVersion: 'scan:v1',
+          canonical: 'USDJPY',
+          observedAt: 100,
+          knownAt: 105,
+        },
+      ],
+      featureMissions: [
+        ...base.featureMissions,
+        { missionId: 'research-before-holdout', observedAt: 100 },
+      ],
+    } as FinalEvaluationPopulation;
+    const second = sealLockedHoldoutPopulation(later, outcomePolicy(), policy());
+
+    expect(second.ledgerHead).toEqual({ seq: 13, hash: 'ledger-head-13' });
+    expect(second.populationHash).toBe(first.populationHash);
+  });
+
   it('refuses to seal a holdout before its locked window is complete', () => {
     const base = policy();
     const early = { ...base, currentKnowledgeCutoff: 230 } as ResearchSafeFinalEvaluationPolicy;
