@@ -19,6 +19,18 @@ export interface RegisteredHypothesisFamily {
   readonly hypotheses: readonly RegisteredHypothesis[];
 }
 
+/**
+ * Evidence supplied by the durable registration boundary.
+ *
+ * `registeredAt` is domain time chosen when the family is authored. `knownAt`
+ * is transaction time: when the immutable registration actually became durable.
+ * Evaluation uses the latter for anti-backdating checks.
+ */
+export interface RegisteredHypothesisFamilyReceipt {
+  readonly familyHash: string;
+  readonly knownAt: number;
+}
+
 export interface RegisteredTestResult {
   readonly questionId: string;
   readonly testId: string;
@@ -111,12 +123,16 @@ function validateFamily(family: RegisteredHypothesisFamily): void {
 
 function validateResults(
   family: RegisteredHypothesisFamily,
-  expectedFamilyHash: string,
+  receipt: RegisteredHypothesisFamilyReceipt,
   results: readonly RegisteredTestResult[],
 ): void {
   const actualHash = sealRegisteredHypothesisFamily(family);
-  if (actualHash !== expectedFamilyHash)
+  if (actualHash !== receipt.familyHash)
     throw new Error('registered hypothesis family hash mismatch');
+  assertFiniteTimestamp('registration knownAt', receipt.knownAt);
+  if (receipt.knownAt < family.registeredAt) {
+    throw new Error('registered hypothesis family cannot become durable before registeredAt');
+  }
   if (results.length !== family.hypotheses.length) {
     throw new Error(
       'test result population must exactly match the pre-registered hypothesis family',
@@ -136,8 +152,10 @@ function validateResults(
     }
     assertFiniteTimestamp('firstEvidenceKnownAt', result.firstEvidenceKnownAt);
     assertFiniteTimestamp('evaluatedAt', result.evaluatedAt);
-    if (result.firstEvidenceKnownAt < family.registeredAt) {
-      throw new Error(`hypothesis ${result.questionId} was registered after evidence became known`);
+    if (result.firstEvidenceKnownAt < receipt.knownAt) {
+      throw new Error(
+        `hypothesis ${result.questionId} evidence was already known before the family became durable`,
+      );
     }
     if (result.evaluatedAt < result.firstEvidenceKnownAt) {
       throw new Error(
@@ -175,18 +193,22 @@ function adjustedPValues(
 }
 
 /**
- * Evaluate one immutable, pre-registered family with Benjamini-Hochberg FDR control.
+ * Evaluate one immutable, durably pre-registered family with Benjamini-Hochberg FDR control.
  *
  * The family is fail-closed: every registered question must be present. If any question lacks enough
  * evidence, the whole family reports insufficient-data and no discovery is emitted. This prevents
  * researchers from shrinking the denominator after seeing which questions were inconvenient.
+ *
+ * Crucially, anti-leakage is anchored to receipt.knownAt (transaction time), not merely the
+ * family-authored registeredAt. A family written to durable storage after evidence arrived cannot be
+ * rescued by backdating registeredAt.
  */
 export function evaluateRegisteredHypothesisFamily(
   family: RegisteredHypothesisFamily,
-  expectedFamilyHash: string,
+  receipt: RegisteredHypothesisFamilyReceipt,
   results: readonly RegisteredTestResult[],
 ): RegisteredHypothesisFamilyEvaluation {
-  validateResults(family, expectedFamilyHash, results);
+  validateResults(family, receipt, results);
   const resultByQuestion = new Map(results.map((item) => [item.questionId, item] as const));
   const hasInsufficientData = results.some((item) => item.status === 'insufficient-data');
 
@@ -194,7 +216,7 @@ export function evaluateRegisteredHypothesisFamily(
     return {
       version: REGISTERED_HYPOTHESIS_FAMILY_VERSION,
       familyId: family.familyId,
-      familyHash: expectedFamilyHash,
+      familyHash: receipt.familyHash,
       method: MULTIPLE_TESTING_METHOD,
       qLevel: family.qLevel,
       familySize: family.hypotheses.length,
@@ -244,7 +266,7 @@ export function evaluateRegisteredHypothesisFamily(
   return {
     version: REGISTERED_HYPOTHESIS_FAMILY_VERSION,
     familyId: family.familyId,
-    familyHash: expectedFamilyHash,
+    familyHash: receipt.familyHash,
     method: MULTIPLE_TESTING_METHOD,
     qLevel: family.qLevel,
     familySize: family.hypotheses.length,
