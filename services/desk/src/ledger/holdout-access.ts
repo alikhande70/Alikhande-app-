@@ -38,7 +38,9 @@ export function validateHoldoutAccessReceipt(receipt: HoldoutAccessReceiptRecord
   requireNonEmpty('questionId', receipt.questionId);
   requireNonEmpty('populationHash', receipt.populationHash);
   if (!POPULATION_HASH.test(receipt.populationHash)) {
-    throw new HoldoutAccessInvariantError('populationHash must be a canonical sha256:<64 lowercase hex> digest');
+    throw new HoldoutAccessInvariantError(
+      'populationHash must be a canonical sha256:<64 lowercase hex> digest',
+    );
   }
   requireTimestamp('openedAt', receipt.openedAt);
   requireTimestamp('evaluationCutoff', receipt.evaluationCutoff);
@@ -63,7 +65,9 @@ function sameReceipt(left: HoldoutAccessReceiptRecord, right: HoldoutAccessRecei
 
 function durableReceipt(row: LedgerRow): DurableHoldoutAccessReceipt {
   if (row.event.kind !== 'evaluation.holdoutOpened') {
-    throw new HoldoutAccessInvariantError(`unexpected event '${row.event.kind}' in holdout access stream`);
+    throw new HoldoutAccessInvariantError(
+      `unexpected event '${row.event.kind}' in holdout access stream`,
+    );
   }
   validateHoldoutAccessReceipt(row.event.receipt);
   if (row.ts < row.event.receipt.openedAt) {
@@ -79,11 +83,7 @@ function durableReceipt(row: LedgerRow): DurableHoldoutAccessReceipt {
   };
 }
 
-function rowsFor(
-  ledger: Ledger,
-  holdoutId: string,
-  questionId: string,
-): readonly LedgerRow[] {
+function rowsFor(ledger: Ledger, holdoutId: string, questionId: string): readonly LedgerRow[] {
   const probe = asEvent({
     holdoutId,
     questionId,
