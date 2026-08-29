@@ -116,7 +116,10 @@ export function partitionLeakageWindows(
     result.push({ ...item, labelEndAt, disposition });
   }
 
-  result.sort((left, right) => left.observedAt - right.observedAt || left.missionId.localeCompare(right.missionId));
+  result.sort(
+    (left, right) =>
+      left.observedAt - right.observedAt || left.missionId.localeCompare(right.missionId),
+  );
   return result;
 }
 
@@ -136,7 +139,9 @@ export function auditLockedHoldout(
     (receipt) => receipt.holdoutId === plan.holdoutId && receipt.questionId === plan.questionId,
   );
   if (matching.length > 1) {
-    throw new Error(`locked holdout '${plan.holdoutId}' was opened more than once for question '${plan.questionId}'`);
+    throw new Error(
+      `locked holdout '${plan.holdoutId}' was opened more than once for question '${plan.questionId}'`,
+    );
   }
 
   for (const receipt of receipts) {
