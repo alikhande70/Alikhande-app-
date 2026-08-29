@@ -3,6 +3,7 @@ import {
   evaluateRegisteredHypothesisFamily,
   REGISTERED_HYPOTHESIS_FAMILY_VERSION,
   type RegisteredHypothesisFamily,
+  type RegisteredHypothesisFamilyReceipt,
   type RegisteredTestResult,
   sealRegisteredHypothesisFamily,
 } from './registered-hypotheses.js';
@@ -43,6 +44,10 @@ function family(): RegisteredHypothesisFamily {
   };
 }
 
+function receipt(input: RegisteredHypothesisFamily, knownAt = 105): RegisteredHypothesisFamilyReceipt {
+  return { familyHash: sealRegisteredHypothesisFamily(input), knownAt };
+}
+
 function results(pValues: readonly number[]): RegisteredTestResult[] {
   return pValues.map((pValue, index) => ({
     questionId: `q${index + 1}`,
@@ -66,10 +71,9 @@ function replaceResult(
 describe('registered hypothesis families', () => {
   it('applies deterministic Benjamini-Hochberg FDR control to the complete registered family', () => {
     const input = family();
-    const sealed = sealRegisteredHypothesisFamily(input);
     const evaluation = evaluateRegisteredHypothesisFamily(
       input,
-      sealed,
+      receipt(input),
       results([0.001, 0.03, 0.04, 0.2]),
     );
 
@@ -89,7 +93,7 @@ describe('registered hypothesis families', () => {
     const input = family();
     const evaluation = evaluateRegisteredHypothesisFamily(
       input,
-      sealRegisteredHypothesisFamily(input),
+      receipt(input),
       results([0.01, 0.024, 0.03, 0.2]),
     );
     expect(evaluation.discoveries).toBe(3);
@@ -99,11 +103,7 @@ describe('registered hypothesis families', () => {
   it('fails closed when a registered question is missing instead of shrinking the family denominator', () => {
     const input = family();
     expect(() =>
-      evaluateRegisteredHypothesisFamily(
-        input,
-        sealRegisteredHypothesisFamily(input),
-        results([0.001, 0.02, 0.03]),
-      ),
+      evaluateRegisteredHypothesisFamily(input, receipt(input), results([0.001, 0.02, 0.03])),
     ).toThrow(/exactly match/);
   });
 
@@ -113,28 +113,32 @@ describe('registered hypothesis families', () => {
       pValue: null,
       status: 'insufficient-data',
     });
-    const evaluation = evaluateRegisteredHypothesisFamily(
-      input,
-      sealRegisteredHypothesisFamily(input),
-      unresolved,
-    );
+    const evaluation = evaluateRegisteredHypothesisFamily(input, receipt(input), unresolved);
     expect(evaluation.status).toBe('insufficient-data');
     expect(evaluation.discoveries).toBe(0);
     expect(evaluation.decisions.every((item) => item.discovery === false)).toBe(true);
   });
 
-  it('rejects late registration after evidence was already known', () => {
+  it('rejects backdated registration when evidence predates durable knowledge', () => {
     const input = family();
-    const contaminated = replaceResult(results([0.001, 0.02, 0.03, 0.2]), 0, {
-      firstEvidenceKnownAt: 99,
-    });
     expect(() =>
       evaluateRegisteredHypothesisFamily(
         input,
-        sealRegisteredHypothesisFamily(input),
-        contaminated,
+        receipt(input, 120),
+        results([0.001, 0.02, 0.03, 0.2]),
       ),
-    ).toThrow(/registered after evidence became known/);
+    ).toThrow(/evidence was already known before the family became durable/);
+  });
+
+  it('rejects a receipt that claims durability before the family registeredAt', () => {
+    const input = family();
+    expect(() =>
+      evaluateRegisteredHypothesisFamily(
+        input,
+        receipt(input, 99),
+        results([0.001, 0.02, 0.03, 0.2]),
+      ),
+    ).toThrow(/cannot become durable before registeredAt/);
   });
 
   it('rejects analysis-plan or test drift after registration', () => {
@@ -142,28 +146,28 @@ describe('registered hypothesis families', () => {
     const drifted = replaceResult(results([0.001, 0.02, 0.03, 0.2]), 1, {
       analysisPlanHash: 'sha256:changed-after-results',
     });
-    expect(() =>
-      evaluateRegisteredHypothesisFamily(input, sealRegisteredHypothesisFamily(input), drifted),
-    ).toThrow(/analysisPlanHash drift/);
+    expect(() => evaluateRegisteredHypothesisFamily(input, receipt(input), drifted)).toThrow(
+      /analysisPlanHash drift/,
+    );
   });
 
   it('rejects a modified family whose immutable seal no longer matches', () => {
     const input = family();
-    const sealed = sealRegisteredHypothesisFamily(input);
+    const sealedReceipt = receipt(input);
     const modified: RegisteredHypothesisFamily = { ...input, qLevel: 0.1 };
     expect(() =>
-      evaluateRegisteredHypothesisFamily(modified, sealed, results([0.001, 0.02, 0.03, 0.2])),
+      evaluateRegisteredHypothesisFamily(modified, sealedReceipt, results([0.001, 0.02, 0.03, 0.2])),
     ).toThrow(/family hash mismatch/);
   });
 
   it('rejects duplicate results, unregistered questions and impossible bitemporal order', () => {
     const input = family();
-    const sealed = sealRegisteredHypothesisFamily(input);
+    const registration = receipt(input);
     const duplicate = replaceResult(results([0.001, 0.02, 0.03, 0.2]), 3, {
       questionId: 'q1',
       analysisPlanHash: 'sha256:plan-1',
     });
-    expect(() => evaluateRegisteredHypothesisFamily(input, sealed, duplicate)).toThrow(
+    expect(() => evaluateRegisteredHypothesisFamily(input, registration, duplicate)).toThrow(
       /duplicate test result/,
     );
 
@@ -171,7 +175,7 @@ describe('registered hypothesis families', () => {
       firstEvidenceKnownAt: 600,
       evaluatedAt: 500,
     });
-    expect(() => evaluateRegisteredHypothesisFamily(input, sealed, future)).toThrow(
+    expect(() => evaluateRegisteredHypothesisFamily(input, registration, future)).toThrow(
       /evaluated before/,
     );
   });
