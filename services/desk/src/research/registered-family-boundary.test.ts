@@ -6,8 +6,8 @@ import {
 } from '../ledger/hypothesis-registration.js';
 import { Ledger } from '../ledger/ledger.js';
 import {
-  readDurableRegisteredFamily,
   RegisteredFamilyBoundaryError,
+  readDurableRegisteredFamily,
 } from './registered-family-boundary.js';
 
 function memoryLedger(): Ledger {
