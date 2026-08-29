@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import {
   EVALUATION_COMPOSITION_VERSION,
-  projectResearchSafeEvaluationPopulation,
   type FinalEvaluationPopulation,
+  projectResearchSafeEvaluationPopulation,
   type ResearchSafeFinalEvaluationPolicy,
 } from './evaluation-composition.js';
 import { LEAKAGE_WINDOW_GUARD_VERSION } from './leakage-window-guard.js';
