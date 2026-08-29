@@ -149,6 +149,15 @@ export type LedgerEvent =
       tags: readonly string[];
       at: number;
     }
+  | {
+      /** Immutable evidence that one registered locked-holdout question was opened. */
+      kind: 'evaluation.holdoutOpened';
+      holdoutId: string;
+      questionId: string;
+      openedAt: number;
+      evaluationCutoff: number;
+      populationHash: string;
+    }
   | { kind: 'alert.raised'; alertId: string; alert: Record<string, unknown> }
   | { kind: 'alert.acknowledged'; alertId: string; at: number }
   | { kind: 'alert.pushDispatched'; alertId: string; at: number }
@@ -289,6 +298,8 @@ export function streamOf(e: LedgerEvent): string {
     case 'journal.closed':
     case 'journal.noted':
       return e.tradeId;
+    case 'evaluation.holdoutOpened':
+      return `evaluation:holdout:${e.holdoutId}:${e.questionId}`;
     case 'alert.raised':
     case 'alert.acknowledged':
     case 'alert.pushDispatched':
@@ -349,4 +360,5 @@ export const DURABLE_KINDS: ReadonlySet<LedgerEventKind> = new Set([
   'mission.positionLinked',
   'mission.actionRecorded',
   'mission.reviewed',
+  'evaluation.holdoutOpened',
 ]);
