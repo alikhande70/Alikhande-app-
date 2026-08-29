@@ -123,9 +123,17 @@ describe('validateFinalEvaluationComposition', () => {
   });
 
   it('rejects future durable evidence relative to the declared current knowledge boundary', () => {
-    const base = policy();
-    const staleKnowledge = { ...base, currentKnowledgeCutoff: 125 } as FinalEvaluationPolicy;
-    expect(() => validateFinalEvaluationComposition(population(), staleKnowledge)).toThrow(
+    const basePopulation = population();
+    const futureEvidence = {
+      ...basePopulation,
+      pairedEligibility: [
+        basePopulation.pairedEligibility[0],
+        { ...basePopulation.pairedEligibility[1], knownAt: 175 },
+      ],
+    } as FinalEvaluationPopulation;
+    const basePolicy = policy();
+    const staleKnowledge = { ...basePolicy, currentKnowledgeCutoff: 160 } as FinalEvaluationPolicy;
+    expect(() => validateFinalEvaluationComposition(futureEvidence, staleKnowledge)).toThrow(
       /not yet known at currentKnowledgeCutoff/,
     );
   });
