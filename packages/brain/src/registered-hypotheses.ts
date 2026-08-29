@@ -52,7 +52,8 @@ export interface RegisteredHypothesisFamilyEvaluation {
 }
 
 function assertFiniteTimestamp(name: string, value: number): void {
-  if (!Number.isFinite(value) || value < 0) throw new Error(`${name} must be a finite non-negative timestamp`);
+  if (!Number.isFinite(value) || value < 0)
+    throw new Error(`${name} must be a finite non-negative timestamp`);
 }
 
 function assertIdentifier(name: string, value: string): void {
@@ -79,26 +80,31 @@ function canonicalFamily(family: RegisteredHypothesisFamily): Readonly<Record<st
 
 export function sealRegisteredHypothesisFamily(family: RegisteredHypothesisFamily): string {
   validateFamily(family);
-  return `sha256:${createHash('sha256').update(JSON.stringify(canonicalFamily(family))).digest('hex')}`;
+  return `sha256:${createHash('sha256')
+    .update(JSON.stringify(canonicalFamily(family)))
+    .digest('hex')}`;
 }
 
 function validateFamily(family: RegisteredHypothesisFamily): void {
   if (family.version !== REGISTERED_HYPOTHESIS_FAMILY_VERSION) {
     throw new Error('unsupported registered hypothesis family version');
   }
-  if (family.method !== MULTIPLE_TESTING_METHOD) throw new Error('unsupported multiple-testing method');
+  if (family.method !== MULTIPLE_TESTING_METHOD)
+    throw new Error('unsupported multiple-testing method');
   assertIdentifier('familyId', family.familyId);
   assertFiniteTimestamp('registeredAt', family.registeredAt);
   if (!Number.isFinite(family.qLevel) || family.qLevel <= 0 || family.qLevel >= 1) {
     throw new Error('qLevel must be strictly between 0 and 1');
   }
-  if (family.hypotheses.length === 0) throw new Error('registered hypothesis family must not be empty');
+  if (family.hypotheses.length === 0)
+    throw new Error('registered hypothesis family must not be empty');
   const questionIds = new Set<string>();
   for (const item of family.hypotheses) {
     assertIdentifier('questionId', item.questionId);
     assertIdentifier('testId', item.testId);
     assertIdentifier('analysisPlanHash', item.analysisPlanHash);
-    if (questionIds.has(item.questionId)) throw new Error(`duplicate registered questionId: ${item.questionId}`);
+    if (questionIds.has(item.questionId))
+      throw new Error(`duplicate registered questionId: ${item.questionId}`);
     questionIds.add(item.questionId);
   }
 }
@@ -109,9 +115,12 @@ function validateResults(
   results: readonly RegisteredTestResult[],
 ): void {
   const actualHash = sealRegisteredHypothesisFamily(family);
-  if (actualHash !== expectedFamilyHash) throw new Error('registered hypothesis family hash mismatch');
+  if (actualHash !== expectedFamilyHash)
+    throw new Error('registered hypothesis family hash mismatch');
   if (results.length !== family.hypotheses.length) {
-    throw new Error('test result population must exactly match the pre-registered hypothesis family');
+    throw new Error(
+      'test result population must exactly match the pre-registered hypothesis family',
+    );
   }
   const byQuestion = new Map(family.hypotheses.map((item) => [item.questionId, item] as const));
   const seen = new Set<string>();
@@ -120,7 +129,8 @@ function validateResults(
     seen.add(result.questionId);
     const registered = byQuestion.get(result.questionId);
     if (registered === undefined) throw new Error(`unregistered test result: ${result.questionId}`);
-    if (registered.testId !== result.testId) throw new Error(`testId drift for ${result.questionId}`);
+    if (registered.testId !== result.testId)
+      throw new Error(`testId drift for ${result.questionId}`);
     if (registered.analysisPlanHash !== result.analysisPlanHash) {
       throw new Error(`analysisPlanHash drift for ${result.questionId}`);
     }
@@ -130,10 +140,17 @@ function validateResults(
       throw new Error(`hypothesis ${result.questionId} was registered after evidence became known`);
     }
     if (result.evaluatedAt < result.firstEvidenceKnownAt) {
-      throw new Error(`hypothesis ${result.questionId} was evaluated before its evidence was known`);
+      throw new Error(
+        `hypothesis ${result.questionId} was evaluated before its evidence was known`,
+      );
     }
     if (result.status === 'complete') {
-      if (result.pValue === null || !Number.isFinite(result.pValue) || result.pValue < 0 || result.pValue > 1) {
+      if (
+        result.pValue === null ||
+        !Number.isFinite(result.pValue) ||
+        result.pValue < 0 ||
+        result.pValue > 1
+      ) {
         throw new Error(`complete result ${result.questionId} requires a finite pValue in [0,1]`);
       }
     } else if (result.pValue !== null) {
@@ -196,7 +213,10 @@ export function evaluateRegisteredHypothesisFamily(
 
   const ordered = results
     .map((item) => ({ questionId: item.questionId, pValue: item.pValue as number }))
-    .sort((left, right) => left.pValue - right.pValue || left.questionId.localeCompare(right.questionId));
+    .sort(
+      (left, right) =>
+        left.pValue - right.pValue || left.questionId.localeCompare(right.questionId),
+    );
 
   let rejectionCount = 0;
   for (let index = 0; index < ordered.length; index += 1) {
@@ -209,7 +229,8 @@ export function evaluateRegisteredHypothesisFamily(
   const adjusted = adjustedPValues(ordered);
   const decisions = family.hypotheses.map((item) => {
     const result = resultByQuestion.get(item.questionId);
-    if (result === undefined || result.pValue === null) throw new Error('validated result disappeared');
+    if (result === undefined || result.pValue === null)
+      throw new Error('validated result disappeared');
     const discovery = rejectedIds.has(item.questionId);
     return {
       questionId: item.questionId,
