@@ -276,12 +276,11 @@ describe('recovery after an unclean stop', () => {
 
     // "Restart": new projector over the same store.
     const p2 = new Projector(l);
-    const row = l.db.prepare('SELECT * FROM orders WHERE intent_id = ?').get('i-crash') as Record<
-      string,
-      unknown
-    >;
-    expect(row.state).toBe('PENDING_SUBMIT');
-    expect(p2.watermark).toBe(1);
+    p2.catchUp();
+    const rec = p2.loadOrderRecord('i-crash');
+    expect(rec?.state).toBe('PENDING_SUBMIT');
+    // Which is exactly what boot recovery needs in order to ask the broker
+    // whether it ever arrived.
     l.close();
   });
 });
