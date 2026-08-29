@@ -15,6 +15,7 @@ export {
   LEDGER_REGISTERED_RESEARCH_SOURCE,
   type LedgerRegisteredResearchEvaluation,
   type LedgerRegisteredResearchFamily,
+  type LedgerRegisteredResearchProvenance,
   type LedgerRegisteredResearchTestResult,
 } from './ledger-registered-research-evaluation.js';
 export {
