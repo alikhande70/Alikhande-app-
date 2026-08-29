@@ -1,10 +1,10 @@
-import type { FixedHorizonOutcomePolicy, MarketCloseObservation } from './outcome-labeling.js';
 import {
   LEAKAGE_WINDOW_GUARD_VERSION,
   type LeakageDisposition,
   type LeakageWindowPlan,
   partitionLeakageWindows,
 } from './leakage-window-guard.js';
+import type { FixedHorizonOutcomePolicy, MarketCloseObservation } from './outcome-labeling.js';
 import {
   buildSnapshotStrataAwarePreRegisteredEvaluation,
   type SnapshotStrataAwareAnalysisPlan,
@@ -52,7 +52,8 @@ export interface ResearchSafeEvaluationAnalysisPlan extends FinalEvaluationAnaly
   readonly leakageWindow: LeakageWindowPlan;
 }
 
-export interface ResearchSafeFinalEvaluationPolicy extends Omit<FinalEvaluationPolicy, 'analysisPlan'> {
+export interface ResearchSafeFinalEvaluationPolicy
+  extends Omit<FinalEvaluationPolicy, 'analysisPlan'> {
   readonly analysisPlan: ResearchSafeEvaluationAnalysisPlan;
 }
 
@@ -261,7 +262,9 @@ export function projectResearchSafeEvaluationPopulation(
 
   const projected: FinalEvaluationPopulation = {
     ledgerHead: population.ledgerHead,
-    pairedEligibility: population.pairedEligibility.filter((item) => researchIds.has(item.missionId)),
+    pairedEligibility: population.pairedEligibility.filter((item) =>
+      researchIds.has(item.missionId),
+    ),
     missions: population.missions.filter((item) => researchIds.has(item.missionId)),
     featureMissions: population.featureMissions.filter((item) => researchIds.has(item.missionId)),
   };
