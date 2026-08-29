@@ -44,7 +44,10 @@ function family(): RegisteredHypothesisFamily {
   };
 }
 
-function receipt(input: RegisteredHypothesisFamily, knownAt = 105): RegisteredHypothesisFamilyReceipt {
+function receipt(
+  input: RegisteredHypothesisFamily,
+  knownAt = 105,
+): RegisteredHypothesisFamilyReceipt {
   return { familyHash: sealRegisteredHypothesisFamily(input), knownAt };
 }
 
@@ -156,7 +159,11 @@ describe('registered hypothesis families', () => {
     const sealedReceipt = receipt(input);
     const modified: RegisteredHypothesisFamily = { ...input, qLevel: 0.1 };
     expect(() =>
-      evaluateRegisteredHypothesisFamily(modified, sealedReceipt, results([0.001, 0.02, 0.03, 0.2])),
+      evaluateRegisteredHypothesisFamily(
+        modified,
+        sealedReceipt,
+        results([0.001, 0.02, 0.03, 0.2]),
+      ),
     ).toThrow(/family hash mismatch/);
   });
 
