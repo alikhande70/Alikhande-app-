@@ -115,10 +115,7 @@ describe('validateFinalEvaluationComposition', () => {
     const base = population();
     const malformed = {
       ...base,
-      featureMissions: [
-        base.featureMissions[0],
-        { ...base.featureMissions[1], observedAt: 121 },
-      ],
+      featureMissions: [base.featureMissions[0], { ...base.featureMissions[1], observedAt: 121 }],
     } as FinalEvaluationPopulation;
     expect(() => validateFinalEvaluationComposition(malformed, policy())).toThrow(
       /feature Mission observation-time drift/,
