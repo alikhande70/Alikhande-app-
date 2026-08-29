@@ -46,6 +46,23 @@ function sourceFiles(root: string): string[] {
   return files;
 }
 
+function moduleSpecifiers(source: string): string[] {
+  const specifiers: string[] = [];
+  const patterns = [
+    /\bfrom\s*['"]([^'"]+)['"]/g,
+    /\bimport\s*\(\s*['"]([^'"]+)['"]\s*\)/g,
+    /\brequire\s*\(\s*['"]([^'"]+)['"]\s*\)/g,
+    /\bimport\s*['"]([^'"]+)['"]/g,
+  ];
+  for (const pattern of patterns) {
+    for (const match of source.matchAll(pattern)) {
+      const specifier = match[1];
+      if (specifier !== undefined) specifiers.push(specifier);
+    }
+  }
+  return specifiers;
+}
+
 describe('ADR-0021 production evaluation boundary', () => {
   it('exposes only the composed evaluation API as a public statistical subpath', () => {
     expect(Object.keys(packageJson.exports).sort()).toEqual(['.', './evaluation-composition']);
@@ -63,22 +80,25 @@ describe('ADR-0021 production evaluation boundary', () => {
 
   it('prevents production workspace code from deep-importing Brain internals', () => {
     const violations: string[] = [];
-    const roots = ['apps', 'services', 'packages']
-      .map((path) => join(repoRoot, path))
-      .filter((path) => path !== join(repoRoot, 'packages', 'brain'));
+    const roots = ['apps', 'services', 'packages'].map((path) => join(repoRoot, path));
 
     for (const root of roots) {
       for (const path of sourceFiles(root)) {
         if (path.startsWith(join(repoRoot, 'packages', 'brain'))) continue;
         const source = readFileSync(path, 'utf8');
-        const packageImports = source.matchAll(/@keel\/brain\/([A-Za-z0-9._/-]+)/g);
-        for (const match of packageImports) {
-          if (match[1] !== 'evaluation-composition') {
-            violations.push(`${relative(repoRoot, path)}: forbidden @keel/brain/${match[1]}`);
+        for (const specifier of moduleSpecifiers(source)) {
+          if (
+            specifier.startsWith('@keel/brain/') &&
+            specifier !== '@keel/brain/evaluation-composition'
+          ) {
+            violations.push(`${relative(repoRoot, path)}: forbidden ${specifier}`);
           }
-        }
-        if (source.includes('packages/brain/src/') || source.includes('packages\\brain\\src\\')) {
-          violations.push(`${relative(repoRoot, path)}: direct packages/brain/src deep import`);
+          if (
+            specifier.includes('packages/brain/src/') ||
+            specifier.includes('packages\\brain\\src\\')
+          ) {
+            violations.push(`${relative(repoRoot, path)}: direct ${specifier}`);
+          }
         }
       }
     }
