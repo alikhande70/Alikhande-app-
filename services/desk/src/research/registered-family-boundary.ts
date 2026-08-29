@@ -1,8 +1,8 @@
-import type { Ledger } from '../ledger/ledger.js';
 import {
   readHypothesisFamilyRegistration,
   toHypothesisEvaluationRegistrationInputs,
 } from '../ledger/hypothesis-registration.js';
+import type { Ledger } from '../ledger/ledger.js';
 
 export class RegisteredFamilyBoundaryError extends Error {
   constructor(message: string) {
