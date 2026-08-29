@@ -55,6 +55,37 @@ describe('ledger-registered research evaluation boundary', () => {
     expect(evaluated.promotionAction).toBe('none');
   });
 
+  it('retains the exact durable registration identity and bitemporal timestamps in the result', () => {
+    const registered = input();
+    const evaluated = evaluateLedgerRegisteredResearchFamily(registered, results);
+
+    expect(evaluated.registrationProvenance).toEqual({
+      source: LEDGER_REGISTERED_RESEARCH_SOURCE,
+      ledgerSeq: registered.ledgerSeq,
+      ledgerHash: registered.ledgerHash,
+      familyHash: registered.receipt.familyHash,
+      registeredAt: registered.family.registeredAt,
+      registrationKnownAt: registered.receipt.knownAt,
+    });
+  });
+
+  it('retains provenance even when the family has insufficient data', () => {
+    const registered = input();
+    const evaluated = evaluateLedgerRegisteredResearchFamily(registered, [
+      {
+        ...results[0],
+        status: 'insufficient-data',
+        pValue: null,
+      },
+    ]);
+
+    expect(evaluated.status).toBe('insufficient-data');
+    expect(evaluated.discoveries).toBe(0);
+    expect(evaluated.promotionAction).toBe('none');
+    expect(evaluated.registrationProvenance.ledgerHash).toBe(registered.ledgerHash);
+    expect(evaluated.registrationProvenance.registrationKnownAt).toBe(registered.receipt.knownAt);
+  });
+
   it('rejects non-ledger provenance before statistical evaluation', () => {
     expect(() =>
       evaluateLedgerRegisteredResearchFamily(
