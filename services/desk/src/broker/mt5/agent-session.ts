@@ -1,0 +1,325 @@
+import { randomUUID, timingSafeEqual } from 'node:crypto';
+import {
+  encodeDeskCommand,
+  type Mt5AgentHeartbeat,
+  type Mt5AgentHello,
+  type Mt5AgentMessage,
+  Mt5AgentProtocolError,
+  type Mt5AgentSnapshotMessage,
+  type Mt5AgentTransactionMessage,
+  type Mt5DeskCommandMessage,
+} from './agent-protocol.js';
+import { assertUtcClockDomain } from './clock-domain.js';
+import { validateMt5Command } from './command-validation.js';
+import type { Mt5HostSnapshot, Mt5HostSubmitResult } from './host-types.js';
+
+export interface Mt5AgentTransport {
+  write(data: string): void;
+  close(): void;
+}
+
+export class Mt5AgentDisconnectedError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'Mt5AgentDisconnectedError';
+  }
+}
+
+export interface Mt5AgentSessionOptions {
+  readonly token: string;
+  readonly commandTimeoutMs?: number;
+  readonly heartbeatStaleMs?: number;
+  readonly onAuthenticated?: (hello: Mt5AgentHello) => void;
+  readonly onSnapshot?: (message: Mt5AgentSnapshotMessage) => void;
+  readonly onTransaction?: (message: Mt5AgentTransactionMessage) => void;
+}
+
+interface PendingCommand {
+  readonly resolve: (result: Mt5HostSubmitResult) => void;
+  readonly reject: (error: Error) => void;
+  readonly timer: ReturnType<typeof setTimeout>;
+}
+
+interface PendingSnapshot {
+  readonly resolve: (snapshot: Mt5HostSnapshot) => void;
+  readonly reject: (error: Error) => void;
+  readonly timer: ReturnType<typeof setTimeout>;
+}
+
+function tokensEqual(expected: string, actual: string): boolean {
+  const left = Buffer.from(expected, 'utf8');
+  const right = Buffer.from(actual, 'utf8');
+  return left.length === right.length && timingSafeEqual(left, right);
+}
+
+export class Mt5AgentSession {
+  private readonly commandTimeoutMs: number;
+  private readonly heartbeatStaleMs: number;
+  private readonly pending = new Map<string, PendingCommand>();
+  private readonly pendingSnapshots = new Map<string, PendingSnapshot>();
+  private helloMessage: Mt5AgentHello | undefined;
+  private heartbeatMessage: Mt5AgentHeartbeat | undefined;
+  private clockFault: string | undefined;
+  private agentEpoch: string | undefined;
+  private clockWarnings: readonly string[] = [];
+  private lastEventSeq = -1n;
+  private disconnected = false;
+
+  constructor(
+    private readonly transport: Mt5AgentTransport,
+    private readonly options: Mt5AgentSessionOptions,
+  ) {
+    if (options.token.length < 16) {
+      throw new Mt5AgentProtocolError('MT5 agent token must be at least 16 characters');
+    }
+    this.commandTimeoutMs = options.commandTimeoutMs ?? 5_000;
+    this.heartbeatStaleMs = options.heartbeatStaleMs ?? 5_000;
+  }
+
+  receive(message: Mt5AgentMessage): void {
+    if (this.disconnected) throw new Mt5AgentDisconnectedError('MT5 agent session is closed');
+
+    if (this.helloMessage === undefined) {
+      if (message.type !== 'hello') {
+        this.transport.close();
+        throw new Mt5AgentProtocolError('MT5 agent must authenticate with hello first');
+      }
+      if (!tokensEqual(this.options.token, message.token)) {
+        this.transport.close();
+        throw new Mt5AgentProtocolError('MT5 agent authentication failed');
+      }
+      // A new agent run restarts its event sequence, so the watermark from the
+      // previous run must not be carried across. Resetting here is what keeps an
+      // EA restart from silently deafening the session.
+      const epoch = message.agentEpoch ?? '0';
+      if (this.agentEpoch !== undefined && BigInt(epoch) < BigInt(this.agentEpoch)) {
+        // Epochs only move forward. A lower one means a stale agent reconnected
+        // or the epoch store was lost; either way its sequence numbers cannot be
+        // trusted against ours, so refuse rather than accept ambiguous ordering.
+        throw new Mt5AgentProtocolError(
+          `MT5 agent epoch went backwards (${this.agentEpoch} -> ${epoch}); refusing to reuse ` +
+            'a sequence watermark across an untrusted agent run',
+        );
+      }
+      if (this.agentEpoch !== epoch) {
+        this.agentEpoch = epoch;
+        this.lastEventSeq = -1n;
+      }
+      this.helloMessage = message;
+      this.options.onAuthenticated?.(message);
+      return;
+    }
+
+    if (message.type === 'hello') {
+      throw new Mt5AgentProtocolError('MT5 agent sent duplicate hello');
+    }
+
+    switch (message.type) {
+      case 'heartbeat': {
+        if (!this.acceptSequence(message.eventSeq)) return;
+        // Validated on every heartbeat, not once at hello: the agent can be
+        // restarted, upgraded or reconfigured mid-session, and a reading in
+        // broker-local time must never be silently accepted.
+        try {
+          const verdict = assertUtcClockDomain(
+            {
+              utcMillis: message.at,
+              ...(message.serverMillis === undefined ? {} : { serverMillis: message.serverMillis }),
+              ...(message.serverUtcOffsetSec === undefined
+                ? {}
+                : { serverUtcOffsetSec: message.serverUtcOffsetSec }),
+            },
+            Date.now(),
+          );
+          this.clockFault = undefined;
+          this.clockWarnings = verdict.warnings;
+        } catch (error) {
+          this.clockFault = error instanceof Error ? error.message : String(error);
+        }
+        this.heartbeatMessage = message;
+        return;
+      }
+      case 'snapshot': {
+        if (!this.acceptSequence(message.eventSeq)) return;
+        const pending = this.pendingSnapshots.get(message.requestId);
+        if (pending !== undefined) {
+          clearTimeout(pending.timer);
+          this.pendingSnapshots.delete(message.requestId);
+          pending.resolve(message.snapshot);
+        }
+        this.options.onSnapshot?.(message);
+        return;
+      }
+      case 'transaction':
+        if (!this.acceptSequence(message.eventSeq)) return;
+        this.options.onTransaction?.(message);
+        return;
+      case 'result': {
+        const snapshotPending = this.pendingSnapshots.get(message.requestId);
+        if (snapshotPending !== undefined) {
+          clearTimeout(snapshotPending.timer);
+          this.pendingSnapshots.delete(message.requestId);
+          snapshotPending.reject(
+            new Mt5AgentProtocolError(
+              `MT5 snapshot request did not return authoritative snapshot: ${message.result.outcome}`,
+            ),
+          );
+          return;
+        }
+        const pending = this.pending.get(message.requestId);
+        if (pending === undefined) return;
+        clearTimeout(pending.timer);
+        this.pending.delete(message.requestId);
+        pending.resolve(message.result);
+        return;
+      }
+    }
+  }
+
+  isAuthenticated(): boolean {
+    return this.helloMessage !== undefined && !this.disconnected;
+  }
+
+  hello(): Mt5AgentHello | undefined {
+    return this.helloMessage;
+  }
+
+  heartbeat(): Mt5AgentHeartbeat | undefined {
+    return this.heartbeatMessage;
+  }
+
+  watermark(): string | undefined {
+    return this.lastEventSeq < 0n ? undefined : this.lastEventSeq.toString();
+  }
+
+  /** Why the agent cannot be trusted, or undefined when it can. */
+  clockFaultReason(): string | undefined {
+    return this.clockFault;
+  }
+
+  clockDomainWarnings(): readonly string[] {
+    return this.clockWarnings;
+  }
+
+  isLive(now = Date.now()): boolean {
+    const heartbeat = this.heartbeatMessage;
+    if (heartbeat === undefined) return false;
+    if (!this.isAuthenticated()) return false;
+    if (heartbeat.terminalConnected !== true) return false;
+    // A clock the desk cannot trust makes every downstream time comparison
+    // meaningless, so it disables the agent rather than degrading quietly.
+    if (this.clockFault !== undefined) return false;
+
+    // Math.abs, not a one-sided check. A heartbeat stamped in the future -- which
+    // is exactly what broker-local time on a GMT+3 server looks like -- produced
+    // a negative age that passed this test trivially, so a dead agent read as
+    // live until real time caught up with the offset. Hours, not seconds.
+    return Math.abs(now - heartbeat.at) <= this.heartbeatStaleMs;
+  }
+
+  async snapshot(): Promise<Mt5HostSnapshot> {
+    this.assertReady();
+    const validated = validateMt5Command('snapshot', {});
+    const requestId = randomUUID();
+    const message: Mt5DeskCommandMessage = {
+      type: 'command',
+      protocolVersion: 1,
+      requestId,
+      command: validated.command,
+      payload: validated.payload,
+    };
+
+    return new Promise<Mt5HostSnapshot>((resolve, reject) => {
+      const timer = setTimeout(() => {
+        this.pendingSnapshots.delete(requestId);
+        reject(new Mt5AgentDisconnectedError('MT5 agent snapshot command timed out'));
+      }, this.commandTimeoutMs);
+      this.pendingSnapshots.set(requestId, { resolve, reject, timer });
+      try {
+        this.transport.write(encodeDeskCommand(message));
+      } catch (error) {
+        clearTimeout(timer);
+        this.pendingSnapshots.delete(requestId);
+        reject(error instanceof Error ? error : new Error(String(error)));
+      }
+    });
+  }
+
+  async command(
+    command: Exclude<Mt5DeskCommandMessage['command'], 'snapshot'>,
+    payload: unknown,
+  ): Promise<Mt5HostSubmitResult> {
+    this.assertReady();
+    const validated = validateMt5Command(command, payload);
+    const requestId = randomUUID();
+    const message: Mt5DeskCommandMessage = {
+      type: 'command',
+      protocolVersion: 1,
+      requestId,
+      command: validated.command,
+      payload: validated.payload,
+    };
+
+    return new Promise<Mt5HostSubmitResult>((resolve, reject) => {
+      const timer = setTimeout(() => {
+        this.pending.delete(requestId);
+        reject(new Mt5AgentDisconnectedError(`MT5 agent command ${command} timed out`));
+      }, this.commandTimeoutMs);
+      this.pending.set(requestId, { resolve, reject, timer });
+      try {
+        this.transport.write(encodeDeskCommand(message));
+      } catch (error) {
+        clearTimeout(timer);
+        this.pending.delete(requestId);
+        reject(error instanceof Error ? error : new Error(String(error)));
+      }
+    });
+  }
+
+  disconnect(reason = 'MT5 agent disconnected'): void {
+    if (this.disconnected) return;
+    this.disconnected = true;
+    for (const pending of this.pending.values()) {
+      clearTimeout(pending.timer);
+      pending.reject(new Mt5AgentDisconnectedError(reason));
+    }
+    this.pending.clear();
+    for (const pending of this.pendingSnapshots.values()) {
+      clearTimeout(pending.timer);
+      pending.reject(new Mt5AgentDisconnectedError(reason));
+    }
+    this.pendingSnapshots.clear();
+  }
+
+  private assertReady(): void {
+    if (!this.isAuthenticated()) {
+      throw new Mt5AgentDisconnectedError('MT5 agent is not authenticated');
+    }
+    if (!this.isLive()) {
+      throw new Mt5AgentDisconnectedError('MT5 agent heartbeat is stale or terminal disconnected');
+    }
+  }
+
+  /**
+   * Accept an event only if it advances this epoch's sequence.
+   *
+   * Duplicates and replays are dropped here rather than deduplicated later,
+   * which is what makes a spool replay harmless: the agent may re-send anything
+   * it is unsure the desk received, and everything already seen is ignored.
+   *
+   * Sequence numbers restart with each agent epoch, so the watermark is reset on
+   * a new epoch in `receive`. In the normal path a reconnect already gets a
+   * fresh session; the reset matters when one session sees more than one run.
+   */
+  private acceptSequence(sequence: string): boolean {
+    const parsed = BigInt(sequence);
+    if (parsed <= this.lastEventSeq) return false;
+    this.lastEventSeq = parsed;
+    return true;
+  }
+
+  /** The agent run this session is tracking, for observability. */
+  epoch(): string | undefined {
+    return this.agentEpoch;
+  }
+}

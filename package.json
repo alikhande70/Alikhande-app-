@@ -1,0 +1,35 @@
+{
+  "name": "keel",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Keel \u2014 a risk-governed personal trading command center",
+  "packageManager": "pnpm@10.33.0",
+  "engines": {
+    "node": ">=22.0.0"
+  },
+  "scripts": {
+    "build": "pnpm -r --filter './packages/*' --filter './services/*' run build",
+    "typecheck": "pnpm -r run typecheck",
+    "test": "pnpm -r run test",
+    "test:unit": "pnpm --filter @keel/core --filter @keel/contracts run test",
+    "test:integration": "pnpm --filter @keel/desk run test:integration",
+    "test:chaos": "pnpm --filter @keel/desk run test:chaos",
+    "test:live": "pnpm --filter @keel/desk run test:live",
+    "lint": "biome check .",
+    "lint:fix": "biome check --write .",
+    "desk": "pnpm --filter @keel/desk run dev",
+    "verify": "pnpm run lint && pnpm run typecheck && pnpm run test"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^2.4.0",
+    "typescript": "^5.9.3",
+    "vitest": "^3.2.4",
+    "@types/node": "^22.15.3"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "better-sqlite3",
+      "esbuild"
+    ]
+  }
+}

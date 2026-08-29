@@ -1,0 +1,31 @@
+{
+  "expo": {
+    "name": "Keel",
+    "slug": "keel",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "scheme": "keel",
+    "userInterfaceStyle": "automatic",
+    "newArchEnabled": true,
+    "ios": {
+      "supportsTablet": false,
+      "bundleIdentifier": "app.keel.desk",
+      "infoPlist": {
+        "NSFaceIDUsageDescription": "Keel uses Face ID to authorise orders before they are sent to your broker.",
+        "UIBackgroundModes": ["remote-notification"]
+      }
+    },
+    "android": {
+      "package": "app.keel.desk",
+      "adaptiveIcon": { "backgroundColor": "#0B0D10" },
+      "permissions": ["USE_BIOMETRIC", "POST_NOTIFICATIONS"]
+    },
+    "plugins": [
+      "expo-router",
+      "expo-secure-store",
+      ["expo-local-authentication", { "faceIDPermission": "Authorise orders with Face ID" }],
+      ["expo-notifications", { "color": "#4C8DFF" }]
+    ],
+    "experiments": { "typedRoutes": true }
+  }
+}

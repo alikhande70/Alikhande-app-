@@ -1,0 +1,24 @@
+{
+  "name": "@keel/brain",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./evaluation-composition": {
+      "types": "./dist/public-evaluation-composition.d.ts",
+      "default": "./dist/public-evaluation-composition.js"
+    }
+  },
+  "scripts": {
+    "build": "pnpm exec tsc -b",
+    "typecheck": "pnpm exec tsc -b --pretty",
+    "test": "pnpm exec vitest run",
+    "test:watch": "pnpm exec vitest"
+  }
+}

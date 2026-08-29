@@ -1,0 +1,237 @@
+import { createHash } from 'node:crypto';
+import type { BrokerEvent } from '../broker/port.js';
+import type { Ledger } from '../ledger/ledger.js';
+import { ScanMissionIngestor } from './scan-ingestor.js';
+import { MissionService } from './service.js';
+import type { MissionRecord } from './types.js';
+
+/**
+ * Broker-truth bridge for ADR-0018.
+ *
+ * Missions never infer broker state. This class only reacts to broker facts
+ * already accepted by the execution layer and links/adopts them into the
+ * durable mission history. Weak similarity (symbol/side/volume/time) is never
+ * used for ownership: an internal position must resolve through an intent link;
+ * otherwise it becomes an external mission with no fabricated decision.
+ */
+export class MissionRuntime {
+  readonly missions: MissionService;
+  readonly scans: ScanMissionIngestor;
+
+  constructor(
+    private readonly ledger: Ledger,
+    missions?: MissionService,
+  ) {
+    this.missions = missions ?? new MissionService(ledger);
+    this.scans = new ScanMissionIngestor(this.missions);
+  }
+
+  /**
+   * Current durable mission view, newest activity first.
+   *
+   * This is intentionally rebuilt from mission streams rather than maintained
+   * as a second mutable store. Reconnects therefore see the same state that a
+   * clean replay would produce, which keeps Android/Windows views downstream of
+   * the immutable ledger rather than downstream of process memory.
+   */
+  listRecent(limit = 200): readonly MissionRecord[] {
+    if (!Number.isInteger(limit) || limit < 1 || limit > 1000) {
+      throw new Error('mission list limit must be an integer between 1 and 1000');
+    }
+    const rows = this.ledger.db
+      .prepare(
+        `SELECT stream, MAX(seq) AS last_seq
+         FROM ledger
+         WHERE kind LIKE 'mission.%'
+         GROUP BY stream
+         ORDER BY last_seq DESC
+         LIMIT ?`,
+      )
+      .all(limit) as Array<{ stream: string }>;
+    const out: MissionRecord[] = [];
+    for (const row of rows) {
+      const mission = this.missions.load(row.stream);
+      if (mission !== undefined) out.push(mission);
+    }
+    return out;
+  }
+
+  /**
+   * Consume only broker facts that can change Mission lifecycle.
+   *
+   * The broker event itself is already downstream of adapter validation. For a
+   * position owned by Keel we recover the intent through the venue-preserved
+   * client order id and the durable intent ledger; if that chain is incomplete,
+   * the position is external. Symbol/side/volume/time are deliberately ignored
+   * as ownership signals.
+   */
+  observeBrokerEvent(broker: string, event: BrokerEvent): MissionRecord | undefined {
+    switch (event.type) {
+      case 'position': {
+        const intentId =
+          event.position.clientOrderId === undefined
+            ? undefined
+            : this.findIntentByClientOrderId(event.position.clientOrderId);
+        return this.observePosition({
+          broker,
+          positionId: event.position.positionId,
+          canonical: event.position.canonical,
+          at: event.at,
+          ...(intentId === undefined ? {} : { intentId }),
+        });
+      }
+      case 'positionClosed':
+        return this.closePosition({
+          positionId: event.positionId,
+          at: event.at,
+          reason: 'broker position closed',
+        });
+      default:
+        return undefined;
+    }
+  }
+
+  /**
+   * Link an observed broker position to its mission when durable intent identity
+   * proves ownership. Without that proof, adopt it as external/unknown.
+   */
+  observePosition(input: {
+    readonly broker: string;
+    readonly positionId: string;
+    readonly canonical: string;
+    readonly at: number;
+    readonly intentId?: string;
+  }): MissionRecord {
+    if (input.intentId !== undefined) {
+      const missionId = this.findMissionByIntent(input.intentId);
+      if (missionId !== undefined) {
+        this.missions.linkPosition(missionId, input.positionId, input.at);
+        this.missions.recordAction(missionId, {
+          actionId: `${missionId}:broker-position:${input.positionId}`,
+          origin: this.missions.load(missionId)?.origin ?? 'external:unknown',
+          type: 'note',
+          at: input.at,
+          reason: 'broker position observed',
+          detail: {
+            broker: input.broker,
+            positionId: input.positionId,
+            intentId: input.intentId,
+          },
+        });
+        return this.advanceToManaging(missionId, input.at);
+      }
+    }
+
+    // A foreign MT5 position might be manual, another EA, or a server-side
+    // activation. Without durable identity we deliberately refuse to guess.
+    const missionId = externalMissionId(input.broker, input.positionId);
+    return this.missions.adoptExternalPosition({
+      missionId,
+      canonical: input.canonical,
+      positionId: input.positionId,
+      origin: 'external:unknown',
+      observedAt: input.at,
+      marketState: {
+        broker: input.broker,
+        positionId: input.positionId,
+        ownership: 'unattributed',
+      },
+    });
+  }
+
+  /** Close the mission whose durable position link matches broker truth. */
+  closePosition(input: {
+    readonly positionId: string;
+    readonly at: number;
+    readonly reason?: string;
+  }): MissionRecord | undefined {
+    const missionId = this.findMissionByPosition(input.positionId);
+    if (missionId === undefined) return undefined;
+
+    let mission = this.missions.load(missionId);
+    if (mission === undefined) return undefined;
+    if (mission.stage === 'CLOSED' || mission.stage === 'REVIEWED') return mission;
+
+    // Broker events can be observed out of order. If durable identity already
+    // linked this position, broker truth is sufficient to advance through the
+    // missing execution/managing states; it is not sufficient to invent a plan.
+    mission = this.advanceToManaging(missionId, input.at);
+    if (mission.stage !== 'MANAGING') return mission;
+
+    this.missions.recordAction(missionId, {
+      actionId: `${missionId}:broker-close:${input.positionId}`,
+      origin: mission.origin,
+      type: 'close',
+      at: input.at,
+      reason: input.reason ?? 'broker position closed',
+      detail: { positionId: input.positionId },
+    });
+    return this.missions.close(
+      missionId,
+      mission.origin,
+      input.at,
+      input.reason ?? 'broker position closed',
+    );
+  }
+
+  private advanceToManaging(missionId: string, at: number): MissionRecord {
+    let mission = this.requireMission(missionId);
+    if (mission.stage === 'ARMED') {
+      // beginExecution itself verifies that a durable intent is linked.
+      mission = this.missions.beginExecution(missionId, mission.origin, at);
+    }
+    if (mission.stage === 'EXECUTING') {
+      mission = this.missions.beginManaging(missionId, mission.origin, at);
+    }
+    return mission;
+  }
+
+  private findIntentByClientOrderId(clientOrderId: string): string | undefined {
+    const row = this.ledger.db
+      .prepare(
+        `SELECT stream FROM ledger
+         WHERE kind = 'intent.created'
+           AND json_extract(payload, '$.intent.clientOrderId') = ?
+         ORDER BY seq DESC LIMIT 1`,
+      )
+      .get(clientOrderId) as { stream: string } | undefined;
+    return row?.stream;
+  }
+
+  private findMissionByIntent(intentId: string): string | undefined {
+    const row = this.ledger.db
+      .prepare(
+        `SELECT stream FROM ledger
+         WHERE kind = 'mission.intentLinked'
+           AND json_extract(payload, '$.intentId') = ?
+         ORDER BY seq DESC LIMIT 1`,
+      )
+      .get(intentId) as { stream: string } | undefined;
+    return row?.stream;
+  }
+
+  private findMissionByPosition(positionId: string): string | undefined {
+    const row = this.ledger.db
+      .prepare(
+        `SELECT stream FROM ledger
+         WHERE kind = 'mission.positionLinked'
+           AND json_extract(payload, '$.positionId') = ?
+         ORDER BY seq DESC LIMIT 1`,
+      )
+      .get(positionId) as { stream: string } | undefined;
+    return row?.stream;
+  }
+
+  private requireMission(missionId: string): MissionRecord {
+    const mission = this.missions.load(missionId);
+    if (mission === undefined)
+      throw new Error(`mission '${missionId}' disappeared during broker bridge`);
+    return mission;
+  }
+}
+
+/** Stable across restarts without exposing venue ids as aggregate ids. */
+export function externalMissionId(broker: string, positionId: string): string {
+  const digest = createHash('sha256').update(`${broker}\0${positionId}`).digest('hex').slice(0, 24);
+  return `external-${digest}`;
+}
