@@ -72,11 +72,7 @@ describe('durable locked-holdout access receipts', () => {
     recordHoldoutAccess(ledger, receipt(), 4_001);
 
     expect(() =>
-      recordHoldoutAccess(
-        ledger,
-        receipt({ populationHash: `sha256:${'b'.repeat(64)}` }),
-        4_002,
-      ),
+      recordHoldoutAccess(ledger, receipt({ populationHash: `sha256:${'b'.repeat(64)}` }), 4_002),
     ).toThrow(HoldoutAccessInvariantError);
     expect(ledger.head.seq).toBe(1);
     ledger.close();
@@ -127,7 +123,9 @@ describe('durable locked-holdout access receipts', () => {
 
     expect(projector.catchUp()).toBe(1);
     expect(projector.verifyAgainstRebuild()).toEqual({ ok: true });
-    expect(readHoldoutAccessReceipt(ledger, receipt().holdoutId, receipt().questionId)).toBeDefined();
+    expect(
+      readHoldoutAccessReceipt(ledger, receipt().holdoutId, receipt().questionId),
+    ).toBeDefined();
     ledger.close();
   });
 
@@ -140,7 +138,9 @@ describe('durable locked-holdout access receipts', () => {
     expect(() =>
       readHoldoutAccessReceipt(ledger, receipt().holdoutId, receipt().questionId),
     ).toThrow(/2 access receipts/);
-    expect(() => recordHoldoutAccess(ledger, receipt(), 4_003)).toThrow(/already opened more than once/);
+    expect(() => recordHoldoutAccess(ledger, receipt(), 4_003)).toThrow(
+      /already opened more than once/,
+    );
     expect(listHoldoutAccessReceipts(ledger)).toHaveLength(2);
     expect(ledger.verifyChain().ok).toBe(true);
     ledger.close();
