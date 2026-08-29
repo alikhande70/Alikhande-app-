@@ -146,6 +146,9 @@ describe('durable registered hypothesis families', () => {
     ).toThrow(/canonical sha256/);
 
     const duplicate = registration();
+    const firstHypothesis = duplicate.hypotheses[0];
+    expect(firstHypothesis).toBeDefined();
+    if (firstHypothesis === undefined) throw new Error('fixture requires one hypothesis');
     expect(() =>
       sealHypothesisFamilyRegistration({
         version: duplicate.version,
@@ -153,7 +156,7 @@ describe('durable registered hypothesis families', () => {
         registeredAt: duplicate.registeredAt,
         method: duplicate.method,
         qLevel: duplicate.qLevel,
-        hypotheses: [duplicate.hypotheses[0]!, duplicate.hypotheses[0]!],
+        hypotheses: [firstHypothesis, firstHypothesis],
       }),
     ).toThrow(/duplicate registered questionId/);
 
