@@ -83,7 +83,9 @@ export function sealHypothesisFamilyRegistration(
 
 function validateFamilyWithoutHash(family: HypothesisFamilyWithoutHash): void {
   if (family.version !== VERSION) {
-    throw new HypothesisRegistrationInvariantError('unsupported registered hypothesis family version');
+    throw new HypothesisRegistrationInvariantError(
+      'unsupported registered hypothesis family version',
+    );
   }
   if (family.method !== METHOD) {
     throw new HypothesisRegistrationInvariantError('unsupported multiple-testing method');
@@ -94,7 +96,9 @@ function validateFamilyWithoutHash(family: HypothesisFamilyWithoutHash): void {
     throw new HypothesisRegistrationInvariantError('qLevel must be strictly between 0 and 1');
   }
   if (family.hypotheses.length === 0) {
-    throw new HypothesisRegistrationInvariantError('registered hypothesis family must not be empty');
+    throw new HypothesisRegistrationInvariantError(
+      'registered hypothesis family must not be empty',
+    );
   }
   const questionIds = new Set<string>();
   for (const hypothesis of family.hypotheses) {
@@ -253,8 +257,13 @@ export function toHypothesisEvaluationRegistrationInputs(
   if (registration.knownAt < registration.registeredAt) {
     throw new HypothesisRegistrationInvariantError('knownAt cannot predate registeredAt');
   }
-  const { familyHash, knownAt, ledgerSeq: _ledgerSeq, ledgerHash: _ledgerHash, ...family } =
-    registration;
+  const {
+    familyHash,
+    knownAt,
+    ledgerSeq: _ledgerSeq,
+    ledgerHash: _ledgerHash,
+    ...family
+  } = registration;
   return { family, receipt: { familyHash, knownAt } };
 }
 
