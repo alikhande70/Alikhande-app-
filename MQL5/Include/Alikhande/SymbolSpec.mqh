@@ -47,6 +47,10 @@ private:
    ENUM_SYMBOL_TRADE_MODE      m_trade_mode;
    ENUM_SYMBOL_SWAP_MODE       m_swap_mode;
 
+   //--- Test seam only: >= 0 makes SpreadPts() return this instead of asking
+   //--- the terminal. A broker-loaded spec always leaves it at -1.
+   long     m_spread_override;
+
    static int        DigitsFromStep(const double step)
      {
       if(step <= 0.0) return(0);
@@ -70,6 +74,7 @@ public:
       m_exec_mode  = SYMBOL_TRADE_EXECUTION_MARKET;
       m_trade_mode = SYMBOL_TRADE_MODE_DISABLED;
       m_swap_mode  = SYMBOL_SWAP_MODE_DISABLED;
+      m_spread_override = -1;
      }
 
    //+---------------------------------------------------------------+
@@ -130,6 +135,39 @@ public:
       return(true);
      }
 
+   //+---------------------------------------------------------------+
+   //| TEST SEAM. Builds a spec from explicit values instead of from   |
+   //| a broker, so the volume, stop-distance and filling-mode logic   |
+   //| can be asserted against known inputs with no terminal           |
+   //| connection and no dependence on whichever broker happens to be  |
+   //| logged in.                                                      |
+   //|                                                                 |
+   //| Used only by Scripts/Alikhande/RunTests.mq5. Nothing in the EA  |
+   //| path calls it; a synthetic spec has no live Bid/Ask, so it      |
+   //| cannot be used to trade even by accident.                       |
+   //+---------------------------------------------------------------+
+   void     LoadSynthetic(const string name, const int digits, const double point,
+                          const double tick_size, const double tick_value,
+                          const double contract_size,
+                          const double vol_min, const double vol_max, const double vol_step,
+                          const long stops_level, const long freeze_level,
+                          const long filling_mask,
+                          const ENUM_SYMBOL_TRADE_EXECUTION exec_mode,
+                          const ENUM_SYMBOL_TRADE_MODE trade_mode = SYMBOL_TRADE_MODE_FULL,
+                          const double vol_limit = 0.0,
+                          const long spread_points = 0)
+     {
+      Reset();
+      m_name = name; m_digits = digits; m_point = point;
+      m_tick_size = tick_size; m_tick_value = tick_value; m_contract_size = contract_size;
+      m_vol_min = vol_min; m_vol_max = vol_max; m_vol_step = vol_step; m_vol_limit = vol_limit;
+      m_stops_level = stops_level; m_freeze_level = freeze_level;
+      m_filling_mask = filling_mask; m_exec_mode = exec_mode; m_trade_mode = trade_mode;
+      m_vol_digits = DigitsFromStep(vol_step);
+      m_spread_override = (spread_points >= 0 ? spread_points : 0);
+      m_loaded = true; m_fail_reason = "";
+     }
+
    //--- accessors
    bool     IsLoaded(void)     const { return(m_loaded); }
    string   FailReason(void)   const { return(m_fail_reason); }
@@ -154,7 +192,11 @@ public:
    //--- live values (not cached: these change every tick)
    double   Ask(void)    const { return(SymbolInfoDouble (m_name, SYMBOL_ASK)); }
    double   Bid(void)    const { return(SymbolInfoDouble (m_name, SYMBOL_BID)); }
-   long     SpreadPts(void) const { return(SymbolInfoInteger(m_name, SYMBOL_SPREAD)); }
+   long     SpreadPts(void) const
+     {
+      if(m_spread_override >= 0) return(m_spread_override);
+      return(SymbolInfoInteger(m_name, SYMBOL_SPREAD));
+     }
 
    //--- conversions, always explicit about the unit
    double   PointsToPrice(const double points) const { return(points * m_point); }

@@ -55,7 +55,13 @@ private:
 
    static const int  OFFSET_RECHECK_SECONDS;
 
-   //--- Handles windows that wrap past midnight (e.g. 22 -> 3).
+public:
+   //+---------------------------------------------------------------+
+   //| Window membership, including windows that wrap past midnight    |
+   //| (22 -> 3). Public and static because it is pure: it is the one  |
+   //| piece of session logic that can be asserted directly, without   |
+   //| a clock, and RunTests.mq5 does exactly that.                    |
+   //+---------------------------------------------------------------+
    static bool       HourInWindow(const int hour, const int start, const int end)
      {
       if(start == end) return(false);              // empty window
@@ -63,7 +69,6 @@ private:
       return(hour >= start || hour < end);         // wraps midnight
      }
 
-public:
                      CSessionClock(void) : m_log(NULL), m_gmt_offset_hours(0), m_offset_checked_at(0), m_block_reason("") {}
 
    void              Init(CLogger &log, const SessionParams &p)

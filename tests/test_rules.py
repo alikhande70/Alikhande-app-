@@ -258,3 +258,60 @@ def test_suppression_still_reaches_only_one_code_line():
     ])
     findings = [f for f in lint(code) if f.rule == "MQL006"]
     assert [f.line for f in findings] == [4]
+
+
+def test_same_parameter_name_with_different_types_in_different_functions():
+    """A name that is a double in one function and a long in another.
+
+    This is ordinary overloading, and the integer comparison must stay quiet.
+    Getting this wrong made the linter flag its own assertion harness.
+    """
+    code = "\n".join([
+        "void EqualD(const double actual, const double expected)",
+        "  {",
+        "   if(MathAbs(actual - expected) < 1e-9) Pass();",
+        "  }",
+        "void EqualI(const long actual, const long expected)",
+        "  {",
+        "   if(actual == expected) Pass();",
+        "  }",
+    ])
+    assert "MQL007" not in ids(lint(code))
+
+
+def test_a_double_comparison_is_still_caught_in_its_own_scope():
+    code = "\n".join([
+        "void EqualI(const long actual, const long expected)",
+        "  {",
+        "   if(actual == expected) Pass();",
+        "  }",
+        "void Check(const double a, const double b)",
+        "  {",
+        "   if(a == b) Pass();",
+        "  }",
+    ])
+    findings = [f for f in lint(code) if f.rule == "MQL007"]
+    assert [f.line for f in findings] == [7]
+
+
+def test_file_scope_double_is_visible_inside_a_function():
+    code = "\n".join([
+        "double g_price = 0;",
+        "void Check()",
+        "  {",
+        "   if(g_price == other) return;",
+        "  }",
+    ])
+    assert "MQL007" in ids(lint(code))
+
+
+def test_a_local_redeclaration_shadows_a_file_scope_double():
+    code = "\n".join([
+        "double value = 0;",
+        "void Check()",
+        "  {",
+        "   int value = 1;",
+        "   if(value == limit) return;",
+        "  }",
+    ])
+    assert "MQL007" not in ids(lint(code))

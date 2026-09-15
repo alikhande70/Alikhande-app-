@@ -58,7 +58,14 @@ _RE_PRICE_SERIES = re.compile(
     r"\b(iClose|iOpen|iHigh|iLow|iTime|iVolume|iTickVolume|iSpread)\s*\(([^;]*?)\)"
 )
 _RE_SETASSERIES = re.compile(r"ArraySetAsSeries\s*\(\s*([A-Za-z_]\w*)")
+_FILE_SCOPE = "<file>"
 _RE_DOUBLE_DECL = re.compile(r"\bdouble\s+([A-Za-z_]\w*)")
+# Scalar types that are NOT doubles. Used to detect a name reused with a
+# different type in an inner scope, which shadows the outer declaration.
+_RE_NONDOUBLE_DECL = re.compile(
+    r"\b(?:int|uint|long|ulong|short|ushort|char|uchar|bool|string|datetime|color)"
+    r"\s+([A-Za-z_]\w*)"
+)
 _RE_FLOAT_LITERAL_CMP = re.compile(r"(!=|==)\s*(-?\d+\.\d+|-?\.\d+)")
 _RE_INT_TICKET = re.compile(r"\b(?:int|uint|long)\s+(\w*[Tt]icket\w*)\b")
 _RE_RAW_ORDERSEND = re.compile(r"\bOrderSend(?:Async)?\s*\(")
@@ -211,15 +218,35 @@ def rule_bar_zero_price(src: SourceFile) -> list[Finding]:
     return out
 
 
+def _declarations_by_scope(src: SourceFile) -> tuple[dict, dict]:
+    """Collect ``double`` and non-double declarations, keyed by enclosing scope.
+
+    Scope matters. A file-wide set of "identifiers that are doubles somewhere"
+    produces false positives the moment two functions reuse a parameter name
+    with different types -- ``EqualD(double actual, ...)`` next to
+    ``EqualI(long actual, ...)`` is ordinary, correct code, and flagging the
+    integer comparison would be wrong.
+    """
+    doubles: dict[str, set[str]] = {}
+    others: dict[str, set[str]] = {}
+    for line in src.lines:
+        scope = line.func or _FILE_SCOPE
+        for m in _RE_DOUBLE_DECL.finditer(line.code):
+            doubles.setdefault(scope, set()).add(m.group(1))
+        for m in _RE_NONDOUBLE_DECL.finditer(line.code):
+            others.setdefault(scope, set()).add(m.group(1))
+    return doubles, others
+
+
 def rule_double_equality(src: SourceFile) -> list[Finding]:
     """MQL007 -- doubles compared with == or !=.
 
-    Two passes: an exact match against a float literal, and a match against
-    any identifier the file declares as a double. Both are precise; neither
-    tries to infer types it cannot see.
+    Two passes: an exact match against a float literal, and a match against an
+    identifier declared ``double`` in the same scope. Both are precise;
+    neither tries to infer a type it cannot see.
     """
     out = []
-    doubles = {m.group(1) for line in src.lines for m in _RE_DOUBLE_DECL.finditer(line.code)}
+    doubles, others = _declarations_by_scope(src)
 
     for line in src.lines:
         for m in _RE_FLOAT_LITERAL_CMP.finditer(line.code):
@@ -229,11 +256,19 @@ def rule_double_equality(src: SourceFile) -> list[Finding]:
                 "Float residue makes this unreliable; compare with a tolerance.",
                 line.raw,
             ))
-        if not doubles:
+
+        scope = line.func or _FILE_SCOPE
+        local_doubles = doubles.get(scope, set())
+        local_others = others.get(scope, set())
+        # A file-scope double still counts, unless this scope redeclares the
+        # name as something else -- the inner declaration shadows the outer.
+        visible = local_doubles | (doubles.get(_FILE_SCOPE, set()) - local_others)
+        if not visible:
             continue
+
         for m in re.finditer(r"([A-Za-z_]\w*)\s*(==|!=)\s*([A-Za-z_]\w*)", line.code):
             lhs, op, rhs = m.group(1), m.group(2), m.group(3)
-            if lhs in doubles or rhs in doubles:
+            if lhs in visible or rhs in visible:
                 out.append(Finding(
                     "MQL007", MEDIUM, src.path, line.number,
                     f"'{lhs} {op} {rhs}' compares a declared double with {op}. "
