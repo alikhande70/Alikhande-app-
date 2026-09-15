@@ -53,11 +53,15 @@ private:
    //--- YYYYMMDD as an exact integer. day_of_year was rejected: it repeats
    //--- across years, so an EA restarted exactly one year later would think
    //--- the day had not rolled and would keep a stale loss budget.
-   static double     DayStamp(const datetime t)
+   //---
+   //--- Returned as long, not double. The value is integral, and integral
+   //--- data compared as integers needs no tolerance argument -- the storage
+   //--- layer happens to be a double, but the comparison should not be.
+   static long       DayStamp(const datetime t)
      {
       MqlDateTime d;
       TimeToStruct(t, d);
-      return((double)(d.year * 10000 + d.mon * 100 + d.day));
+      return((long)d.year * 10000 + (long)d.mon * 100 + (long)d.day);
      }
 
    static double     Equity(void) { return(AccountInfoDouble(ACCOUNT_EQUITY)); }
@@ -106,7 +110,7 @@ public:
       double eq = Equity();
       if(!GlobalVariableCheck(m_gv_day_equity))  GlobalVariableSet(m_gv_day_equity,  eq);
       if(!GlobalVariableCheck(m_gv_peak_equity)) GlobalVariableSet(m_gv_peak_equity, eq);
-      if(!GlobalVariableCheck(m_gv_day_stamp))   GlobalVariableSet(m_gv_day_stamp,   DayStamp(TimeCurrent()));
+      if(!GlobalVariableCheck(m_gv_day_stamp))   GlobalVariableSet(m_gv_day_stamp,   (double)DayStamp(TimeCurrent()));
 
       // Re-derive the halt state from the persisted anchors rather than
       // starting optimistic: a restart mid-drawdown must not resume trading.
@@ -134,18 +138,18 @@ public:
 
    void              RollDayIfNeeded(void)
      {
-      double now_stamp    = DayStamp(TimeCurrent());
-      double stored_stamp = GlobalVariableGet(m_gv_day_stamp);
+      long now_stamp    = DayStamp(TimeCurrent());
+      long stored_stamp = (long)GlobalVariableGet(m_gv_day_stamp);
 
       if(now_stamp == stored_stamp) return;
 
       double eq = Equity();
-      GlobalVariableSet(m_gv_day_stamp,  now_stamp);
+      GlobalVariableSet(m_gv_day_stamp,  (double)now_stamp);
       GlobalVariableSet(m_gv_day_equity, eq);
       m_halted      = false;
       m_halt_reason = "";
-      m_log.Info(StringFormat("New trading day (%d) - daily equity anchor reset to %s",
-                              (int)now_stamp, DoubleToString(eq, 2)));
+      m_log.Info(StringFormat("New trading day (%I64d) - daily equity anchor reset to %s",
+                              now_stamp, DoubleToString(eq, 2)));
      }
 
    void              UpdatePeakEquity(void)

@@ -361,6 +361,8 @@ void ResyncPositions()
 //--- syncing changes the bar count without a new bar having formed.
 bool IsNewBar()
   {
+   // mql5lint: allow MQL006 - bar 0's OPEN TIME is the new-bar signal itself, not a
+   // price read. Nothing is decided from bar 0's values; the strategy reads shift >= 1.
    datetime t = iTime(_Symbol, PERIOD_CURRENT, 0);
    if(t == 0 || t == g_last_bar_time) return(false);
    g_last_bar_time = t;

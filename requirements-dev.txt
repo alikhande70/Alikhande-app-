@@ -1,0 +1,3 @@
+# Tooling only. Nothing here is needed to run the EA -- MQL5 has no package
+# manager and the terminal loads compiled .ex5 files with no dependencies.
+pytest>=8.0
