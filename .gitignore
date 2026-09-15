@@ -1,0 +1,43 @@
+# --- MetaTrader 5 / MQL5 build artifacts ---
+*.ex5
+*.ex4
+*.log
+MQL5/Logs/
+MQL5/Files/*.csv
+MQL5/Files/*.bin
+!MQL5/Files/Alikhande/.gitkeep
+
+# MetaEditor scratch
+*.mqproj.user
+*.bak
+
+# --- Strategy Tester output (never commit: large, machine-specific) ---
+tester/
+*.opt
+*.set.local
+
+# --- Python ---
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+*.egg-info/
+dist/
+build/
+
+# --- Editors / OS ---
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# --- Secrets: nothing with credentials belongs in this repo ---
+.env
+.env.*
+*.key
+*.pem
+credentials*.json
+accounts.ini
