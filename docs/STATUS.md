@@ -36,7 +36,7 @@ that is the single largest open risk and the immediate next step.
 | Signal boundary + EMA-cross reference | Written | **Not compiled. Not an edge — no validated expectancy** |
 | In-terminal assertion suite | Written | **Not compiled** |
 | `mql5lint` + 61 tests | **Working** | `make check` passes; runs in CI |
-| CI workflow | Written | Steps mirror a passing local `make check`; **first GitHub run pending** |
+| CI workflow | **Working** | Run [34956953390](https://github.com/alikhande70/Alikhande-app-/actions/runs/34956953390) on `db9572d` concluded **success** |
 | Documentation | Written | — |
 
 ### Verification legend
@@ -119,3 +119,4 @@ strategy-agnostic so these answers can arrive without rework.
 | 2026-09-15 | `mql5lint`, 61 tests, CI, `make check` |
 | 2026-09-15 | In-terminal assertion suite; scope-aware fix to MQL007 |
 | 2026-09-15 | Documentation set and research archive |
+| 2026-09-15 | First CI run on GitHub concluded success |

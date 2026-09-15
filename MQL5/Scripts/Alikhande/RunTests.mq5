@@ -60,6 +60,7 @@ void OnStart()
    TestFillingModeResolution();
    TestRiskMath();
    TestRetcodeClassification();
+   TestStopRecomputation();
    TestTradeModeGuards();
    TestSessionWindows();
    TestSafetyGate();
@@ -291,6 +292,65 @@ void TestRetcodeClassification()
    for(int i = 0; i < ArraySize(spec_errors); i++)
       if(COrderExecutor::Classify(spec_errors[i]) == RC_RETRYABLE) any_retryable = true;
    T.IsFalse(any_retryable, "no spec error is ever classified retryable");
+  }
+
+//====================================================================
+//  Retry stop recomputation -- regression for the unstopped-retry bug
+//====================================================================
+void TestStopRecomputation()
+  {
+   T.Suite("retry stop recomputation");
+
+   const double price    = 2650.00;   // gold-ish
+   const double min_dist = 0.80;      // 80 points on a 2-digit feed
+
+   //--- A stop already further than the minimum keeps its distance.
+   T.EqualD(COrderExecutor::RecomputeStop(true, price, 2640.00, min_dist), 2640.00,
+            "BUY: a stop already beyond the minimum keeps its distance", 1e-6);
+   T.EqualD(COrderExecutor::RecomputeStop(false, price, 2660.00, min_dist), 2660.00,
+            "SELL: a stop already beyond the minimum keeps its distance", 1e-6);
+
+   //--- A stop inside the minimum is pushed out to it, on the correct side.
+   T.EqualD(COrderExecutor::RecomputeStop(true, price, 2649.90, min_dist), price - min_dist,
+            "BUY: a too-close stop is widened to the broker minimum, below price", 1e-6);
+   T.EqualD(COrderExecutor::RecomputeStop(false, price, 2650.10, min_dist), price + min_dist,
+            "SELL: a too-close stop is widened to the broker minimum, above price", 1e-6);
+
+   //--- THE REGRESSION. 0.0 means "no stop was requested", which is a
+   //--- deliberate state on the open-then-protect path. Treating it as a
+   //--- price made the distance MathAbs(price - 0) -- the whole price -- so a
+   //--- SELL came back with a stop at twice the market, and a BUY came back
+   //--- at 0.0 and looked right only by arithmetic coincidence.
+   T.EqualD(COrderExecutor::RecomputeStop(true,  price, 0.0, min_dist), 0.0,
+            "BUY: an unstopped request stays unstopped through a retry", 1e-9);
+   T.EqualD(COrderExecutor::RecomputeStop(false, price, 0.0, min_dist), 0.0,
+            "SELL: an unstopped request stays unstopped - NOT a stop at 2x the price", 1e-9);
+   T.NotEqualD(COrderExecutor::RecomputeStop(false, price, 0.0, min_dist), price * 2.0,
+               "SELL: the regression value (2x price) is specifically not produced", 1e-9);
+
+   //--- A missing price cannot produce a stop.
+   T.EqualD(COrderExecutor::RecomputeStop(true, 0.0, 2640.00, min_dist), 0.0,
+            "no price yields no stop rather than a nonsense one", 1e-9);
+
+   //--- Targets follow the same contract, mirrored.
+   T.EqualD(COrderExecutor::RecomputeTarget(true, price, 2680.00, min_dist), 2680.00,
+            "BUY: a target beyond the minimum keeps its distance", 1e-6);
+   T.EqualD(COrderExecutor::RecomputeTarget(false, price, 2620.00, min_dist), 2620.00,
+            "SELL: a target beyond the minimum keeps its distance", 1e-6);
+   T.EqualD(COrderExecutor::RecomputeTarget(true, price, 2650.05, min_dist), price + min_dist,
+            "BUY: a too-close target is pushed out above price", 1e-6);
+   T.EqualD(COrderExecutor::RecomputeTarget(false, price, 2649.95, min_dist), price - min_dist,
+            "SELL: a too-close target is pushed out below price", 1e-6);
+   T.EqualD(COrderExecutor::RecomputeTarget(true,  price, 0.0, min_dist), 0.0,
+            "BUY: no target requested stays no target");
+   T.EqualD(COrderExecutor::RecomputeTarget(false, price, 0.0, min_dist), 0.0,
+            "SELL: no target requested stays no target");
+
+   //--- Sides never cross the entry price.
+   T.IsTrue(COrderExecutor::RecomputeStop(true,  price, 2649.99, min_dist) < price,
+            "a BUY stop always ends up below the entry price");
+   T.IsTrue(COrderExecutor::RecomputeStop(false, price, 2650.01, min_dist) > price,
+            "a SELL stop always ends up above the entry price");
   }
 
 //====================================================================

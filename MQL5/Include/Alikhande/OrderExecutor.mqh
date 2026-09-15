@@ -172,6 +172,37 @@ public:
       return("UNKNOWN");
      }
 
+   //+---------------------------------------------------------------+
+   //| Re-derive a stop from a fresh price after a requote.            |
+   //|                                                                 |
+   //| THE ZERO CASE IS THE POINT. old_sl == 0.0 means "no stop was     |
+   //| requested", which is a deliberate state: OpenThenProtect sends   |
+   //| an unstopped order on purpose under Instant execution. Treating  |
+   //| 0.0 as a stop price makes the distance MathAbs(price - 0) --     |
+   //| the entire price -- so a SELL would come back with a stop at     |
+   //| twice the market. A BUY would come back at 0.0 and look correct  |
+   //| purely by arithmetic coincidence.                                |
+   //|                                                                 |
+   //| Public and static so it can be asserted directly; the order path |
+   //| that uses it needs a trade server and cannot be unit-tested.     |
+   //+---------------------------------------------------------------+
+   static double     RecomputeStop(const bool is_buy, const double price,
+                                   const double old_sl, const double min_dist)
+     {
+      if(old_sl <= 0.0 || price <= 0.0) return(0.0);
+      double dist = MathMax(MathAbs(price - old_sl), min_dist);
+      return(is_buy ? price - dist : price + dist);
+     }
+
+   //--- Same contract for the target: 0.0 in, 0.0 out.
+   static double     RecomputeTarget(const bool is_buy, const double price,
+                                     const double old_tp, const double min_dist)
+     {
+      if(old_tp <= 0.0 || price <= 0.0) return(0.0);
+      double dist = MathMax(MathAbs(old_tp - price), min_dist);
+      return(is_buy ? price + dist : price - dist);
+     }
+
    //====================================================================
    //  OWNERSHIP
    //====================================================================
@@ -368,13 +399,13 @@ private:
          if(p <= 0.0) { m_log.Error("No price on retry - aborting."); return(false); }
 
          double min_dist = m_spec.MinStopDistance(m_stop_buffer_pts);
-         double sl_dist  = MathMax(MathAbs(p - sl), min_dist);
-         sl = m_spec.NormalizePrice(is_buy ? p - sl_dist : p + sl_dist);
-         if(tp > 0.0)
-           {
-            double tp_dist = MathMax(MathAbs(tp - p), min_dist);
-            tp = m_spec.NormalizePrice(is_buy ? p + tp_dist : p - tp_dist);
-           }
+
+         //--- An unstopped request must stay unstopped through the retry.
+         //--- See RecomputeStop for why the zero case needs saying out loud.
+         double new_sl = RecomputeStop(is_buy, p, sl, min_dist);
+         double new_tp = RecomputeTarget(is_buy, p, tp, min_dist);
+         sl = (new_sl > 0.0) ? m_spec.NormalizePrice(new_sl) : 0.0;
+         tp = (new_tp > 0.0) ? m_spec.NormalizePrice(new_tp) : 0.0;
         }
 
       m_log.Error("All retries exhausted.");
