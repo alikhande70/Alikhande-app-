@@ -158,8 +158,18 @@ int OnInit()
 
    //--- 7. Strategy.
    g_signal = new CEmaCrossSignal(InpFastEMA, InpSlowEMA, InpATRPeriod, InpSLxATR, InpTPxATR);
-   if(g_signal == NULL || !g_signal.Attach(g_spec, g_log))
+   if(g_signal == NULL)
      {
+      g_log.Error("Signal allocation failed");
+      return(INIT_FAILED);
+     }
+   if(!g_signal.Attach(g_spec, g_log))
+     {
+      // Release here rather than relying on OnDeinit running after a failed
+      // OnInit. It probably does, but "probably" is not a reason to leave an
+      // object and its indicator handles alive on an error path.
+      delete g_signal;
+      g_signal = NULL;
       g_log.Error("Signal initialisation failed");
       return(INIT_FAILED);
      }
