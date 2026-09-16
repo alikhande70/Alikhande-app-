@@ -60,6 +60,7 @@ that is the single largest open risk and the immediate next step.
 | R-05 | Most research findings are UNVERIFIED by the maintainer. | Medium | `docs/research/` carries a provenance header. Only the filling-mode finding was independently read and allowed to change code. |
 | R-06 | The bundled EMA cross could be mistaken for a strategy. | Medium | Says so in its own header, in `docs/ARCHITECTURE.md` and here. |
 | R-07 | Kill switches evaluate on ticks; a gap or halt can exceed a limit before the EA sees a price. | Low | Inherent to the platform. Documented in `docs/SAFETY.md` §7. |
+| R-08 | The total-drawdown halt releases if equity recovers, unlike a prop firm's permanent breach. | Low | Intended circuit-breaker behaviour; documented in `docs/SAFETY.md` §7. Must be closed deliberately before any funded account. |
 
 ---
 
@@ -120,3 +121,4 @@ strategy-agnostic so these answers can arrive without rework.
 | 2026-09-15 | In-terminal assertion suite; scope-aware fix to MQL007 |
 | 2026-09-15 | Documentation set and research archive |
 | 2026-09-15 | First CI run on GitHub concluded success |
+| 2026-09-16 | Self-review of the order and clock layers: three bugs found and fixed |

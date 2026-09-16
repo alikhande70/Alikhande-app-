@@ -315,3 +315,24 @@ def test_a_local_redeclaration_shadows_a_file_scope_double():
         "  }",
     ])
     assert "MQL007" not in ids(lint(code))
+
+
+def test_a_function_whose_name_contains_ticket_is_not_a_narrow_ticket():
+    """`int CloseTicketsNotIn(...)` returns a count, not a ticket.
+
+    MQL009 matched it because the name contains "Ticket", which would have
+    pushed an author to rename a correctly-named function to satisfy a linter.
+    """
+    code = "int CloseTicketsNotIn(const ulong &known[], const string reason)\n  {\n   return(0);\n  }\n"
+    assert "MQL009" not in ids(lint(code))
+
+
+def test_a_narrow_ticket_variable_is_still_caught():
+    assert "MQL009" in ids(lint("int ticket = 5;\n"))
+    assert "MQL009" in ids(lint("long positionTicket = 5;\n"))
+    assert "MQL009" in ids(lint("uint ticketId = 5;\n"))
+
+
+def test_a_ulong_ticket_returning_function_is_clean():
+    code = "ulong SoleNewTicket(const ulong &a[], const ulong &b[])\n  {\n   return(0);\n  }\n"
+    assert "MQL009" not in ids(lint(code))

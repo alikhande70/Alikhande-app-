@@ -99,11 +99,17 @@ public:
       datetime gmt = TimeGMT();
       if(gmt <= 0 || now <= 0) return;
 
+      //--- Capture "is this the first measurement" BEFORE stamping the clock.
+      //--- Testing m_offset_checked_at after assigning `now` to it is always
+      //--- true, so the first call compared the real offset against the
+      //--- constructor's 0 and announced a DST change that had not happened.
+      bool first = (m_offset_checked_at == 0);
+
       int prev = m_gmt_offset_hours;
       m_gmt_offset_hours  = (int)MathRound((double)(now - gmt) / 3600.0);
       m_offset_checked_at = now;
 
-      if(m_offset_checked_at != 0 && prev != m_gmt_offset_hours && m_log != NULL)
+      if(!first && prev != m_gmt_offset_hours && m_log != NULL)
          m_log.Warn(StringFormat("Broker GMT offset changed %+d h -> %+d h (DST boundary). Session windows now map to different GMT hours.",
                                  prev, m_gmt_offset_hours));
      }
@@ -180,9 +186,15 @@ public:
 
    //--- Server time expressed as GMT, for logs that have to be compared
    //--- against news calendars.
+   //--- Kept in `long` throughout. Casting a negative offset to datetime
+   //--- first -- brokers west of GMT have one -- is not something to rely on;
+   //--- doing the arithmetic in a signed integer type and converting once at
+   //--- the end has no such question over it.
    datetime          ToGMT(const datetime server_time) const
      {
-      return(server_time - (datetime)(m_gmt_offset_hours * 3600));
+      long shifted = (long)server_time - (long)m_gmt_offset_hours * 3600;
+      if(shifted < 0) shifted = 0;
+      return((datetime)shifted);
      }
   };
 

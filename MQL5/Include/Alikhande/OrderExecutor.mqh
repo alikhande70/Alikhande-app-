@@ -462,6 +462,16 @@ private:
       OrderResultReset(out);
       out.volume_requested = lots;
 
+      //--- Snapshot what we already own BEFORE sending. Identifying the new
+      //--- position by "most recent" afterwards is not safe: POSITION_TIME has
+      //--- one-second resolution, so a position opened in the same second as an
+      //--- existing one is indistinguishable by time, and picking the wrong one
+      //--- means attaching this entry's stop to a healthy older position - and,
+      //--- if the modify then fails, closing that healthy position while the
+      //--- genuinely unprotected one keeps running.
+      ulong before[];
+      SnapshotOwnedTickets(before);
+
       if(!SendWithRetry(is_buy, lots, 0.0, 0.0, out))
         {
          m_log.Error("Open-then-protect: the unstopped open also failed.");
@@ -474,11 +484,14 @@ private:
                   ? m_spec.NormalizePrice(is_buy ? entry + tp_dist : entry - tp_dist)
                   : 0.0;
 
-      ulong ticket = FindOwnedTicketByDeal(out.deal);
+      ulong ticket = FindNewTicket(before, out.deal);
       if(ticket == 0)
         {
-         m_log.Error("Open-then-protect: cannot locate the new position. Closing everything owned.");
-         CloseAllOwned("unlocatable position after open");
+         //--- Close only what appeared since the snapshot. Closing everything
+         //--- owned would punish positions that were already correctly stopped.
+         m_log.Error("Open-then-protect: cannot identify the new position. "
+                     "Closing whatever appeared since the snapshot.");
+         CloseTicketsNotIn(before, "unidentifiable position after an unstopped open");
          out.ok = false;
          return(false);
         }
@@ -504,30 +517,100 @@ private:
       return(false);
      }
 
-   ulong             FindOwnedTicketByDeal(const ulong deal)
+   //--- Every position this EA owns right now.
+   void              SnapshotOwnedTickets(ulong &dst[])
      {
-      //--- Prefer the position whose identifier matches the deal's position id.
-      if(deal != 0 && HistoryDealSelect(deal))
-        {
-         ulong pos_id = (ulong)HistoryDealGetInteger(deal, DEAL_POSITION_ID);
-         if(pos_id != 0 && m_pos.SelectByTicket(pos_id) && Owns())
-            return(pos_id);
-        }
-
-      //--- Fallback: the newest owned position.
-      ulong    best_ticket = 0;
-      datetime best_time   = 0;
+      ArrayResize(dst, 0);
       for(int i = PositionsTotal() - 1; i >= 0; i--)
         {
          if(!m_pos.SelectByIndex(i)) continue;
          if(!Owns()) continue;
-         if(m_pos.Time() >= best_time)
+         int n = ArraySize(dst);
+         ArrayResize(dst, n + 1);
+         dst[n] = m_pos.Ticket();
+        }
+     }
+
+   //--- Close only the owned positions absent from the snapshot.
+   int               CloseTicketsNotIn(const ulong &known[], const string reason)
+     {
+      ulong now_owned[];
+      SnapshotOwnedTickets(now_owned);
+      int closed = 0;
+      for(int i = 0; i < ArraySize(now_owned); i++)
+        {
+         if(TicketInArray(now_owned[i], known)) continue;
+         if(ClosePosition(now_owned[i], reason)) closed++;
+        }
+      return(closed);
+     }
+
+public:
+   //--- Pure membership test, public and static so it can be asserted directly.
+   //--- The ticket-diff logic is the part of new-position identification that
+   //--- can be tested without a trade server.
+   static bool       TicketInArray(const ulong needle, const ulong &hay[])
+     {
+      for(int i = 0; i < ArraySize(hay); i++)
+         if(hay[i] == needle) return(true);
+      return(false);
+     }
+
+   //--- Exactly one ticket present now but absent from `known`, or 0.
+   //--- 0 means "cannot identify", which callers must treat as a failure --
+   //--- never as "probably the newest one".
+   static ulong      SoleNewTicket(const ulong &now_owned[], const ulong &known[])
+     {
+      ulong found = 0;
+      int   count = 0;
+      for(int i = 0; i < ArraySize(now_owned); i++)
+        {
+         if(TicketInArray(now_owned[i], known)) continue;
+         found = now_owned[i];
+         count++;
+        }
+      return(count == 1 ? found : 0);
+     }
+
+private:
+   //+---------------------------------------------------------------+
+   //| Identify the position just opened.                              |
+   //|                                                                 |
+   //| Two routes, in order of reliability:                            |
+   //|   1. the deal's DEAL_POSITION_ID -- exact when history is there  |
+   //|   2. the ticket that was not owned before the send               |
+   //|                                                                 |
+   //| Deliberately NOT a route: "the position with the latest time".   |
+   //| POSITION_TIME is second-resolution, so two positions opened in    |
+   //| the same second are indistinguishable, and guessing wrong here   |
+   //| attaches this entry's stop to somebody else's position.          |
+   //+---------------------------------------------------------------+
+   ulong             FindNewTicket(const ulong &before[], const ulong deal)
+     {
+      if(deal != 0)
+        {
+         //--- Defensive: ask for a recent history window before selecting the
+         //--- deal. Harmless when the deal is already cached.
+         HistorySelect(TimeCurrent() - 3600, TimeCurrent() + 60);
+         if(HistoryDealSelect(deal))
            {
-            best_time   = m_pos.Time();
-            best_ticket = m_pos.Ticket();
+            ulong pos_id = (ulong)HistoryDealGetInteger(deal, DEAL_POSITION_ID);
+            if(pos_id != 0 && m_pos.SelectByTicket(pos_id) && Owns())
+               return(pos_id);
            }
         }
-      return(best_ticket);
+
+      ulong now_owned[];
+      SnapshotOwnedTickets(now_owned);
+      ulong sole = SoleNewTicket(now_owned, before);
+
+      if(sole == 0)
+         m_log.Error(StringFormat(
+            "Cannot identify the new position: owned %d before, %d now, and the deal "
+            "lookup did not resolve. Refusing to guess.",
+            ArraySize(before), ArraySize(now_owned)));
+
+      return(sole);
      }
 
 public:

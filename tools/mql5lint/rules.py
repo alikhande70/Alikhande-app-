@@ -67,7 +67,10 @@ _RE_NONDOUBLE_DECL = re.compile(
     r"\s+([A-Za-z_]\w*)"
 )
 _RE_FLOAT_LITERAL_CMP = re.compile(r"(!=|==)\s*(-?\d+\.\d+|-?\.\d+)")
-_RE_INT_TICKET = re.compile(r"\b(?:int|uint|long)\s+(\w*[Tt]icket\w*)\b")
+# The negative lookahead excludes FUNCTION declarations: `int CloseTicketsNotIn(...)`
+# returns a count and is not a ticket variable. Without it the rule fires on any
+# function whose name happens to contain "ticket".
+_RE_INT_TICKET = re.compile(r"\b(?:int|uint|long)\s+(\w*[Tt]icket\w*)\b(?!\s*\()")
 _RE_RAW_ORDERSEND = re.compile(r"\bOrderSend(?:Async)?\s*\(")
 _RE_UP_LOOP_POSITIONS = re.compile(
     r"for\s*\(\s*(?:int\s+)?(\w+)\s*=\s*0\s*;\s*\1\s*<\s*PositionsTotal\s*\(\s*\)"

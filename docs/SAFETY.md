@@ -143,6 +143,13 @@ marketing:
   permits losing 3% a day.
 - **Kill switches are evaluated on ticks.** On a symbol that stops ticking —
   a weekend gap, a halt — a limit can be exceeded before the EA sees a price.
+- **The total-drawdown halt is a circuit breaker, not a terminal breach.** It
+  measures distance from peak equity, and peak equity only rises. If the
+  account draws down past the limit, halts, and then recovers to within the
+  limit, trading resumes. That is the intended behaviour for a drawdown
+  circuit breaker; it is **not** how a prop firm's maximum-drawdown rule works,
+  where a breach is permanent. If this system is ever pointed at a funded
+  account, that difference has to be closed deliberately.
 - **`CSymbolSpec::LoadSynthetic` exists for tests.** It builds a spec from
   literals with no live Bid/Ask, so it cannot place a trade, but it is a
   non-production entry point and is documented as such.

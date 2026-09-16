@@ -61,6 +61,7 @@ void OnStart()
    TestRiskMath();
    TestRetcodeClassification();
    TestStopRecomputation();
+   TestNewPositionIdentification();
    TestTradeModeGuards();
    TestSessionWindows();
    TestSafetyGate();
@@ -351,6 +352,55 @@ void TestStopRecomputation()
             "a BUY stop always ends up below the entry price");
    T.IsTrue(COrderExecutor::RecomputeStop(false, price, 2650.01, min_dist) > price,
             "a SELL stop always ends up above the entry price");
+  }
+
+//====================================================================
+//  New-position identification -- regression for the wrong-ticket bug
+//====================================================================
+void TestNewPositionIdentification()
+  {
+   T.Suite("new position identification");
+
+   ulong empty[];
+   ulong one[];   ArrayResize(one, 1);   one[0]   = 100;
+   ulong two[];   ArrayResize(two, 2);   two[0]   = 100; two[1] = 200;
+   ulong three[]; ArrayResize(three, 3); three[0] = 100; three[1] = 200; three[2] = 300;
+
+   //--- membership
+   T.IsTrue (COrderExecutor::TicketInArray(100, two),   "a present ticket is found");
+   T.IsTrue (COrderExecutor::TicketInArray(200, two),   "the last element is found");
+   T.IsFalse(COrderExecutor::TicketInArray(300, two),   "an absent ticket is not found");
+   T.IsFalse(COrderExecutor::TicketInArray(100, empty), "nothing is found in an empty snapshot");
+
+   //--- the normal case: exactly one position appeared
+   T.EqualI((long)COrderExecutor::SoleNewTicket(three, two), 300,
+            "one new ticket against a two-ticket snapshot is identified");
+   T.EqualI((long)COrderExecutor::SoleNewTicket(one, empty), 100,
+            "the first position on an empty snapshot is identified");
+
+   //--- THE REGRESSION. Identification must not depend on ordering, and must
+   //--- not depend on open time at all: POSITION_TIME is second-resolution, so
+   //--- a position opened in the same second as an existing one used to be
+   //--- indistinguishable. Picking the wrong one attached this entry's stop to
+   //--- a healthy older position, and on a failed modify closed that healthy
+   //--- position while the genuinely unprotected one kept running.
+   ulong reordered[]; ArrayResize(reordered, 3);
+   reordered[0] = 300; reordered[1] = 100; reordered[2] = 200;
+   T.EqualI((long)COrderExecutor::SoleNewTicket(reordered, two), 300,
+            "the new ticket is found regardless of iteration order - no time comparison involved");
+
+   //--- refusing to guess
+   T.EqualI((long)COrderExecutor::SoleNewTicket(two, two), 0,
+            "nothing new returns 0, not a guess at the newest position");
+   T.EqualI((long)COrderExecutor::SoleNewTicket(three, one), 0,
+            "TWO new tickets is ambiguous and returns 0 rather than picking one");
+   T.EqualI((long)COrderExecutor::SoleNewTicket(empty, two), 0,
+            "an empty current snapshot returns 0");
+
+   //--- a position vanishing while another appears is still unambiguous
+   ulong vanished[]; ArrayResize(vanished, 2); vanished[0] = 200; vanished[1] = 300;
+   T.EqualI((long)COrderExecutor::SoleNewTicket(vanished, two), 300,
+            "one gone and one new still identifies the new one");
   }
 
 //====================================================================
