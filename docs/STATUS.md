@@ -124,3 +124,4 @@ strategy-agnostic so these answers can arrive without rework.
 | 2026-09-16 | Self-review of the order and clock layers: three bugs found and fixed |
 | 2026-09-16 | Self-review of the kill switches: silent-disable hole found and fixed |
 | 2026-09-16 | Explicit signal cleanup on the OnInit failure path |
+| 2026-09-16 | Two Routines created: 3-hourly engineering loop, weekly MT5/MQL5 research watch (`docs/AUTOMATION.md`) |

@@ -3,6 +3,12 @@
 An MQL5 / MetaTrader 5 trading system. Read `docs/STATUS.md` first; it is the
 single source of truth for project state.
 
+Two Routines work on this repository on a schedule, each in a fresh session
+with no memory of the last. If you are one of them, `docs/AUTOMATION.md`
+describes what runs, when, and what each run is expected to do — including
+that stopping with "nothing useful to do without the owner" is a correct
+outcome, and inventing work to look busy is not.
+
 ## Non-negotiable
 
 1. **Never define `ALIKHANDE_ALLOW_LIVE`.** It is the compile-time half of the
