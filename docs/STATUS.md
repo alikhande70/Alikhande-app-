@@ -122,3 +122,4 @@ strategy-agnostic so these answers can arrive without rework.
 | 2026-09-15 | Documentation set and research archive |
 | 2026-09-15 | First CI run on GitHub concluded success |
 | 2026-09-16 | Self-review of the order and clock layers: three bugs found and fixed |
+| 2026-09-16 | Self-review of the kill switches: silent-disable hole found and fixed |

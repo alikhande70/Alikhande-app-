@@ -66,6 +66,41 @@ private:
 
    static double     Equity(void) { return(AccountInfoDouble(ACCOUNT_EQUITY)); }
 
+   //+---------------------------------------------------------------+
+   //| Read an equity anchor, re-establishing it if it has vanished.   |
+   //|                                                                 |
+   //| GlobalVariableGet returns 0 for a variable that does not exist, |
+   //| and the previous code guarded with `if(anchor > 0.0)` -- so a    |
+   //| missing anchor SILENTLY DISABLED the kill switch it belonged to. |
+   //| Terminal globals are user-visible and user-deletable (F3), and   |
+   //| clearing them is an ordinary tidy-up action. An EA whose daily    |
+   //| loss limit quietly stops existing because of a stray keypress is |
+   //| worse than one that has no limit at all, because the operator    |
+   //| still believes there is one.                                     |
+   //|                                                                 |
+   //| Re-anchoring to current equity does hand out a fresh budget, so  |
+   //| it is logged at ERROR rather than passed over. The alternatives   |
+   //| are worse: silence hides it, and halting outright turns a stray  |
+   //| keypress into a dead EA.                                         |
+   //+---------------------------------------------------------------+
+   double            ReadAnchor(const string key, const string label)
+     {
+      if(GlobalVariableCheck(key))
+        {
+         double v = GlobalVariableGet(key);
+         if(v > 0.0) return(v);
+        }
+
+      double eq = Equity();
+      GlobalVariableSet(key, eq);
+      m_log.Error(StringFormat(
+         "%s anchor was missing and has been re-established at %s. THE CORRESPONDING "
+         "LOSS BUDGET HAS BEEN RESET. If you did not clear the terminal's global "
+         "variables, this kill switch was not protecting the account.",
+         label, DoubleToString(eq, 2)));
+      return(eq);
+     }
+
 public:
                      CRiskManager(void) : m_spec(NULL), m_log(NULL), m_halted(false), m_halt_reason("") {}
 
@@ -138,24 +173,36 @@ public:
 
    void              RollDayIfNeeded(void)
      {
-      long now_stamp    = DayStamp(TimeCurrent());
-      long stored_stamp = (long)GlobalVariableGet(m_gv_day_stamp);
+      long now_stamp = DayStamp(TimeCurrent());
 
-      if(now_stamp == stored_stamp) return;
+      //--- A missing stamp is NOT a new day, and saying so would be a lie in
+      //--- the journal. Both cases re-anchor, but only one of them is routine.
+      bool stamp_missing = !GlobalVariableCheck(m_gv_day_stamp);
+      long stored_stamp  = stamp_missing ? 0 : (long)GlobalVariableGet(m_gv_day_stamp);
+
+      if(!stamp_missing && now_stamp == stored_stamp) return;
 
       double eq = Equity();
       GlobalVariableSet(m_gv_day_stamp,  (double)now_stamp);
       GlobalVariableSet(m_gv_day_equity, eq);
       m_halted      = false;
       m_halt_reason = "";
-      m_log.Info(StringFormat("New trading day (%I64d) - daily equity anchor reset to %s",
-                              now_stamp, DoubleToString(eq, 2)));
+
+      if(stamp_missing)
+         m_log.Error(StringFormat(
+            "Day stamp was missing - re-anchored to %I64d at equity %s. THE DAILY LOSS "
+            "BUDGET HAS BEEN RESET and any halt has been cleared. This is not a new "
+            "trading day; the terminal's global variables were removed.",
+            now_stamp, DoubleToString(eq, 2)));
+      else
+         m_log.Info(StringFormat("New trading day (%I64d) - daily equity anchor reset to %s",
+                                 now_stamp, DoubleToString(eq, 2)));
      }
 
    void              UpdatePeakEquity(void)
      {
       double eq   = Equity();
-      double peak = GlobalVariableGet(m_gv_peak_equity);
+      double peak = ReadAnchor(m_gv_peak_equity, "Peak equity");
       if(eq > peak) GlobalVariableSet(m_gv_peak_equity, eq);
      }
 
@@ -169,7 +216,7 @@ public:
 
       if(m_p.daily_loss_pct > 0.0)
         {
-         double day_eq = GlobalVariableGet(m_gv_day_equity);
+         double day_eq = ReadAnchor(m_gv_day_equity, "Daily equity");
          if(day_eq > 0.0)
            {
             double dd = (day_eq - eq) / day_eq * 100.0;
@@ -188,7 +235,7 @@ public:
 
       if(m_p.max_total_dd_pct > 0.0)
         {
-         double peak = GlobalVariableGet(m_gv_peak_equity);
+         double peak = ReadAnchor(m_gv_peak_equity, "Peak equity");
          if(peak > 0.0)
            {
             double dd = (peak - eq) / peak * 100.0;

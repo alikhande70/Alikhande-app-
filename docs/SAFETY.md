@@ -114,6 +114,14 @@ In the Strategy Tester those anchors are **deleted at init**, so one
 optimization pass cannot inherit a halt flag from the last and produce results
 that depend on pass order.
 
+Terminal global variables are visible and deletable by the user (F3), and
+`GlobalVariableGet` returns 0 for one that does not exist. Every anchor read
+therefore goes through `ReadAnchor`, which re-establishes a missing anchor and
+logs at ERROR that the corresponding loss budget has been reset. A guard of the
+form `if(anchor > 0.0)` would instead have skipped the whole check — a kill
+switch that silently stops existing is worse than one that was never
+configured, because the operator still believes there is one.
+
 ---
 
 ## 6. A position is never left without a stop
