@@ -7,7 +7,7 @@ rules, `docs/STATUS.md` for the state.
 
 | Routine | Schedule (UTC) | Fires | Notifications |
 |---|---|---|---|
-| **Alikhande: engineering loop** | every 3 hours, at :30 | fresh session | push |
+| **Alikhande: strategy research & evolution cycle** | every 3 hours, at :30 | fresh session | push |
 | **Alikhande: MT5/MQL5 research watch** | Mondays 06:00 | fresh session | push + email |
 
 Manage them at [claude.ai](https://claude.ai) under Routines, or ask Claude to
@@ -15,17 +15,23 @@ list, pause or reschedule them.
 
 ---
 
-## Engineering loop
+## Strategy research & evolution cycle
 
-Picks the highest-value available work and finishes one coherent piece of it.
-Priority order: a failing `make check`; an open risk in `docs/STATUS.md` that
-can be closed without the owner; **adversarial self-review of a module**; a new
-linter rule; new assertions; Python tooling.
+Runs one iteration of the cycle in `docs/RESEARCH.md`: hypothesise, implement,
+screen, attack, eliminate, record. Priority order: a failing `make check`; a
+**new strategy family**; raising trade counts so eliminations stop being "too
+few trades"; attacking anything that survived; improving the measurement
+itself; adversarial review of an MQL5 module.
 
-Self-review is ranked high deliberately — it is what found every bug in this
-project so far, including a kill switch that silently stopped existing and a
-stop loss placed at twice the market price. Runs rotate through modules using
-the change log in `docs/STATUS.md` rather than re-reading the same file.
+**This Routine was rewritten on 2026-09-20, and why matters.** Its previous
+version produced zero commits across four days. That was not a malfunction —
+its stop condition said to stop rather than invent work, the project genuinely
+had nothing that did not need the owner, and the runs correctly concluded so.
+The fix was not a looser stop condition; it was giving the cycle real work.
+The research space is large enough that stopping should now be rare.
+
+Eliminating candidates is the successful outcome. A run that kills two ideas
+has produced more than one that adds a third unvalidated one.
 
 ## Research watch
 
@@ -69,10 +75,12 @@ conversation:
   `claude/alikhande-app-team-audit-mmoz9k`. Each run rebases onto the remote
   before starting. Their schedules rarely coincide, but a rebase conflict is
   possible and a run is expected to resolve it rather than force-push.
-- **A hard ceiling.** Two things cannot be done without the owner: compiling
-  the MQL5 (MetaEditor is Windows-only) and specifying the trading strategy.
-  Until those land, runs work on tooling, review and tests — genuinely useful,
-  but not a substitute. Expect some runs to correctly report that they stopped.
+- **A hard ceiling, in a different place now.** The research cycle has plenty
+  to do without the owner, but it cannot finish: gate G9 needs the MetaTrader 5
+  Strategy Tester on the real instrument, and the Evidence Gate refuses to
+  record a champion without it. Screening also runs on PROXY instruments —
+  `GC=F` is COMEX gold futures, not spot XAUUSD — so even a survivor is a lead,
+  not a finding.
 - **Rate limits.** Session limits are real and were hit during development.
   Three hours between runs is a deliberate trade-off, not a maximum: tighter
   spacing burns limits and produces churn on a project with the ceiling above.
