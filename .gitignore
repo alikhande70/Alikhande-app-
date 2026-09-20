@@ -41,3 +41,6 @@ Thumbs.db
 *.pem
 credentials*.json
 accounts.ini
+
+# Research: fetched market data is large, re-fetchable, and not source.
+research/data_cache/

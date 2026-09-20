@@ -36,6 +36,29 @@ the linter is right. If it is genuinely wrong, **fix the linter and add a test
 for the false positive** — do not rename variables to dodge it, and do not
 suppress without a reason (an unjustified suppression is itself a finding).
 
+## Research rules
+
+Strategy research lives in `research/`. `docs/RESEARCH.md` is the design; these
+are the rules it enforces:
+
+- **A hypothesis and its rejection criterion are written BEFORE the run.** The
+  ledger refuses a record without both.
+- **Beating zero is not an edge.** Every candidate is measured against a
+  long-only benchmark (instrument drift) and a random-entry band (noise), both
+  matched to its own exit structure. This gate eliminates almost everything.
+- **Thresholds live in `tournament.THRESHOLDS`** and are changed by a dated,
+  reviewable diff — never mid-analysis.
+- **Tier-0 screening cannot crown a champion.** The Evidence Gate in
+  `ledger.py` raises on the attempt. Champion needs MetaTrader 5.
+- **Screening uses PROXY instruments.** `GC=F` is gold futures, not the
+  owner's spot XAUUSD. Every result says so.
+- **A result that looks good is a suspect.** Check look-ahead, leakage, cost
+  error and data artefact before believing it. Two real bugs have been found
+  this way already.
+- **Negative results are results.** Eliminating three candidates beats adding
+  a fourth unvalidated idea. The ledger is append-only for this reason.
+- **A backtest is never presented as future profit.**
+
 ## Conventions
 
 - **Points or price, never "pips."** `CSymbolSpec::PointsToPrice` /

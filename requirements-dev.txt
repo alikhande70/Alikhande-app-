@@ -1,3 +1,9 @@
 # Tooling only. Nothing here is needed to run the EA -- MQL5 has no package
 # manager and the terminal loads compiled .ex5 files with no dependencies.
 pytest>=8.0
+
+# Needed ONLY by research/validation/, the Tier-1 trade-list analysis scripts.
+# The screening engine in research/alkresearch/ is deliberately dependency-free
+# so it runs in any scheduled session without an install step.
+numpy>=1.26
+pandas>=2.0
