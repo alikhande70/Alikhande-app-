@@ -1,50 +1,57 @@
 # Automation
 
-Two **Routines** (scheduled triggers) run this project without a human in the
-loop. Each firing starts a **fresh session** with no memory of the last one, so
-everything a run needs to know lives in the repository — `CLAUDE.md` for the
-rules, `docs/STATUS.md` for the state.
+The lab runs as **four independent work cells** plus a weekly documentation
+watch. Each firing starts a **fresh session** with no memory of the last, so
+everything a run needs lives in the repository — `CLAUDE.md` for the rules,
+`docs/RESEARCH.md` for the design, and the Research Queue for the work.
 
-| Routine | Schedule (UTC) | Fires | Notifications |
+| Cell | Schedule (UTC) | Does | Never |
 |---|---|---|---|
-| **Alikhande: strategy research & evolution cycle** | every 3 hours, at :30 | fresh session | push |
-| **Alikhande: MT5/MQL5 research watch** | Mondays 06:00 | fresh session | push + email |
+| **1 — Research Sentinel** | hourly | Scans for integrity defects; curates the Research Queue | Runs experiments |
+| **2 — Strategy Discovery Lab** | every 2h | One complete hypothesis cycle, start to verdict | Validates its own output |
+| **3 — Red Team** | every 3h | Attacks the strongest survivor, trying to prove it false | Invents strategies |
+| **4 — Trade Forensics Lab** | every 4h | Judges real trades; decisions separately from outcomes | Lets the P/L grade the decision |
+| MT5/MQL5 research watch | Mondays 06:00 | Official MetaQuotes docs for changes affecting the code | — |
 
-Manage them at [claude.ai](https://claude.ai) under Routines, or ask Claude to
-list, pause or reschedule them.
+Manage them at [claude.ai](https://claude.ai) under Routines.
 
----
+**The separation is the design.** Cell 2 builds and Cell 3 destroys, and they
+are different cells on purpose — not because anyone would cheat, but because
+whoever built something already knows which answer would be pleasant, and that
+is enough to bend a judgement. Cell 3 is scored on whether it succeeds in
+destroying, not on whether the lab has a working strategy.
 
-## Strategy research & evolution cycle
+## The Research Queue
 
-Runs one iteration of the cycle in `docs/RESEARCH.md`: hypothesise, implement,
-screen, attack, eliminate, record. Priority order: a failing `make check`; a
-**new strategy family**; raising trade counts so eliminations stop being "too
-few trades"; attacking anything that survived; improving the measurement
-itself; adversarial review of an MQL5 module.
+Six named queues, so "this one is blocked, move to another" is a mechanical
+decision rather than one re-derived by every cold session:
 
-**This Routine was rewritten on 2026-09-20, and why matters.** Its previous
-version produced zero commits across four days. That was not a malfunction —
-its stop condition said to stop rather than invent work, the project genuinely
-had nothing that did not need the owner, and the runs correctly concluded so.
-The fix was not a looser stop condition; it was giving the cycle real work.
-The research space is large enough that stopping should now be rare.
+`NEW_HYPOTHESIS` · `RETEST` · `RED_TEAM` · `DATA_QUALITY` · `ENGINE_AUDIT` ·
+`TRADE_FORENSICS`
 
-Eliminating candidates is the successful outcome. A run that kills two ideas
-has produced more than one that adds a third unvalidated one.
+Ranked by expected information gain. At equal priority `ENGINE_AUDIT` and
+`DATA_QUALITY` sort first: an experiment run on a broken engine gives a
+confident *wrong* answer. Items that need the owner are marked blocked, sort
+last, and are never dropped.
 
-## Research watch
+```bash
+python3 research/run_lab.py queue        # what to work on, most informative first
+python3 research/run_lab.py sentinel     # scan and refill the queue
+```
 
-Checks the official MetaQuotes release notes and MQL5 documentation for changes
-affecting this codebase: the order-sending layer, the `SYMBOL_*` properties the
-project reads, `OnTradeTransaction`, account properties, the Strategy Tester,
-and MQL5 *language* changes. Verified findings that contradict the code are
-fixed, with a regression assertion naming the wrong behaviour. Unverifiable
-ones become open risks instead of code changes.
+## A known problem, stated plainly
 
-Weekly, because MetaTrader builds ship every few weeks, not daily.
+Scheduled runs on 2026-09-20 and 2026-09-21 completed successfully, did work,
+and **staged files that never reached the branch**. The session record shows
+`staged_files: true` and a REVIEW_READY state with zero commits on the remote.
+The cause is not yet established from outside those sessions.
 
----
+Every cell prompt therefore ends with a push **verification** step: commit with
+`--no-gpg-sign`, push, then `git fetch` and compare `origin/<branch>` against
+local HEAD. A run whose push did not land must report that first, as its
+primary finding, rather than describing its work as done. That converts a
+silent failure into a visible one, which is the correct response to a fault
+that cannot yet be reproduced.
 
 ## Rules every run inherits
 
