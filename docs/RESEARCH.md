@@ -173,3 +173,85 @@ commit are a failed run.
   directly. Otherwise they are marked UNVERIFIED.
 - **Negative results are results.** A run that eliminates three candidates has
   produced more value than one that adds a fourth unvalidated idea.
+
+---
+
+## 9. The four work cells
+
+The lab runs as four independent recurring cells. Independent matters: **the
+cell that builds a strategy is not the cell that validates it.** Not because
+anyone would cheat, but because whoever built something already knows which
+answer would be pleasant, and that is enough.
+
+| Cell | Every | Does | Never |
+|---|---|---|---|
+| **1. Research Sentinel** | 1h | Scans for integrity defects; maintains the Research Queue | Runs experiments |
+| **2. Strategy Discovery Lab** | 2h | One complete hypothesis cycle, start to verdict | Validates its own output |
+| **3. Red Team** | 3h | Takes the strongest survivor and tries to destroy it | Invents strategies |
+| **4. Trade Forensics** | 4h | Judges real trades; decisions separately from outcomes | Lets the P/L grade the decision |
+
+### The Research Queue
+
+Six named queues, so "this one is blocked, move to another" is mechanical
+rather than a judgement made afresh by every cold session:
+
+`NEW_HYPOTHESIS` · `RETEST` · `RED_TEAM` · `DATA_QUALITY` · `ENGINE_AUDIT` ·
+`TRADE_FORENSICS`
+
+Items are ranked by **expected information gain**, not by how promising they
+sound — different orderings, and the difference is the whole value. At equal
+priority `ENGINE_AUDIT` and `DATA_QUALITY` sort first: an experiment run on a
+broken engine or bad data produces a confident *wrong* answer, which is worse
+than no answer. An item that cannot state what would be learned is rejected at
+construction.
+
+```bash
+python3 research/run_lab.py sentinel     # scan, fill the queue, name the next experiment
+python3 research/run_lab.py queue        # what to work on, most informative first
+python3 research/run_lab.py redteam --strategy donchian_breakout --instrument GOLD
+python3 research/run_lab.py forensics    # the trade journal's state
+```
+
+---
+
+## 10. Anti-confirmation-bias, enforced structurally
+
+Three guarantees live in types rather than in discipline, because a rule
+everyone must remember is not a rule.
+
+**H0 is mandatory for any surviving candidate.** Every ledger record carries
+H1 (the strategy contains information) *and* H0 (the mundane explanation:
+drift, noise, overfitting, a data error, a cost artefact). A record claiming
+`CANDIDATE` or better without a specific H0 raises. `h0_ruled_out_by` may be
+empty — that is honest; empty *plus* a claimed edge is what the field exposes.
+
+**Decision quality cannot see the outcome.** `classify_decision` takes a
+`DecisionFacts` object, and that type has no profit, no exit price and no
+result field. Hindsight is not a bias one can decide not to have: once the
+outcome is known it reorganises the memory of the reasoning. Making the
+information physically unavailable is the only reliable fix.
+
+**A strong result is a bug report.** The Sentinel flags any screening
+expectancy above +0.60R as a suspect rather than a success. Two engine bugs
+have already been found by attacking a good-looking number.
+
+### The 2×2 that makes a journal worth keeping
+
+| | Good outcome | Bad outcome |
+|---|---|---|
+| **Good decision** | Working as designed | **The cost of doing business.** Do not "fix" this |
+| **Bad decision** | **The most dangerous cell.** It pays for doing the wrong thing | Correct and move on |
+
+And a loss is not automatically a failure. Most losses are `STATISTICAL` — a
+40%-win-rate system produces them as designed, and treating those as failures
+is how a working system gets tinkered to death. `STRATEGY`, `EXECUTION`,
+`RISK`, `TIMING`, `EXIT` and `RULE_VIOLATION` are the failures worth acting on.
+
+### Correlation is never reported as cause
+
+`find_patterns` splits trades by session, regime, direction, setup, weekday,
+hour, duration, rule compliance, whether the trade was modified, and what the
+trader did after a win or a loss. With a dozen dimensions and a few hundred
+trades, **some bucket differs by chance**. Every finding is stamped
+`causal: false` and says so in its own text. A pattern becomes a finding only
+when it survives on trades that were not used to discover it.

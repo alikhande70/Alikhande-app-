@@ -81,7 +81,11 @@ def test_summary_line_always_carries_sample_size_and_drawdown():
 
 def _exp(**kw):
     base = dict(hypothesis="h", rejection_criterion="r", strategy="s", params={},
-                tier=Tier.T0_SCREEN, data={}, costs={}, metrics={})
+                tier=Tier.T0_SCREEN, data={}, costs={}, metrics={},
+                # Any status that asserts the idea survived requires an H0.
+                # Supplied here so these tests exercise the evidence gate rather
+                # than tripping over the null-hypothesis rule first.
+                null_hypothesis="the instrument drifted over the test window")
     base.update(kw)
     return Experiment(**base)
 
@@ -260,3 +264,30 @@ def test_a_run_reports_the_gate_it_died_at():
     assert run.eliminated
     assert run.first_failure.gate == "G2"
     assert "ELIMINATED at G2" in run.verdict()
+
+
+# --- The anti-confirmation-bias protocol ---------------------------------
+
+def test_a_surviving_candidate_must_state_its_null_hypothesis():
+    """H0 is what keeps a promising number honest: the mundane explanation
+    that would produce the same result with no edge at all."""
+    with pytest.raises(ValueError, match="null_hypothesis"):
+        Experiment(hypothesis="h", rejection_criterion="r", strategy="s", params={},
+                   tier=Tier.T0_SCREEN, data={}, costs={}, metrics={},
+                   status=Status.CANDIDATE)
+
+
+def test_an_eliminated_idea_needs_no_null_hypothesis():
+    """Recording a failure must stay cheap, or failures stop being recorded."""
+    e = Experiment(hypothesis="h", rejection_criterion="r", strategy="s", params={},
+                   tier=Tier.T0_SCREEN, data={}, costs={}, metrics={},
+                   status=Status.ELIMINATED)
+    assert e.status is Status.ELIMINATED
+
+
+def test_h0_ruled_out_by_may_be_empty_and_that_is_honest():
+    """Admitting H0 has not been ruled out is the point of the field. What it
+    must not do is disappear."""
+    e = _exp(status=Status.CANDIDATE)
+    assert e.h0_ruled_out_by == ""
+    assert e.null_hypothesis

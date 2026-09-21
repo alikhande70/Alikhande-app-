@@ -4,7 +4,7 @@
 Updated with every change. `docs/AUDIT.md` is a point-in-time snapshot and is
 deliberately *not* updated.
 
-**Last updated:** 2026-09-20
+**Last updated:** 2026-09-21
 **Branch:** `claude/alikhande-app-team-audit-mmoz9k`
 **Phase:** foundation awaiting first compile; strategy research running
 
@@ -49,6 +49,10 @@ refuses to record one on screening evidence.
 | Experiment Ledger + Evidence Gate | **Working** | Tested; refuses a champion claim on screening evidence |
 | Tournament gates G1–G9 | **Working** | Eliminated all four candidate families on real data |
 | Tier-1 validation scripts | Vendored | For MT5 trade lists; cannot run here for lack of input |
+| Research Queue (six queues) | **Working** | Seeded with 17 items; blocked items sort last, not out |
+| Sentinel integrity scanner | **Working** | Found 2 real defects on its first run |
+| Red Team attack suite | **Working** | Destroyed the leading candidate on two axes |
+| Trade Forensics lab | **Working (no input)** | Tested; the classifier cannot see outcomes by construction |
 | CI workflow | **Working** | Run [34956953390](https://github.com/alikhande70/Alikhande-app-/actions/runs/34956953390) on `db9572d` concluded **success** |
 | Documentation | Written | — |
 
@@ -150,3 +154,8 @@ strategy-agnostic so these answers can arrive without rework.
 | 2026-09-20 | First real experiments on 10y daily GC=F and EURUSD=X. **All four candidate families eliminated.** Null benchmarks showed the apparent gold edge was instrument drift |
 | 2026-09-20 | Engine bug found by its own test: a position was immune to its entry bar's range. Fixed; impact on daily bars small but material on tighter stops |
 | 2026-09-20 | Gate G7 bug found by reading its output: it computed a retention ratio against a near-zero denominator and manufactured passes. Hardened with three regression tests |
+| 2026-09-21 | Lab expanded into four cells: Sentinel, Discovery, Red Team, Forensics (`docs/RESEARCH.md` §9) |
+| 2026-09-21 | Anti-confirmation-bias made structural: mandatory H0 on surviving candidates; decision classifier physically cannot see outcomes |
+| 2026-09-21 | **Red Team destroyed donchian_breakout**: 6/20 shuffled-return paths with no time structure matched or beat it (p≈0.30), and it does not transfer to EURUSD |
+| 2026-09-21 | Third bug found by self-attack: the cross-instrument attack reused gold's cost model on EURUSD — a 44% spread — and reported a false destruction at -41.5R |
+| 2026-09-21 | Routine diagnosis: runs SUCCEED and stage files but nothing reaches the branch. Cells now verify their own push landed |

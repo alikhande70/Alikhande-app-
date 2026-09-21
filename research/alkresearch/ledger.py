@@ -17,6 +17,25 @@ can. The rule enforced here:
 Attempting to promote on screening evidence raises EvidenceError. This is the
 research-integrity counterpart of SafetyGate.mqh, and it exists for the same
 reason: a rule everyone has to remember is not a rule.
+
+THE ANTI-CONFIRMATION-BIAS PROTOCOL
+-----------------------------------
+Every record carries TWO hypotheses, not one:
+
+    H1  the strategy contains information
+    H0  the result is noise, instrument drift, overfitting, a data error, or
+        an artefact of the cost model
+
+H0 is mandatory and must be specific. "It might be noise" is not an H0; "gold
+tripled over the test window and any long-biased rule would score positively"
+is. The field exists because the failure mode it guards against is not
+dishonesty, it is the ordinary human tendency to look for confirmation once a
+number looks good - and on this project the very first promising candidate
+turned out to be exactly that.
+
+`h0_ruled_out_by` records what was actually DONE about H0. Leaving it empty is
+allowed and honest; claiming an edge while it is empty is what the field makes
+visible.
 """
 
 from __future__ import annotations
@@ -90,7 +109,7 @@ class Experiment:
     the record a claim rather than an experiment.
     """
 
-    hypothesis: str                     # what was asserted, BEFORE the run
+    hypothesis: str                     # H1: what was asserted, BEFORE the run
     rejection_criterion: str            # what result would falsify it, BEFORE the run
     strategy: str
     params: dict
@@ -100,6 +119,16 @@ class Experiment:
     metrics: dict
     gates: dict = field(default_factory=dict)      # gate name -> pass/fail/skip
     benchmarks: dict = field(default_factory=dict) # null comparisons
+    #: H0 - the mundane explanation that would produce this result with no edge
+    #: at all. Must be specific to THIS test, not a generic disclaimer.
+    null_hypothesis: str = ""
+    #: What was done to rule H0 out. Empty is honest; empty plus a claimed edge
+    #: is the thing this field exists to expose.
+    h0_ruled_out_by: str = ""
+    #: The economic or market reason the rule might work. An idea with no
+    #: rationale is a pattern found in noise until proven otherwise.
+    rationale: str = ""
+
     verdict: str = ""                   # the conclusion, in words
     status: Status = Status.SCREENED
     notes: str = ""
@@ -126,12 +155,28 @@ class Experiment:
             )
 
         self._enforce_evidence_gate()
+        self._enforce_null_hypothesis()
 
         self.id = self.id or f"exp_{uuid.uuid4().hex[:12]}"
         self.recorded_at = self.recorded_at or datetime.now(timezone.utc).strftime(
             "%Y-%m-%dT%H:%M:%SZ")
         self.code_version = self.code_version or git_sha()
         self.tree_dirty = _dirty_tree()
+
+    #: Statuses that assert the idea is still alive, and therefore require an
+    #: explicit H0. ELIMINATED does not: a dead idea needs no alternative
+    #: explanation, and demanding one would penalise recording failures.
+    _CLAIMS_LIFE = {Status.CANDIDATE, Status.CHALLENGER, Status.CHAMPION}
+
+    def _enforce_null_hypothesis(self) -> None:
+        if self.status in self._CLAIMS_LIFE and not self.null_hypothesis.strip():
+            raise ValueError(
+                f"status {self.status.value} asserts the idea survived, so it needs an "
+                "explicit null_hypothesis: the mundane explanation that would produce "
+                "this result with no edge at all. Be specific to this test - instrument "
+                "drift over the window, the sample being too small, the cost model, a "
+                "data artefact - not a generic 'it might be noise'."
+            )
 
     def _enforce_evidence_gate(self) -> None:
         if self.status in REQUIRES_REAL_EVIDENCE and not self.tier.is_real_instrument:

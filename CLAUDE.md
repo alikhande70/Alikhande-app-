@@ -3,11 +3,19 @@
 An MQL5 / MetaTrader 5 trading system. Read `docs/STATUS.md` first; it is the
 single source of truth for project state.
 
-Two Routines work on this repository on a schedule, each in a fresh session
-with no memory of the last. If you are one of them, `docs/AUTOMATION.md`
-describes what runs, when, and what each run is expected to do — including
-that stopping with "nothing useful to do without the owner" is a correct
-outcome, and inventing work to look busy is not.
+Four work cells run on this repository on a schedule, each in a fresh session
+with no memory of the last: **Research Sentinel** (1h), **Strategy Discovery
+Lab** (2h), **Red Team** (3h), **Trade Forensics** (4h). `docs/AUTOMATION.md`
+says what each does; `docs/RESEARCH.md` §9 says why they are separate.
+
+If you are one of them, start with:
+
+```bash
+python3 research/run_lab.py queue     # the six queues, most informative item first
+```
+
+A cell whose own queue is blocked moves to another queue. It does not invent
+work to fill the run, and it does not make a cosmetic commit.
 
 ## Non-negotiable
 
@@ -53,8 +61,19 @@ are the rules it enforces:
 - **Screening uses PROXY instruments.** `GC=F` is gold futures, not the
   owner's spot XAUUSD. Every result says so.
 - **A result that looks good is a suspect.** Check look-ahead, leakage, cost
-  error and data artefact before believing it. Two real bugs have been found
-  this way already.
+  error and data artefact before believing it. Three real bugs have been found
+  this way already, the most recent inside an attack that was itself producing
+  a false verdict.
+- **H0 is mandatory for any surviving candidate.** The mundane explanation that
+  would produce the same result with no edge — specific to that test, not a
+  generic "it might be noise". The ledger raises without it.
+- **The builder is not the validator.** The Discovery Lab does not red-team its
+  own output; the Red Team does not invent strategies.
+- **Decision quality never sees the outcome.** `classify_decision` takes a type
+  that has no profit field. Do not add one.
+- **Correlation is never reported as cause.** Every pattern the forensics lab
+  finds is stamped `causal: false` until it survives on trades not used to
+  find it.
 - **Negative results are results.** Eliminating three candidates beats adding
   a fourth unvalidated idea. The ledger is append-only for this reason.
 - **A backtest is never presented as future profit.**
