@@ -144,6 +144,11 @@ int OnInit()
                    InpDeviationPoints, InpMaxRetries, InpRetryWaitMs, InpStopBufferPts))
       return(INIT_FAILED);
 
+   //--- Arm the risk guard with the SAME percent positions are sized against,
+   //--- so no later stop modification can imply more risk than the entry was
+   //--- sized for. Unarmed, the executor would allow a widening it can see.
+   g_exec.SetMaxRiskPercent(InpRiskPercent);
+
    //--- 6. Clock.
    SessionParams sp;
    SessionParamsDefaults(sp);

@@ -4,7 +4,7 @@
 Updated with every change. `docs/AUDIT.md` is a point-in-time snapshot and is
 deliberately *not* updated.
 
-**Last updated:** 2026-09-21
+**Last updated:** 2026-09-22
 **Branch:** `claude/alikhande-app-team-audit-mmoz9k`
 **Phase:** foundation awaiting first compile; strategy research running
 
@@ -81,6 +81,8 @@ refuses to record one on screening evidence.
 | R-09 | **Screening runs on a PROXY instrument.** `GC=F` is COMEX gold futures, not the owner's spot XAUUSD. | **High** | Flagged on every record by the ledger. No T0 result can become champion — `docs/RESEARCH.md` §2. |
 | R-10 | T0 cost assumptions are assumptions. The screening data has no bid/ask. | Medium | Set pessimistically; every candidate must survive 2× them (gate G4). |
 | R-11 | No candidate has any Tier-1 evidence, so the tournament cannot finish. | **High** | Gate G9 is blocked on the owner running MetaTrader 5. |
+| R-12 | **This branch duplicates research machinery that already exists, more rigorously, on `gpt/trading-brain-build`.** | **High** | `docs/BRANCHES.md`. Needs an owner decision on the main line before more is built here. |
+| R-13 | Scheduled cells run, succeed, and publish nothing. ~50 runs, 0 commits. | **High** | Cause not established. Verification step added; if it persists the cells should be disabled. |
 
 ---
 
@@ -159,3 +161,6 @@ strategy-agnostic so these answers can arrive without rework.
 | 2026-09-21 | **Red Team destroyed donchian_breakout**: 6/20 shuffled-return paths with no time structure matched or beat it (p≈0.30), and it does not transfer to EURUSD |
 | 2026-09-21 | Third bug found by self-attack: the cross-instrument attack reused gold's cost model on EURUSD — a 44% spread — and reported a false destruction at -41.5R |
 | 2026-09-21 | Routine diagnosis: runs SUCCEED and stage files but nothing reaches the branch. Cells now verify their own push landed |
+| 2026-09-22 | **Five parallel branches discovered, 961 commits since August.** `docs/AUDIT.md`'s "repository is empty" was wrong; `docs/BRANCHES.md` is the correction |
+| 2026-09-22 | Six audit defects fixed, each with a regression test verified to fail first (`tests/test_audit_fixes.py`) |
+| 2026-09-22 | ~50 scheduled cell runs produced zero commits. Push path still unproven |

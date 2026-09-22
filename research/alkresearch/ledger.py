@@ -75,8 +75,15 @@ class Status(str, Enum):
     CHAMPION = "CHAMPION"        # best available, on T1+ evidence only
 
 
-#: Statuses that may not be reached without a Tier-1 record.
+#: Statuses that may not be reached without evidence from the real instrument.
 REQUIRES_REAL_EVIDENCE = {Status.CHALLENGER, Status.CHAMPION}
+
+#: CHAMPION additionally requires that the crowning record BE demo-forward
+#: evidence. A Strategy Tester backtest is enough to compete, never to win:
+#: the tester always fills, at zero latency, with no requotes, and applies
+#: today's symbol spec across all history. The forward test is where those
+#: assumptions get tested, and it is the whole point of the distinction.
+CHAMPION_TIER = Tier.T2_FORWARD
 
 
 def git_sha() -> str:
@@ -179,6 +186,15 @@ class Experiment:
             )
 
     def _enforce_evidence_gate(self) -> None:
+        if self.status is Status.CHAMPION and self.tier is not CHAMPION_TIER:
+            raise EvidenceError(
+                f"cannot record CHAMPION against tier {self.tier.value}. CHAMPION requires "
+                f"{CHAMPION_TIER.value}: demo-forward evidence on a live feed. A Strategy "
+                "Tester backtest supports CHALLENGER, not CHAMPION - the tester always "
+                "fills, has zero latency and no requotes, and applies today's symbol spec "
+                "across all history. Use Ledger.can_promote_champion() to check that the "
+                "prior Tier-1 record exists as well."
+            )
         if self.status in REQUIRES_REAL_EVIDENCE and not self.tier.is_real_instrument:
             raise EvidenceError(
                 f"cannot record status {self.status.value} against tier "
@@ -242,6 +258,26 @@ class Ledger:
                     and r["data"].get("content_hash") == data_hash):
                 return r
         return None
+
+    def can_promote_champion(self, strategy: str) -> tuple[bool, str]:
+        """Both halves of the evidence, checked against the whole ledger.
+
+        A single record cannot see history, so the tier check in Experiment
+        catches the wrong KIND of evidence while this catches the missing half.
+        Demo-forward evidence with no prior backtest is not a confirmation of
+        anything; a backtest with no forward test has never met a real fill.
+        """
+        records = self.by_strategy(strategy)
+        has_t1 = any(r["tier"] == Tier.T1_TESTER.value for r in records)
+        has_t2 = any(r["tier"] == Tier.T2_FORWARD.value for r in records)
+
+        if not has_t1:
+            return (False, f"no Tier-1 record for '{strategy}': there is no Strategy "
+                           "Tester result on the real instrument for a forward test to confirm")
+        if not has_t2:
+            return (False, f"no Tier-2 demo-forward record for '{strategy}': the backtest "
+                           "has never met a real fill, a real spread or real latency")
+        return (True, f"'{strategy}' has both Tier-1 and Tier-2 evidence")
 
     def champion(self) -> dict | None:
         champs = [r for r in self.active() if r["status"] == Status.CHAMPION.value]

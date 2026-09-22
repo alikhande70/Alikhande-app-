@@ -207,13 +207,36 @@ def classify_decision(facts: DecisionFacts) -> tuple[DecisionQuality, list[str]]
     return (DecisionQuality.BAD if bad else DecisionQuality.GOOD, reasons)
 
 
+#: Within R, a result this small is a scratch trade rather than a win or a
+#: loss. The threshold is meaningful ONLY in R, where 1.0 is the planned risk.
+FLAT_R = 0.05
+
+
 def classify_outcome(r_multiple: float | None, profit: float | None) -> OutcomeQuality:
-    v = r_multiple if r_multiple is not None else profit
-    if v is None:
+    """Grade the outcome, respecting the unit it arrived in.
+
+    The previous version put both through one +/-0.05 test. That threshold is
+    sound in R - where 1.0 means the planned risk, so 0.05 is a twentieth of it
+    - and meaningless in currency, where it made a 4-cent profit FLAT and a
+    6-cent profit GOOD on an account of any size.
+
+    R is preferred when present: it is the measure that survives a change of
+    account size or position sizing. Currency is graded by SIGN only, because
+    without the account's risk-per-trade there is no scale against which a
+    currency amount could be called small.
+    """
+    if r_multiple is not None:
+        if r_multiple > FLAT_R:
+            return OutcomeQuality.GOOD
+        if r_multiple < -FLAT_R:
+            return OutcomeQuality.BAD
         return OutcomeQuality.FLAT
-    if v > 0.05:
+
+    if profit is None:
+        return OutcomeQuality.FLAT
+    if profit > 0:
         return OutcomeQuality.GOOD
-    if v < -0.05:
+    if profit < 0:
         return OutcomeQuality.BAD
     return OutcomeQuality.FLAT
 

@@ -95,6 +95,39 @@ def _expectancy(series: Series, strategy_cls, params: dict,
     return (m.expectancy_r, m.trades)
 
 
+def build_null_hypothesis(always_long_exp: float, random_hi: float, is_proxy: bool,
+                          symbol: str, proxy_for: str | None, trades: int) -> str:
+    """The mundane explanation, written from THIS run's own numbers.
+
+    The ledger requires an H0 on any record claiming the idea survived, and
+    screen() previously supplied none - so the first candidate to pass every
+    gate raised instead of being recorded. The lab could log failures and could
+    not log a success.
+
+    Composed rather than templated so it names the actual benchmarks the result
+    has to be explained against. A generic "it might be noise" would satisfy the
+    field and defeat its purpose.
+    """
+    parts = [
+        f"The result may be instrument drift rather than an entry edge: a long-only "
+        f"benchmark on this data scored {always_long_exp:+.3f}R.",
+        f"It may be noise: random entry with the same exit structure reached "
+        f"{random_hi:+.3f}R at the top of its band.",
+    ]
+    if trades < 200:
+        parts.append(
+            f"With {trades} trades the estimate is loose, so part of any advantage is "
+            "sampling variation.")
+    if is_proxy:
+        parts.append(
+            f"The data is a PROXY: {symbol} stands in for {proxy_for}, so anything found "
+            "here may be a property of the proxy rather than of the traded instrument.")
+    parts.append(
+        "The cost model is an assumption - this data carries no bid/ask - so the edge may "
+        "be an artefact of costs set too low.")
+    return " ".join(parts)
+
+
 def screen(series: Series, strategy_cls, params: dict, costs: engine.CostModel,
            hypothesis: str, rejection_criterion: str,
            ledger: Ledger | None = None, run_sweep: bool = True) -> tuple[Experiment, T.TournamentRun]:
@@ -143,15 +176,32 @@ def screen(series: Series, strategy_cls, params: dict, costs: engine.CostModel,
     run.add(T.g8_monte_carlo(mc))
     run.add(T.g9_real_instrument())
 
-    status = Status.ELIMINATED if run.eliminated else Status.CANDIDATE
+    # The run's own evidence decides the status. An incomplete ladder yields
+    # SCREENED, not CANDIDATE - see TournamentRun.status_for_record.
+    status = run.status_for_record()
     payload = m.to_dict()
     payload["monte_carlo"] = mc
     payload["neighbour_expectancies"] = [round(e, 4) for e in nb_exps]
     payload["cost_stress_expectancy_r"] = round(stressed_exp, 4)
 
+    h0 = build_null_hypothesis(
+        always_long_exp=nulls.always_long_exp, random_hi=nulls.random_hi,
+        is_proxy=bool(series.instrument.is_proxy), symbol=series.instrument.symbol,
+        proxy_for=series.instrument.proxy_for, trades=m.trades)
+
+    # What the run actually DID about H0. Named gates rather than a claim, so an
+    # empty list is visible as an empty list.
+    addressed = [r.gate for r in run.reports
+                 if r.gate in ("G3_BEATS_NULL", "G4_COST_STRESS", "G5_OUTLIER",
+                               "G6_PLATEAU", "G7_OOS", "G8_MONTE_CARLO")
+                 and r.result is T.GateResult.PASS]
+    ruled_out = ("passed " + ", ".join(addressed)) if addressed else ""
+
     exp_record = Experiment(
         hypothesis=hypothesis,
         rejection_criterion=rejection_criterion,
+        null_hypothesis=h0,
+        h0_ruled_out_by=ruled_out,
         strategy=strategy.name,
         params=params,
         tier=Tier.T0_SCREEN,

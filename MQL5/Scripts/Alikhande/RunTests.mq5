@@ -60,6 +60,7 @@ void OnStart()
    TestFillingModeResolution();
    TestRiskMath();
    TestRetcodeClassification();
+   TestAuditFixes();
    TestStopRecomputation();
    TestNewPositionIdentification();
    TestTradeModeGuards();
@@ -401,6 +402,70 @@ void TestNewPositionIdentification()
    ulong vanished[]; ArrayResize(vanished, 2); vanished[0] = 200; vanished[1] = 300;
    T.EqualI((long)COrderExecutor::SoleNewTicket(vanished, two), 300,
             "one gone and one new still identifies the new one");
+  }
+
+//====================================================================
+//  Audit fixes — regressions for two defects found at 94e3a3f
+//====================================================================
+void TestAuditFixes()
+  {
+   T.Suite("audit D2: a pending order is not a fill");
+
+   //--- Before the fix 10008 classified as RC_SUCCESS, so a resting order was
+   //--- reported as a clean entry while every ownership query - all of which
+   //--- read PositionsTotal() - saw nothing. The EA believed its entry had
+   //--- never happened and was free to send it again.
+   T.EqualI((long)COrderExecutor::Classify(TRADE_RETCODE_PLACED),
+            (long)RC_PENDING_PLACED,
+            "10008 PLACED is its own class, not a fill");
+   T.NotEqualD((double)COrderExecutor::Classify(TRADE_RETCODE_PLACED),
+               (double)RC_SUCCESS,
+               "10008 must NOT classify as SUCCESS - that was the defect", 1e-9);
+   T.EqualI((long)COrderExecutor::Classify(TRADE_RETCODE_DONE), (long)RC_SUCCESS,
+            "10009 DONE is still a fill");
+   T.EqualI((long)COrderExecutor::Classify(TRADE_RETCODE_DONE_PARTIAL), (long)RC_SUCCESS,
+            "10010 DONE_PARTIAL is still a fill");
+
+   T.Suite("audit D1: risk is re-derived when a stop moves");
+
+   CSymbolSpec s; MakeGold2Digit(s);
+   CLogger log; log.Init("TEST", ALOG_ERROR);
+   COrderExecutor ex;
+   T.IsTrue(ex.Init(s, log, 0, "TEST", 30, 1, 0, 10),
+            "executor initialises on a synthetic gold spec");
+
+   //--- 1.00 lot, entry 2650, stop 2600: a $50 move on 100oz is $5,000.
+   const double entry = 2650.00, volume = 1.00;
+   T.EqualD(ex.RiskAtStop(volume, entry, 2600.00), 5000.0,
+            "a 50-dollar stop on 1.00 lot of 100oz gold risks 5000", 1e-6);
+
+   //--- Half the distance is half the money. Risk tracks the stop, which is
+   //--- the property that did not exist before: money at risk was computed
+   //--- once at open and never revisited.
+   T.EqualD(ex.RiskAtStop(volume, entry, 2625.00), 2500.0,
+            "halving the stop distance halves the money at risk", 1e-6);
+
+   //--- And widening it raises the money at risk. This is the case the guard
+   //--- exists for: a trailing routine with a sign error, or a break-even step
+   //--- that moves the wrong way, carries multiples of the intended risk on a
+   //--- correctly-sized lot.
+   T.Greater(ex.RiskAtStop(volume, entry, 2500.00),
+             ex.RiskAtStop(volume, entry, 2600.00),
+             "a widened stop implies MORE money at risk");
+
+   T.EqualD(ex.RiskAtStop(volume, entry, 0.0), 0.0,
+            "no stop yields no computable risk figure", 1e-9);
+   T.EqualD(ex.RiskAtStop(0.0, entry, 2600.00), 0.0,
+            "no position yields no risk", 1e-9);
+
+   //--- Direction must not matter: a short stopped 50 above entry risks the
+   //--- same as a long stopped 50 below.
+   T.EqualD(ex.RiskAtStop(volume, entry, 2700.00),
+            ex.RiskAtStop(volume, entry, 2600.00),
+            "risk is symmetric in the stop's direction", 1e-6);
+
+   ex.ClearRiskWarning();
+   T.IsFalse(ex.RiskWarningRaised(), "the risk warning starts clear");
   }
 
 //====================================================================

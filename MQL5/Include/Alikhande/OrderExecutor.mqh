@@ -24,7 +24,13 @@
 //+------------------------------------------------------------------+
 enum ENUM_RETCODE_CLASS
   {
-   RC_SUCCESS,      // done / placed / partial
+   RC_SUCCESS,      // filled: done or partial
+   //--- A pending order reached the book. It is NOT a position, and it was
+   //--- previously folded into RC_SUCCESS, so the caller was told it had a
+   //--- fill while every ownership query - which reads PositionsTotal() -
+   //--- reported nothing owned. An EA in that state believes its entry never
+   //--- happened and is free to send it again.
+   RC_PENDING_PLACED,
    RC_RETRYABLE,    // transient; the order provably did NOT execute
    RC_SPEC_ERROR,   // our bug: volume, stops, price, filling mode. Never retry.
    RC_ENVIRONMENT,  // market closed, trading disabled, direction prohibited
@@ -41,6 +47,10 @@ struct OrderResult
    double   volume_filled;
    double   price;
    bool     partial;
+   //--- True when the request produced a PENDING ORDER rather than a position.
+   //--- Callers must not treat this as an open trade: there is nothing to
+   //--- manage, nothing to stop out, and the entry has not happened yet.
+   bool     pending;
    string   message;
   };
 
@@ -48,7 +58,7 @@ void OrderResultReset(OrderResult &r)
   {
    r.ok = false; r.retcode = 0; r.deal = 0; r.order = 0;
    r.volume_requested = 0.0; r.volume_filled = 0.0; r.price = 0.0;
-   r.partial = false; r.message = "";
+   r.partial = false; r.pending = false; r.message = "";
   }
 
 class COrderExecutor
@@ -64,11 +74,16 @@ private:
    int               m_max_retries;
    int               m_retry_wait_ms;
    long              m_stop_buffer_pts;
+   //--- Ceiling on the risk a single position may imply, as a percent of
+   //--- equity. 0 disables the guard. See ModifyStops for why it exists.
+   double            m_max_risk_pct;
+   bool              m_risk_warn;
 
 public:
                      COrderExecutor(void)
      : m_spec(NULL), m_log(NULL), m_magic(0), m_comment("ALK"),
-       m_max_retries(3), m_retry_wait_ms(250), m_stop_buffer_pts(10) {}
+       m_max_retries(3), m_retry_wait_ms(250), m_stop_buffer_pts(10),
+       m_max_risk_pct(0.0), m_risk_warn(false) {}
 
    bool              Init(CSymbolSpec &spec, CLogger &log,
                           const long magic, const string comment,
@@ -114,6 +129,42 @@ public:
      }
 
    //+---------------------------------------------------------------+
+   //| Arm the risk guard. Pass the same percent the RiskManager sizes  |
+   //| with, so a stop can never imply more than the position was sized |
+   //| for. 0 disables the guard, which is the old behaviour.           |
+   //+---------------------------------------------------------------+
+   void              SetMaxRiskPercent(const double pct) { m_max_risk_pct = pct; }
+   bool              RiskWarningRaised(void) const { return(m_risk_warn); }
+   void              ClearRiskWarning(void) { m_risk_warn = false; }
+
+   //+---------------------------------------------------------------+
+   //| Money at risk implied by a stop, in the account currency.       |
+   //|                                                                 |
+   //| THE POINT: this was never recomputed. Risk was worked out once   |
+   //| at open, from the stop the entry was sized against, and then     |
+   //| treated as a constant for the life of the position. Moving the   |
+   //| stop changes the money at risk and nothing noticed - so a        |
+   //| trailing routine with a sign error, a break-even step that       |
+   //| widened instead of tightened, or a manual adjustment could carry |
+   //| several times the configured risk with a correctly-sized lot and |
+   //| a clean journal.                                                 |
+   //+---------------------------------------------------------------+
+   double            RiskAtStop(const double volume, const double entry, const double sl) const
+     {
+      if(volume <= 0.0 || sl <= 0.0 || entry <= 0.0) return(0.0);
+      if(m_spec.TickSize() <= 0.0) return(0.0);
+      double distance = MathAbs(entry - sl);
+      return(volume * (distance / m_spec.TickSize()) * m_spec.TickValue());
+     }
+
+   double            RiskPctAtStop(const double volume, const double entry, const double sl) const
+     {
+      double eq = AccountInfoDouble(ACCOUNT_EQUITY);
+      if(eq <= 0.0) return(0.0);
+      return(RiskAtStop(volume, entry, sl) / eq * 100.0);
+     }
+
+   //+---------------------------------------------------------------+
    //| Classification. The three-bucket split from the retcode guide,  |
    //| plus a fourth for the genuinely unknowable.                     |
    //+---------------------------------------------------------------+
@@ -122,9 +173,11 @@ public:
       switch(rc)
         {
          case TRADE_RETCODE_DONE:              // 10009
-         case TRADE_RETCODE_PLACED:            // 10008
          case TRADE_RETCODE_DONE_PARTIAL:      // 10010
             return(RC_SUCCESS);
+
+         case TRADE_RETCODE_PLACED:            // 10008 - pending, not a fill
+            return(RC_PENDING_PLACED);
 
          //--- Transient. Each of these guarantees the order did NOT execute,
          //--- which is what makes resending safe.
@@ -163,7 +216,8 @@ public:
      {
       switch(c)
         {
-         case RC_SUCCESS:     return("SUCCESS");
+         case RC_SUCCESS:        return("FILLED");
+         case RC_PENDING_PLACED: return("PENDING_PLACED");
          case RC_RETRYABLE:   return("RETRYABLE");
          case RC_SPEC_ERROR:  return("SPEC_ERROR");
          case RC_ENVIRONMENT: return("ENVIRONMENT");
@@ -223,6 +277,60 @@ public:
          if(Owns()) n++;
         }
       return(n);
+     }
+
+   //+---------------------------------------------------------------+
+   //| Pending orders this EA owns.                                    |
+   //|                                                                 |
+   //| Every other ownership query reads PositionsTotal(), which does  |
+   //| not see the order book at all. Without this an EA that has a    |
+   //| working order resting at a level believes it owns nothing.      |
+   //+---------------------------------------------------------------+
+   int               CountOwnedPending(void)
+     {
+      int n = 0;
+      for(int i = OrdersTotal() - 1; i >= 0; i--)
+        {
+         ulong ticket = OrderGetTicket(i);
+         if(ticket == 0) continue;
+         if(OrderGetString(ORDER_SYMBOL) != m_spec.Name()) continue;
+         if(OrderGetInteger(ORDER_MAGIC)  != m_magic)      continue;
+         n++;
+        }
+      return(n);
+     }
+
+   //--- Positions plus resting orders. This is the number to compare against a
+   //--- "max concurrent" limit: an order about to become a position is
+   //--- exposure the account has already committed to.
+   int               CountOwnedExposure(void)
+     {
+      return(CountOwned() + CountOwnedPending());
+     }
+
+   //--- Cancel resting orders. CloseAllOwned closes POSITIONS only, so a risk
+   //--- halt that called it alone would leave working orders behind, free to
+   //--- fill into the very drawdown that triggered the halt.
+   int               CancelAllOwnedPending(const string reason)
+     {
+      int cancelled = 0;
+      for(int i = OrdersTotal() - 1; i >= 0; i--)
+        {
+         ulong ticket = OrderGetTicket(i);
+         if(ticket == 0) continue;
+         if(OrderGetString(ORDER_SYMBOL) != m_spec.Name()) continue;
+         if(OrderGetInteger(ORDER_MAGIC)  != m_magic)      continue;
+         if(m_trade.OrderDelete(ticket))
+           {
+            m_log.Info(StringFormat("Cancelled pending %I64u - %s", ticket, reason));
+            cancelled++;
+           }
+         else
+            m_log.Warn(StringFormat("Cancel pending %I64u failed: retcode=%u (%s)",
+                                    ticket, m_trade.ResultRetcode(),
+                                    m_trade.ResultRetcodeDescription()));
+        }
+      return(cancelled);
      }
 
    double            OwnedVolume(void)
@@ -341,6 +449,22 @@ private:
          uint rc = m_trade.ResultRetcode();
          out.retcode = rc;
          ENUM_RETCODE_CLASS cls = Classify(rc);
+
+         if(sent && cls == RC_PENDING_PLACED)
+           {
+            //--- Reported honestly and NOT as a fill. The market path in this
+            //--- EA cannot currently produce it, so reaching here means either
+            //--- a pending strategy was added or the broker converted the
+            //--- request - both worth knowing about loudly.
+            out.ok      = false;
+            out.pending = true;
+            out.order   = m_trade.ResultOrder();
+            out.message = StringFormat("PENDING ORDER PLACED (retcode 10008), order=%I64u. "
+                                       "This is not a position: no entry has occurred.",
+                                       out.order);
+            m_log.Warn(out.message);
+            return(false);
+           }
 
          if(sent && cls == RC_SUCCESS)
            {
@@ -664,11 +788,49 @@ public:
          if(!is_buy && tp > price - min_dist) { m_log.Debug("ModifyStops skipped: SELL TP too close"); return(false); }
         }
 
+      //--- RE-DERIVE THE RISK THIS STOP IMPLIES. A stop that moves AWAY from
+      //--- entry increases the money at risk on an already-sized position.
+      //--- Tightening is always allowed; widening is reported, and widening
+      //--- past the configured ceiling is refused outright, because there is
+      //--- no legitimate routine that does it and every bug that does it costs
+      //--- more than the trade was ever meant to.
+      if(sl > 0.0)
+        {
+         double entry   = m_pos.PriceOpen();
+         double volume  = m_pos.Volume();
+         double old_sl  = m_pos.StopLoss();
+         double new_risk = RiskAtStop(volume, entry, sl);
+         double old_risk = (old_sl > 0.0) ? RiskAtStop(volume, entry, old_sl) : 0.0;
+
+         if(old_sl > 0.0 && new_risk > old_risk + 1e-8)
+           {
+            double new_pct = RiskPctAtStop(volume, entry, sl);
+            string detail = StringFormat(
+               "stop widened on %I64u: risk %.2f -> %.2f %s (%.2f%% of equity)",
+               ticket, old_risk, new_risk, AccountInfoString(ACCOUNT_CURRENCY), new_pct);
+
+            if(m_max_risk_pct > 0.0 && new_pct > m_max_risk_pct)
+              {
+               m_risk_warn = true;
+               m_log.Error("REFUSED: " + detail + StringFormat(
+                  ". That exceeds the %.2f%% ceiling this position was sized against. "
+                  "Tightening a stop is always permitted; widening one past the ceiling "
+                  "is a bug in the caller, not a decision to honour.", m_max_risk_pct));
+               return(false);
+              }
+            m_risk_warn = true;
+            m_log.Warn("RISK INCREASED - " + detail +
+                       ". Within the ceiling, but the position now risks more than it did.");
+           }
+        }
+
       if(m_trade.PositionModify(ticket, sl, tp))
         {
-         m_log.Info(StringFormat("Modified %I64u: SL=%s TP=%s", ticket,
+         double shown = (sl > 0.0) ? RiskPctAtStop(m_pos.Volume(), m_pos.PriceOpen(), sl) : 0.0;
+         m_log.Info(StringFormat("Modified %I64u: SL=%s TP=%s | risk now %.2f%% of equity",
+                                 ticket,
                                  DoubleToString(sl, m_spec.Digits_()),
-                                 DoubleToString(tp, m_spec.Digits_())));
+                                 DoubleToString(tp, m_spec.Digits_()), shown));
          return(true);
         }
 

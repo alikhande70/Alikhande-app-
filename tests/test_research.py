@@ -101,9 +101,20 @@ def test_screening_evidence_can_support_the_lower_statuses(status):
     assert _exp(status=status).status is status
 
 
-def test_tier1_evidence_can_support_champion():
-    e = _exp(tier=Tier.T1_TESTER, status=Status.CHAMPION)
-    assert e.status is Status.CHAMPION
+def test_tier1_evidence_supports_challenger_but_not_champion():
+    """Corrected 2026-09-22. The previous version of this test asserted that a
+    Tier-1 backtest could crown a CHAMPION, and it passed - because that was
+    audit defect D4, and the test encoded it rather than catching it.
+
+    A Strategy Tester result is enough to compete. It is not enough to win: the
+    tester always fills, at zero latency, with no requotes, and applies today's
+    symbol spec across all history. Demo-forward evidence is where those
+    assumptions meet a real feed. See tests/test_audit_fixes.py for the
+    regression that drove the change.
+    """
+    assert _exp(tier=Tier.T1_TESTER, status=Status.CHALLENGER).status is Status.CHALLENGER
+    with pytest.raises(EvidenceError):
+        _exp(tier=Tier.T1_TESTER, status=Status.CHAMPION)
 
 
 def test_an_experiment_needs_a_hypothesis():

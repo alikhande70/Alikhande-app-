@@ -81,6 +81,25 @@ class TournamentRun:
         return any(r.result == GateResult.FAIL for r in self.reports)
 
     @property
+    def skipped_gates(self) -> list[str]:
+        return [r.gate for r in self.reports if r.result == GateResult.SKIP]
+
+    @property
+    def incomplete(self) -> bool:
+        """True when a gate did not run.
+
+        SKIP and PASS were previously indistinguishable to `eliminated`, so a
+        run of 1 PASS and 3 SKIP reported "passed every computable gate" and
+        the record was promoted to CANDIDATE. A test that never ran is not
+        evidence of anything, and the difference between "we checked" and "we
+        could not check" is the whole value of a gate ladder.
+
+        BLOCKED is deliberately NOT incomplete: G9 needs MetaTrader 5, that is
+        a known and documented wall rather than a gap in what was measured.
+        """
+        return bool(self.skipped_gates)
+
+    @property
     def first_failure(self) -> GateReport | None:
         for r in self.reports:
             if r.result == GateResult.FAIL:
@@ -97,13 +116,31 @@ class TournamentRun:
     def to_dict(self) -> dict:
         return {r.gate: r.to_dict() for r in self.reports}
 
+    def status_for_record(self) -> "Status":
+        """The only status this run's evidence supports.
+
+        Deliberately not a judgement call at the call site: a run that did not
+        finish the ladder cannot produce a CANDIDATE however good its numbers
+        look, and putting that in one place stops it being re-decided.
+        """
+        from .ledger import Status
+        if self.eliminated:
+            return Status.ELIMINATED
+        if self.incomplete:
+            return Status.SCREENED
+        return Status.CANDIDATE
+
     def verdict(self) -> str:
         f = self.first_failure
         if f:
             return f"ELIMINATED at {f.gate}: {f.detail}"
+        if self.incomplete:
+            return (f"INCOMPLETE: {len(self.skipped_gates)} gate(s) did not run "
+                    f"({', '.join(self.skipped_gates)}). Nothing failed, but the ladder "
+                    "was not finished, so this is not a surviving candidate.")
         b = self.blocked_at
         if b:
-            return f"SURVIVED screening; blocked at {b.gate}: {b.detail}"
+            return f"SURVIVED every gate that can run here; blocked at {b.gate}: {b.detail}"
         return "passed every computable gate"
 
 
