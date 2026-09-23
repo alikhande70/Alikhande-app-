@@ -1,0 +1,57 @@
+name: CI
+
+# Scope note: MetaTrader 5 and MetaEditor are Windows-only, so this workflow
+# CANNOT prove that the .mq5/.mqh sources compile. It runs the two things that
+# genuinely can run on a Linux runner:
+#   1. the MQL5 static linter, which enforces the bug catalogue
+#   2. the Python test suite for that linter
+# A green badge here means "no known bug pattern and the tooling works",
+# never "the EA builds". See docs/TESTING.md for what each layer proves.
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lint-and-test:
+    name: Lint MQL5 + test tooling
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dev dependencies
+        run: python -m pip install --upgrade pip -r requirements-dev.txt
+
+      - name: Test the linter
+        run: python -m pytest tests/ -q
+
+      - name: Lint the MQL5 sources
+        # --strict: MEDIUM findings block too. The tree is clean at this level
+        # and must stay that way; a justified suppression is the escape hatch.
+        run: python -m mql5lint MQL5 --strict
+        env:
+          PYTHONPATH: tools
+
+      - name: Assert the live-trading gate is not compiled in
+        # Belt and braces. MQL001 already covers this, but the project's core
+        # safety property deserves a check that cannot be suppressed.
+        run: |
+          if grep -rn --include='*.mq5' --include='*.mqh' \
+               -E '^[[:space:]]*#[[:space:]]*define[[:space:]]+ALIKHANDE_ALLOW_LIVE' MQL5/; then
+            echo "::error::ALIKHANDE_ALLOW_LIVE is defined in the tree. Real-money execution is forbidden in this project."
+            exit 1
+          fi
+          echo "OK: the real-money compile gate is absent."
