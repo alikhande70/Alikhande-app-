@@ -164,3 +164,6 @@ strategy-agnostic so these answers can arrive without rework.
 | 2026-09-22 | **Five parallel branches discovered, 961 commits since August.** `docs/AUDIT.md`'s "repository is empty" was wrong; `docs/BRANCHES.md` is the correction |
 | 2026-09-22 | Six audit defects fixed, each with a regression test verified to fail first (`tests/test_audit_fixes.py`) |
 | 2026-09-22 | ~50 scheduled cell runs produced zero commits. Push path still unproven |
+| 2026-09-22 | Eight ledger records destroyed by my own `rm -f` during an unrelated verification, then restored from `147a710`. The append-only rule was broken by the person who wrote it; nothing in the codebase noticed |
+| 2026-09-23 | Four high-frequency cells paused with the owner's approval (`enabled: false` — no session or output deleted) so a single controlled run could be observed in isolation |
+| 2026-09-23 | **The "six defects fixed" claim corrected** — `docs/AUDIT-FIX-EVIDENCE.md`. Two of the six guard code paths nothing currently calls, and their tests are text assertions on uncompiled MQL5; two more are unit-verified on a branch no real run has taken. None has met real broker or trade data |
