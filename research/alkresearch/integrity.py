@@ -12,6 +12,7 @@ output is work rather than commentary.
 
 from __future__ import annotations
 
+import json
 import re
 import subprocess
 from dataclasses import dataclass
@@ -63,6 +64,40 @@ def _commits_since(sha: str) -> int | None:
         return int(out.stdout.strip()) if out.returncode == 0 else None
     except Exception:
         return None
+
+
+def _committed_records(path: Path, root: Path) -> dict[str, str] | None:
+    """The ledger as HEAD has it: experiment id -> canonical record text.
+
+    Returns None when git cannot answer - no repository, no commit yet, or the
+    file simply is not in HEAD. A ledger git has never seen has no committed
+    records to lose, so there is nothing to compare and nothing to report.
+    """
+    try:
+        rel = path.resolve().relative_to(root.resolve()).as_posix()
+    except ValueError:
+        return None
+    try:
+        out = subprocess.run(["git", "show", f"HEAD:{rel}"],
+                             capture_output=True, text=True, timeout=10, cwd=root)
+    except Exception:
+        return None
+    if out.returncode != 0:
+        return None
+
+    records: dict[str, str] = {}
+    for line in out.stdout.splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            rec = json.loads(line)
+        except ValueError:
+            continue          # an unreadable committed line is not evidence of loss
+        rid = rec.get("id")
+        if rid:
+            records[rid] = json.dumps(rec, sort_keys=True)
+    return records
 
 
 # --------------------------------------------------------------------------
@@ -228,6 +263,64 @@ def check_stale_records(ledger: Ledger) -> list[Finding]:
     return out
 
 
+def check_ledger_append_only(ledger: Ledger, root: Path | None = None) -> list[Finding]:
+    """Committed ledger records that have gone missing or changed underneath us.
+
+    The ledger is append-only because negative results are the ones that quietly
+    stop being mentioned. Every other check here reads the ledger and trusts it
+    to be complete - so a record that vanishes is not merely lost, it silently
+    disables the checks that would have used it.
+
+    This is not hypothetical. On 2026-09-22 an `rm -f` during an unrelated
+    verification destroyed eight records and nothing in this scanner noticed;
+    they came back only because git happened to have them. Comparing the working
+    file against HEAD is what turns that luck into a check: append freely, but
+    losing or rewriting a record that was already committed is a defect.
+    """
+    root = root or REPO
+    committed = _committed_records(ledger.path, root)
+    if not committed:
+        return []
+
+    working: dict[str, str] = {}
+    for r in ledger.all():
+        rid = r.get("id")
+        if rid:
+            working[rid] = json.dumps(r, sort_keys=True)
+
+    lost = [rid for rid in committed if rid not in working]
+    changed = [rid for rid, text in committed.items()
+               if rid in working and working[rid] != text]
+
+    out = []
+    if lost:
+        out.append(Finding(
+            "ledger_records_lost", 1,
+            f"{len(lost)} committed experiment record(s) are missing from the ledger",
+            "Records: " + ", ".join(sorted(lost)[:8]) + ". These ids are in "
+            "HEAD and are not in the working file. The ledger is append-only; a record "
+            "that disappears takes an eliminated idea with it, and the idea then gets "
+            "retried as if it were new. Restore them from git before anything else "
+            "writes to the file.",
+            Queue.ENGINE_AUDIT,
+            "which results were destroyed, and what removed them - so the next run "
+            "does not repeat an experiment the lab has already paid for",
+        ))
+    if changed:
+        out.append(Finding(
+            "ledger_records_mutated", 1,
+            f"{len(changed)} committed experiment record(s) have been edited in place",
+            "Records: " + ", ".join(sorted(changed)[:8]) + ". These ids exist in "
+            "both HEAD and the working file with different content. A correction is "
+            "supposed to be a NEW record that supersedes the old one; editing the old "
+            "one leaves no trace that the earlier conclusion was ever held.",
+            Queue.ENGINE_AUDIT,
+            "what was changed and by whom, and whether the original conclusion still "
+            "stands - `git diff` on the ledger answers it",
+        ))
+    return out
+
+
 # --------------------------------------------------------------------------
 # Checks over the source and the docs
 # --------------------------------------------------------------------------
@@ -323,6 +416,7 @@ def scan(ledger: Ledger | None = None, root: Path | None = None) -> list[Finding
     findings += check_random_equivalent(ledger)
     findings += check_suspicious_results(ledger)
     findings += check_stale_records(ledger)
+    findings += check_ledger_append_only(ledger, root)
     findings += check_strategy_lookahead()
     findings += check_docs_agree(ledger, root)
     return sorted(findings, key=lambda f: f.severity)

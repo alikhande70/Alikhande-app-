@@ -1,6 +1,7 @@
 """Tests for the four work cells' infrastructure: queue, sentinel, red team, forensics."""
 
 import pathlib
+import subprocess
 import tempfile
 
 import pytest
@@ -164,6 +165,95 @@ def test_a_rerun_after_a_code_change_is_legitimate():
     led.append(_rec(code_version="abc1234"))
     led.append(_rec(code_version="def5678"))
     assert integrity.check_duplicates(led) == []
+
+
+def _git(repo, *args):
+    subprocess.run(["git", *args], cwd=repo, check=True,
+                   stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+
+def _committed_ledger(tmp_path, count=3):
+    """A throwaway repo with a committed ledger, laid out like the real one.
+
+    Hermetic: its own `git init` under tmp_path, one commit, never the real
+    repository's history.
+    """
+    repo = tmp_path / "repo"
+    path = repo / "research" / "experiments" / "ledger.jsonl"
+    path.parent.mkdir(parents=True)
+    _git_init(repo)
+
+    led = Ledger(path)
+    for i in range(count):
+        led.append(_rec(id=f"exp_{i:012d}", strategy=f"s{i}"))
+    _git(repo, "add", "-A")
+    _git(repo, "commit", "--no-gpg-sign", "-m", "ledger")
+    return repo, led
+
+
+def _git_init(repo):
+    _git(repo, "init", "-q")
+    _git(repo, "config", "user.email", "t@example.invalid")
+    _git(repo, "config", "user.name", "t")
+
+
+def test_a_record_deleted_from_the_committed_ledger_is_detected(tmp_path):
+    """The exact 2026-09-22 failure: an `rm -f` took eight records and nothing noticed."""
+    repo, led = _committed_ledger(tmp_path)
+    kept = [line for line in led.path.read_text(encoding="utf-8").splitlines()
+            if '"exp_000000000001"' not in line]
+    led.path.write_text("\n".join(kept) + "\n", encoding="utf-8")
+
+    findings = integrity.check_ledger_append_only(led, repo)
+    assert {f.check for f in findings} == {"ledger_records_lost"}
+    assert findings[0].severity == 1
+    assert "exp_000000000001" in findings[0].detail
+
+
+def test_the_whole_ledger_being_destroyed_is_detected(tmp_path):
+    repo, led = _committed_ledger(tmp_path)
+    led.path.unlink()
+    findings = integrity.check_ledger_append_only(led, repo)
+    assert [f.check for f in findings] == ["ledger_records_lost"]
+
+
+def test_a_committed_record_edited_in_place_is_detected(tmp_path):
+    """A correction must be a new record that supersedes the old one, never an edit."""
+    repo, led = _committed_ledger(tmp_path)
+    text = led.path.read_text(encoding="utf-8")
+    led.path.write_text(text.replace('"verdict": ""', '"verdict": "rewritten"', 1),
+                        encoding="utf-8")
+
+    findings = integrity.check_ledger_append_only(led, repo)
+    assert {f.check for f in findings} == {"ledger_records_mutated"}
+    assert findings[0].severity == 1
+
+
+def test_appending_a_new_record_is_not_a_violation(tmp_path):
+    """Growth is the file working as designed and must never be nagged about."""
+    repo, led = _committed_ledger(tmp_path)
+    led.append(_rec(id="exp_appended", strategy="fresh"))
+    assert integrity.check_ledger_append_only(led, repo) == []
+
+
+def test_a_ledger_git_has_never_seen_reports_nothing(tmp_path):
+    """No committed version means no committed records to lose - not a finding."""
+    repo = tmp_path / "repo"
+    (repo / "research" / "experiments").mkdir(parents=True)
+    _git_init(repo)
+    led = Ledger(repo / "research" / "experiments" / "ledger.jsonl")
+    led.append(_rec(id="exp_uncommitted"))
+    assert integrity.check_ledger_append_only(led, repo) == []
+
+
+def test_a_lost_record_becomes_an_actionable_queue_item(tmp_path):
+    repo, led = _committed_ledger(tmp_path)
+    led.path.write_text("", encoding="utf-8")
+    for f in integrity.check_ledger_append_only(led, repo):
+        it = f.to_item()
+        assert it.priority == 1
+        assert it.queue in set(Queue)
+        assert it.information_gain and it.source.startswith("sentinel:")
 
 
 def test_every_finding_converts_to_an_actionable_queue_item():
